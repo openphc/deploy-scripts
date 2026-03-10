@@ -58,6 +58,8 @@ services:
     image: quay.io/keycloak/keycloak:26.5.4
     container_name: keycloak
     restart: unless-stopped
+    ports:
+      - "8081:8080"
     environment:
       KC_DB: ${KC_DB}
       KC_DB_URL_HOST: ${KC_DB_URL_HOST}
@@ -83,7 +85,7 @@ services:
     depends_on:
       - postgres
     ports:
-      - "8090:8090"
+      - "8091:8090"
     environment:
       # JVM
       JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC"
@@ -127,6 +129,65 @@ services:
       resources:
         limits:
           memory: 512M
+    networks:
+      - cce-net
+  
+  openhim-cce-emmitter-adaptor:
+    image: openhim-cce-emmitter-adaptor:latest
+    container_name: openhim-cce-emmitter-adaptor
+    restart: unless-stopped
+    ports:
+      - "8092:8082"
+    environment:
+      OPENHIM_CORE_HOST: ${OPENHIM_CORE_HOST}
+      OPENHIM_USERNAME: ${OPENHIM_USERNAME}
+      OPENHIM_PASSWORD: ${OPENHIM_PASSWORD}
+      CCE_COLLECTOR_URL: ${CCE_COLLECTOR_URL}
+      CCE_COLLECTOR_AUTH_TOKEN: ${CCE_COLLECTOR_AUTH_TOKEN}
+      EBUZIMA_CLIENT_ID: ${EBUZIMA_CLIENT_ID}
+    networks:
+      - cce-net
+  
+  cce-collector-service:
+    image: cce-collector-service:latest
+    container_name: cce-collector-service
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - kafka
+      - kafka-ui
+    ports:
+      - "8093:8080"
+    environment:
+      SPRING_DATASOURCE_URL: ${POSTGRES_DB_URL_JDBC}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:-10}
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: ${SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE:-5}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+    networks:
+      - cce-net
+
+  cce-compliance-service:
+    image: cce-compliance-service:latest
+    container_name: cce-compliance-service
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - kafka
+      - kafka-ui
+    ports:
+      - "8094:8080"
+    environment:
+      DB_HOST: ${POSTGRES_DB_HOST}
+      DB_PORT: ${POSTGRES_DB_PORT}
+      DB_NAME: ${POSTGRES_DB}
+      DB_USERNAME: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+      KEYCLOAK_ISSUER_URI: ${KEYCLOAK_ISSUER_URI}
+      KEYCLOAK_JWK_SET_URI: ${KEYCLOAK_JWK_SET_URI}
     networks:
       - cce-net
 
