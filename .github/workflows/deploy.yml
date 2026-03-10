@@ -26,7 +26,7 @@ jobs:
       - name: Sync files to Dev Host
         uses: burnett01/rsync-deployments@v8
         with:
-          switches: -av --exclude='.git' --exclude='.github'
+          switches: -av --exclude='.git' --exclude='.github' --exclude='.gitignore'
           path: ./
           remote_path: ${{ vars.DEV_REMOTE_PROJECT_PATH }}
           remote_host: ${{ secrets.DEV_HOST }}
