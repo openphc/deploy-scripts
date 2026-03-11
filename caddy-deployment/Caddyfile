@@ -1,5 +1,5 @@
 keycloak.cce.mdtlabs.org {
-    reverse_proxy localhost:8080 {
+    reverse_proxy localhost:8081 {
         header_up Host {host}
         header_up X-Forwarded-For {remote}
         header_up X-Forwarded-Proto {scheme}
