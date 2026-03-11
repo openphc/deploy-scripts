@@ -125,6 +125,8 @@ services:
     container_name: cce-openhim-console
     ports:
       - "9000:80"
+    volumes:
+      - ./openhim-console/default.json:/usr/share/nginx/html/config/default.json
     depends_on:
       openhim-core:
         condition: service_healthy
