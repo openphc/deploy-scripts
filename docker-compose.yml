@@ -96,7 +96,7 @@ services:
 
   # ==================== OpenHIM Core ====================
   openhim-core:
-    image: jembi/openhim-core
+    image: jembi/openhim-core:v8.5.1
     container_name: cce-openhim-core
     ports:
       - "5000:5000"
@@ -121,7 +121,7 @@ services:
 
   # ==================== OpenHIM Console ====================
   openhim-console:
-    image: jembi/openhim-console
+    image: jembi/openhim-console:v1.18.2
     container_name: cce-openhim-console
     ports:
       - "9000:80"
