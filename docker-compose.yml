@@ -126,7 +126,7 @@ services:
     ports:
       - "9000:80"
     volumes:
-      - ./openhim-console/default.json:/usr/share/nginx/html/config/default.json
+      - ./openhim-console/default.json:/usr/share/nginx/html/config/default.json:ro
     depends_on:
       openhim-core:
         condition: service_healthy
