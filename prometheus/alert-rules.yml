@@ -1,0 +1,76 @@
+groups:
+  - name: cce-emitter-adaptor-critical
+    rules:
+      - alert: CceEmitterDown
+        expr: up{job="openhim-cce-emmitter-adaptor"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: cce-emitter-adaptor
+        annotations:
+          summary: "CCE Emitter Adaptor is down"
+          description: "Prometheus cannot scrape the emitter adaptor for >1 minute. Check container health."
+
+      - alert: CceEmitterRetriesExhausted
+        expr: rate(cce_emitter_collector_retries_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          service: cce-emitter-adaptor
+        annotations:
+          summary: "CCE Emitter Adaptor retries exhausted"
+          description: "Collector forwarding retries are being exhausted (rate > 0 for 2+ minutes). Events are being dropped."
+
+  - name: cce-emitter-adaptor-warning
+    rules:
+      - alert: CceEmitterHighRejections
+        expr: rate(cce_emitter_events_rejected_total[5m]) / rate(cce_emitter_events_received_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: cce-emitter-adaptor
+        annotations:
+          summary: "CCE Emitter >5% event rejection rate"
+          description: "More than 5% of events are being rejected by the Collector (4xx) for >5 minutes."
+
+      - alert: CceEmitterHighDuplicates
+        expr: rate(cce_emitter_events_duplicate_total[5m]) / rate(cce_emitter_events_received_total[5m]) > 0.20
+        for: 10m
+        labels:
+          severity: warning
+          service: cce-emitter-adaptor
+        annotations:
+          summary: "CCE Emitter >20% duplicate event rate"
+          description: "More than 20% of events are duplicates (Collector returned 200)."
+
+      - alert: CceEmitterHighLatency
+        expr: histogram_quantile(0.95, rate(cce_emitter_collector_latency_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          service: cce-emitter-adaptor
+        annotations:
+          summary: "CCE Emitter Collector latency p95 > 2s"
+          description: "95th percentile Collector forwarding latency exceeds 2 seconds for >5 minutes."
+
+      - alert: CceEmitterNoEventsReceived
+        expr: increase(cce_emitter_events_received_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          service: cce-emitter-adaptor
+        annotations:
+          summary: "CCE Emitter no events received for 30 minutes"
+          description: "No inbound events received for 30+ minutes."
+
+  - name: cce-emitter-adaptor-info
+    rules:
+      - alert: CceEmitterHighMemory
+        expr: jvm_memory_used_bytes{area="heap",job="openhim-cce-emmitter-adaptor"} / jvm_memory_max_bytes{area="heap",job="openhim-cce-emmitter-adaptor"} > 0.85
+        for: 10m
+        labels:
+          severity: info
+          service: cce-emitter-adaptor
+        annotations:
+          summary: "CCE Emitter heap usage > 85%"
+          description: "JVM heap usage exceeds 85% for >10 minutes. Consider increasing container memory limits."
