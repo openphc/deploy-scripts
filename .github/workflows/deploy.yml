@@ -36,6 +36,7 @@ jobs:
       - name: Deploy to dev
         if: env.TARGET_ENV == 'dev'
         uses: appleboy/ssh-action@v1.2.2
+      
         with:
           host: ${{ secrets.DEV_HOST }}
           username: ${{ secrets.DEV_USER }}
@@ -43,10 +44,21 @@ jobs:
           script: |
             set -Eeuo pipefail
             REMOTE_PROJECT_PATH="${{ vars.DEV_REMOTE_PROJECT_PATH }}"
+            AWS_ACCOUNT_ID="${{ vars.AWS_ACCOUNT_ID }}"
+            AWS_REGION="${{ vars.AWS_REGION }}"
+            ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
             if [ -z "${REMOTE_PROJECT_PATH}" ]; then
               echo "Set the DEV_REMOTE_PROJECT_PATH repository variable to the project directory on the dev host."
               exit 1
             fi
             cd "${REMOTE_PROJECT_PATH}"
-            docker compose pull
-            docker compose up -d --remove-orphans
+            COMPOSE_FILE="${REMOTE_PROJECT_PATH}/docker-compose.yml"
+            # ECR login required for private images. Dev host must have AWS CLI and credentials with ecr:GetAuthorizationToken + ecr:BatchGetImage (e.g. IAM instance role).
+            if command -v aws >/dev/null 2>&1; then
+              aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+            else
+              echo "Error: aws CLI not found on dev host. Install AWS CLI and configure credentials with ECR pull access."
+              exit 1
+            fi
+            docker compose -f "${COMPOSE_FILE}" pull
+            docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans
