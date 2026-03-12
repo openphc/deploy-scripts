@@ -36,6 +36,7 @@ jobs:
       - name: Deploy to dev
         if: env.TARGET_ENV == 'dev'
         uses: appleboy/ssh-action@v1.2.2
+      
         with:
           host: ${{ secrets.DEV_HOST }}
           username: ${{ secrets.DEV_USER }}
