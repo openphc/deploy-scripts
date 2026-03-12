@@ -48,5 +48,12 @@ jobs:
               exit 1
             fi
             cd "${REMOTE_PROJECT_PATH}"
+            # ECR login required for private images. Dev host must have AWS CLI and credentials with ecr:GetAuthorizationToken + ecr:BatchGetImage (e.g. IAM instance role).
+            if command -v aws >/dev/null 2>&1; then
+              aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 006250192066.dkr.ecr.ap-south-1.amazonaws.com
+            else
+              echo "Error: aws CLI not found on dev host. Install AWS CLI and configure credentials with ECR pull access."
+              exit 1
+            fi
             docker compose pull
             docker compose up -d --remove-orphans
