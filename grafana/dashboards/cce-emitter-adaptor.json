@@ -56,7 +56,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_received_total{instance=~\"$instance\",source=~\"$source\"}[5m])",
+          "expr": "rate(cce_emitter_events_received_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[5m])",
           "legendFormat": "{{source}}",
           "refId": "A"
         }
@@ -92,7 +92,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_forwarded_total{instance=~\"$instance\",source=~\"$source\"}[5m])",
+          "expr": "rate(cce_emitter_events_forwarded_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[5m])",
           "legendFormat": "{{source}}",
           "refId": "A"
         }
@@ -132,7 +132,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_forwarded_total{instance=~\"$instance\"}[5m]) / rate(cce_emitter_events_received_total{instance=~\"$instance\"}[5m]) * 100",
+          "expr": "rate(cce_emitter_events_forwarded_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]) / rate(cce_emitter_events_received_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]) * 100",
           "legendFormat": "Success %",
           "refId": "A"
         }
@@ -237,25 +237,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_forwarded_total{instance=~\"$instance\",source=~\"$source\"}[5m])",
+          "expr": "rate(cce_emitter_events_forwarded_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[5m])",
           "legendFormat": "Forwarded",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_duplicate_total{instance=~\"$instance\"}[5m])",
+          "expr": "rate(cce_emitter_events_duplicate_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m])",
           "legendFormat": "Duplicates",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_rejected_total{instance=~\"$instance\"}[5m])",
+          "expr": "rate(cce_emitter_events_rejected_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m])",
           "legendFormat": "Rejected",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_collector_retries_total{instance=~\"$instance\"}[5m])",
+          "expr": "rate(cce_emitter_collector_retries_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m])",
           "legendFormat": "Retries Exhausted",
           "refId": "D"
         }
@@ -313,19 +313,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(cce_emitter_collector_latency_seconds_bucket{instance=~\"$instance\"}[5m]))",
+          "expr": "histogram_quantile(0.50, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, rate(cce_emitter_collector_latency_seconds_bucket{instance=~\"$instance\"}[5m]))",
+          "expr": "histogram_quantile(0.95, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(cce_emitter_collector_latency_seconds_bucket{instance=~\"$instance\"}[5m]))",
+          "expr": "histogram_quantile(0.99, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]))",
           "legendFormat": "p99",
           "refId": "C"
         }
