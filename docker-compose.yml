@@ -135,6 +135,20 @@ services:
     networks:
       - cce-net
 
+  # ==================== Node Exporter (EC2 host metrics) ====================
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: cce-node-exporter
+    restart: unless-stopped
+    command:
+      - "--path.rootfs=/host"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    networks:
+      - cce-net
+
   # ==================== Prometheus ====================
   prometheus:
     image: prom/prometheus:v2.51.2
