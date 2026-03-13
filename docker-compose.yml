@@ -259,6 +259,9 @@ services:
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID} 
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # Actuator / Prometheus metrics
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+      MANAGEMENT_METRICS_TAGS_APPLICATION: openhim-cce-emmitter-adaptor
     networks:
       - cce-net
   
@@ -287,6 +290,9 @@ services:
       CCE_COLLECTOR_KAFKA_TOPICS_INBOUND: ${CCE_COLLECTOR_KAFKA_TOPICS_INBOUND:-cce.events.inbound}
       CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER: ${CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER:-cce.deadletter}
       CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS: ${CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS:-30}
+      # Actuator / Prometheus metrics
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-collector-service
     networks:
       - cce-net
 
