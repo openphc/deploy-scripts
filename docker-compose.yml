@@ -321,6 +321,7 @@ services:
       DB_MAX_LIFETIME: ${SPRING_DATASOURCE_HIKARI_MAX_LIFETIME:-1800000}
       # Flyway (separate migration history from collector service)
       SPRING_FLYWAY_TABLE: flyway_schema_history_compliance
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "false"
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       KAFKA_CONCURRENCY: ${CCE_COMPLIANCE_KAFKA_CONCURRENCY:-5}
