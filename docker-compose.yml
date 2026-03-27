@@ -296,6 +296,52 @@ services:
     networks:
       - cce-net
 
+  cce-compliance-service:
+    image: ${CCE_COMPLIANCE_SERVICE_IMAGE:-cce-compliance-service:latest}
+    container_name: cce-compliance-service
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - kafka
+    ports:
+      - "8094:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8080
+      # Database
+      DB_HOST: ${POSTGRES_DB_HOST:-cce-postgres}
+      DB_PORT: ${POSTGRES_DB_PORT:-5432}
+      DB_NAME: ${POSTGRES_DB:-ccedb}
+      DB_USERNAME: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POOL_SIZE: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:-30}
+      DB_POOL_MIN_IDLE: ${SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE:-10}
+      DB_CONNECTION_TIMEOUT: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT:-30000}
+      DB_IDLE_TIMEOUT: ${SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT:-600000}
+      DB_MAX_LIFETIME: ${SPRING_DATASOURCE_HIKARI_MAX_LIFETIME:-1800000}
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_CONCURRENCY: ${CCE_COMPLIANCE_KAFKA_CONCURRENCY:-5}
+      KAFKA_PARTITIONS: ${CCE_COMPLIANCE_KAFKA_PARTITIONS:-25}
+      KAFKA_RETRY_MAX_ATTEMPTS: ${CCE_COMPLIANCE_KAFKA_RETRY_MAX_ATTEMPTS:-5}
+      KAFKA_RETRY_BACKOFF_MS: ${CCE_COMPLIANCE_KAFKA_RETRY_BACKOFF_MS:-2000}
+      # Observability
+      TRACING_SAMPLE_RATE: ${CCE_COMPLIANCE_TRACING_SAMPLE_RATE:-0.1}
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-compliance-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    networks:
+      - cce-net
+
 networks:
   cce-net:
     driver: bridge
