@@ -6,6 +6,11 @@ services:
     image: postgres:16
     container_name: cce-postgres
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -22,6 +27,11 @@ services:
     image: confluentinc/cp-kafka:7.6.1
     container_name: kafka
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     environment:
       KAFKA_NODE_ID: ${KAFKA_NODE_ID}
       KAFKA_PROCESS_ROLES: ${KAFKA_PROCESS_ROLES}
@@ -45,6 +55,11 @@ services:
     image: provectuslabs/kafka-ui:v0.7.2
     container_name: kafka-ui
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "8080:8080"
     environment:
@@ -58,6 +73,11 @@ services:
     image: quay.io/keycloak/keycloak:26.5.4
     container_name: keycloak
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "8081:8080"
     environment:
@@ -81,6 +101,11 @@ services:
   mongo:
     image: mongo:7.0
     container_name: cce-mongo
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "27017:27017"
     volumes:
@@ -98,6 +123,11 @@ services:
   openhim-core:
     image: jembi/openhim-core:v8.5.1
     container_name: cce-openhim-core
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "5000:5000"
       - "5001:5001"
@@ -124,6 +154,11 @@ services:
   openhim-console:
     image: jembi/openhim-console:v1.18.2
     container_name: cce-openhim-console
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "9000:80"
     volumes:
@@ -140,6 +175,11 @@ services:
     image: prom/node-exporter:v1.8.1
     container_name: cce-node-exporter
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     command:
       - "--path.rootfs=/host"
       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
@@ -153,6 +193,11 @@ services:
   prometheus:
     image: prom/prometheus:v2.51.2
     container_name: cce-prometheus
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "9090:9090"
     volumes:
@@ -170,6 +215,11 @@ services:
   grafana:
     image: grafana/grafana:10.4.2
     container_name: cce-grafana
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "3000:3000"
     environment:
@@ -191,6 +241,11 @@ services:
     image: ${GATEWAY_SERVICE_IMAGE:-gateway-service:latest}
     container_name: gateway-service
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       - postgres
     ports:
@@ -250,6 +305,11 @@ services:
     image: ${OPENHIM_CCE_EMMITTER_ADAPTOR_IMAGE:-openhim-cce-emmitter-adaptor:latest}
     container_name: openhim-cce-emmitter-adaptor
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     ports:
       - "8092:8082"
     environment:
@@ -273,6 +333,11 @@ services:
     image: ${CCE_COLLECTOR_SERVICE_IMAGE:-cce-collector-service:latest}
     container_name: cce-collector-service
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       - postgres
       - kafka
@@ -304,6 +369,11 @@ services:
     image: ${CCE_COMPLIANCE_SERVICE_IMAGE:-cce-compliance-service:latest}
     container_name: cce-compliance-service
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     depends_on:
       - postgres
       - kafka
