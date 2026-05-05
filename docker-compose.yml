@@ -552,7 +552,7 @@ services:
           cpus: '0.50'
 
   openmrs-cce-receiver-adaptor:
-    image: openmrs-cce-receiver-adaptor:demo
+    image: openmrs-cce-receiver-adaptor:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -590,7 +590,7 @@ services:
 
   # ==================== Insights Service ====================
   cce-insights-service:
-    image: ${CCE_INSIGHTS_SERVICE_IMAGE:-cce-insights-service:demo}
+    image: ${CCE_INSIGHTS_SERVICE_IMAGE:-cce-insights-service:latest}
     container_name: cce-insights-service
     restart: unless-stopped
     logging:
@@ -631,7 +631,7 @@ services:
 
   # ==================== Insights UI ====================
   cce-insights-ui:
-    image: ${CCE_INSIGHTS_UI_IMAGE:-cce-insights-ui:demo}
+    image: ${CCE_INSIGHTS_UI_IMAGE:-cce-insights-ui:latest}
     container_name: cce-insights-ui
     restart: unless-stopped
     logging:
@@ -665,4 +665,9 @@ volumes:
   prometheus-data:
   grafana-data:
   openmrs-data:
+    external: true
+    name: o3_openmrs-data
   db-data:
+    external: true
+    name: o3_db-data
+
