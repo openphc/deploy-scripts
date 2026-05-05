@@ -478,6 +478,8 @@ services:
         limits:
           memory: 64m
           cpus: '0.25'
+    networks:
+      - cce-net
 
   frontend:
     image: openmrs/openmrs-reference-application-3-frontend:${TAG:-qa}
@@ -502,6 +504,8 @@ services:
         limits:
           memory: 128m
           cpus: '0.25'
+    networks:
+      - cce-net
 
   backend:
     image: openmrs/openmrs-reference-application-3-backend:${TAG:-qa}
@@ -527,6 +531,8 @@ services:
         limits:
           memory: 2g
           cpus: '2.00'
+    networks:
+      - cce-net
 
   # MariaDB
   db:
@@ -550,6 +556,8 @@ services:
         limits:
           memory: 512m
           cpus: '0.50'
+    networks:
+      - cce-net
 
   openmrs-cce-receiver-adaptor:
     image: openmrs-cce-receiver-adaptor:latest
