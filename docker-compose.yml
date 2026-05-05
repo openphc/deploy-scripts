@@ -419,6 +419,241 @@ services:
     networks:
       - cce-net
 
+  cce-intelligence-service:
+    image: ${CCE_INTELLIGENCE_SERVICE_IMAGE:-cce-intelligence-service:latest}
+    container_name: cce-intelligence-service
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      - postgres
+      - kafka
+    ports:
+      - "8095:8085"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8085
+      # Database
+      DB_HOST: ${POSTGRES_DB_HOST:-cce-postgres}
+      DB_PORT: ${POSTGRES_DB_PORT:-5432}
+      DB_NAME: ${POSTGRES_DB:-ccedb}
+      DB_USERNAME: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POOL_SIZE: ${CCE_INTELLIGENCE_DB_POOL_SIZE:-10}
+      DB_POOL_MIN_IDLE: ${CCE_INTELLIGENCE_DB_POOL_MIN_IDLE:-5}
+      # Flyway
+      SPRING_FLYWAY_TABLE: flyway_schema_history_intelligence
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "false"
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      # Observability
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-intelligence-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    networks:
+      - cce-net
+
+  gateway:
+    image: openmrs/openmrs-reference-application-3-gateway:${TAG:-qa}
+    restart: "unless-stopped"
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "8096:80"
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+          cpus: '0.25'
+
+  frontend:
+    image: openmrs/openmrs-reference-application-3-frontend:${TAG:-qa}
+    restart: "unless-stopped"
+    environment:
+      SPA_PATH: /openmrs/spa
+      API_URL: /openmrs
+      SPA_CONFIG_URLS: /openmrs/spa/config-core_demo.json
+      SPA_DEFAULT_LOCALE:
+    volumes:
+      # EC2: /opt/openmrs/config-core_demo.json on the host
+      # Local: symlink or copy your local frontend/config-core_demo.json to this path,
+      #        or temporarily change back to ./frontend/config-core_demo.json for dev.
+      - /opt/openmrs/config-core_demo.json:/usr/share/nginx/html/config-core_demo.json:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      timeout: 5s
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+          cpus: '0.25'
+
+  backend:
+    image: openmrs/openmrs-reference-application-3-backend:${TAG:-qa}
+    restart: "unless-stopped"
+    depends_on:
+      - db
+    environment:
+      OMRS_CONFIG_MODULE_WEB_ADMIN: "true"
+      OMRS_CONFIG_AUTO_UPDATE_DATABASE: "true"
+      OMRS_CONFIG_CREATE_TABLES: "true"
+      OMRS_CONFIG_CONNECTION_SERVER: db
+      OMRS_CONFIG_CONNECTION_DATABASE: openmrs
+      OMRS_CONFIG_CONNECTION_USERNAME: ${OMRS_DB_USER:-openmrs}
+      OMRS_CONFIG_CONNECTION_PASSWORD: ${OMRS_DB_PASSWORD:-openmrs}
+      JAVA_TOOL_OPTIONS: "-Xms512m -Xmx1536m -XX:+UseG1GC -XX:MaxMetaspaceSize=256m"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/openmrs"]
+      timeout: 5s
+    volumes:
+      - openmrs-data:/openmrs/data
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: '2.00'
+
+  # MariaDB
+  db:
+    image: mariadb:10.11.7
+    restart: "unless-stopped"
+    command: "mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci"
+    healthcheck:
+      test: "mysql --user=${OMRS_DB_USER:-openmrs} --password=${OMRS_DB_PASSWORD:-openmrs} --execute \"SHOW DATABASES;\""
+      interval: 3s
+      timeout: 1s
+      retries: 5
+    environment:
+      MYSQL_DATABASE: openmrs
+      MYSQL_USER: ${OMRS_DB_USER:-openmrs}
+      MYSQL_PASSWORD: ${OMRS_DB_PASSWORD:-openmrs}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-openmrs}
+    volumes:
+      - db-data:/var/lib/mysql
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: '0.50'
+
+  openmrs-cce-receiver-adaptor:
+    image: openmrs-cce-receiver-adaptor:demo
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openmrs-cce-receiver-adaptor
+    ports:
+      - "8097:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      OPENMRS_REST_BASE_URL: ${OPENMRS_REST_BASE_URL:-http://gateway:80/openmrs/ws/rest/v1}
+      OPENMRS_FHIR_BASE_URL: ${OPENMRS_FHIR_BASE_URL:-http://gateway:80/openmrs/ws/fhir2/R4}
+      OPENMRS_REST_TIMEOUT: "30000"
+      OPENMRS_FHIR_TIMEOUT: "30000"
+      OPENMRS_AUTH_TYPE: basic
+      OPENMRS_USERNAME: ${OPENMRS_USERNAME:-admin}
+      OPENMRS_PASSWORD: ${OPENMRS_PASSWORD:-Admin123}
+      OPENMRS_IDENTIFIER_LOCATION_UUID: ""
+      OPENMRS_IDGEN_SOURCE_UUID: ""
+      OPENMRS_IDENTIFIER_TYPE_NAME: "OpenMRS ID"
+      OPENMRS_CAPABILITY_REFRESH_MS: "21600000"
+      CCE_SECURITY_ENABLED: "false"
+      CCE_SECURITY_TOKEN: ""
+      LOG_LEVEL: INFO
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - cce-net
+
+  # ==================== Insights Service ====================
+  cce-insights-service:
+    image: ${CCE_INSIGHTS_SERVICE_IMAGE:-cce-insights-service:demo}
+    container_name: cce-insights-service
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      - postgres
+    ports:
+      - "9080:8084"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8084
+      DB_HOST: ${POSTGRES_DB_HOST:-cce-postgres}
+      DB_PORT: ${POSTGRES_DB_PORT:-5432}
+      DB_NAME: ${POSTGRES_DB:-ccedb}
+      DB_USERNAME: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POOL_SIZE: ${INSIGHTS_DB_POOL_SIZE:-10}
+      CACHE_TTL_LOOKUPS: ${CACHE_TTL_LOOKUPS:-60}
+      CACHE_TTL_ANALYTICS: ${CACHE_TTL_ANALYTICS:-30}
+      CACHE_TTL_METRICS: ${CACHE_TTL_METRICS:-15}
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-insights-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    networks:
+      - cce-net
+
+  # ==================== Insights UI ====================
+  cce-insights-ui:
+    image: ${CCE_INSIGHTS_UI_IMAGE:-cce-insights-ui:demo}
+    container_name: cce-insights-ui
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - cce-net
+
+
 networks:
   cce-net:
     driver: bridge
@@ -429,3 +664,5 @@ volumes:
   mongo-data:
   prometheus-data:
   grafana-data:
+  openmrs-data:
+  db-data:
