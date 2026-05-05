@@ -560,7 +560,7 @@ services:
       - cce-net
 
   openmrs-cce-receiver-adaptor:
-    image: openmrs-cce-receiver-adaptor:latest
+    image: ${CCE_OPENMRS_RECEIVER_ADAPTOR_IMAGE:-openmrs-cce-receiver-adaptor:latest}
     build:
       context: .
       dockerfile: Dockerfile
