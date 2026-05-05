@@ -508,7 +508,7 @@ services:
       - cce-net
 
   backend:
-    image: openmrs/openmrs-reference-application-3-backend:demo
+    image: openmrs/openmrs-reference-application-3-gateway:3.6.0
     restart: "unless-stopped"
     depends_on:
       - db
