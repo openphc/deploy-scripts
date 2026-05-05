@@ -466,7 +466,7 @@ services:
       - cce-net
 
   gateway:
-    image: openmrs/openmrs-reference-application-3-gateway:${TAG:-qa}
+    image: openmrs/openmrs-reference-application-3-gateway:3.6.0
     restart: "unless-stopped"
     depends_on:
       - frontend
@@ -482,7 +482,7 @@ services:
       - cce-net
 
   frontend:
-    image: openmrs/openmrs-reference-application-3-frontend:${TAG:-qa}
+    image: openmrs/openmrs-reference-application-3-frontend:3.6.0
     restart: "unless-stopped"
     environment:
       SPA_PATH: /openmrs/spa
@@ -508,7 +508,7 @@ services:
       - cce-net
 
   backend:
-    image: openmrs/openmrs-reference-application-3-backend:${TAG:-qa}
+    image: openmrs/openmrs-reference-application-3-backend:3.6.0
     restart: "unless-stopped"
     depends_on:
       - db
