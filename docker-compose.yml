@@ -664,3 +664,5 @@ volumes:
   mongo-data:
   prometheus-data:
   grafana-data:
+  openmrs-data:
+  db-data:
