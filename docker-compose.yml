@@ -465,6 +465,57 @@ services:
     networks:
       - cce-net
 
+  # ==================== Scheduler Service ====================
+  cce-scheduler-service:
+    image: ${CCE_SCHEDULER_SERVICE_IMAGE:-cce-scheduler-service:latest}
+    container_name: cce-scheduler-service
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      - postgres
+      - kafka
+    ports:
+      - "8098:8083"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8083
+      # Database
+      DB_URL: ${POSTGRES_DB_URL_JDBC:-jdbc:postgresql://cce-postgres:5432/ccedb}
+      DB_USERNAME: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Kafka
+      KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      KAFKA_TOPIC_SCHEDULER_TRIGGERS: ${KAFKA_TOPIC_SCHEDULER_TRIGGERS:-cce.scheduler.triggers}
+      # Scheduler config
+      SCHEDULER_SCAN_INTERVAL: ${SCHEDULER_SCAN_INTERVAL:-5000}
+      SCHEDULER_BATCH_SIZE: ${SCHEDULER_BATCH_SIZE:-100}
+      SCHEDULER_LEASE_DURATION: ${SCHEDULER_LEASE_DURATION:-30}
+      SCHEDULER_LEADER_RETRY: ${SCHEDULER_LEADER_RETRY:-5000}
+      SCHEDULER_LOCK_KEY: ${SCHEDULER_LOCK_KEY:-100001}
+      SCHEDULER_TOTAL_PARTITIONS: ${SCHEDULER_TOTAL_PARTITIONS:-1}
+      SCHEDULER_LOCK_ACQUIRE_DELAY: ${SCHEDULER_LOCK_ACQUIRE_DELAY:-50}
+      # Flyway
+      SPRING_FLYWAY_TABLE: flyway_schema_history_scheduler
+      # Observability
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-scheduler-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - cce-net
+
   gateway:
     image: openmrs/openmrs-reference-application-3-gateway:3.6.0
     restart: "unless-stopped"
