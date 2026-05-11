@@ -709,13 +709,9 @@ services:
       # re-emitted on every poll cycle.
       POLLING_FHIR_OVERLAP_SECONDS: "0"
       MANAGEMENT_METRICS_TAGS_APPLICATION: openmrs-cce-emitter-adaptor
-    healthcheck:
-      # Paketo image has neither wget nor curl; use bash /dev/tcp instead.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8085 && echo -e 'GET /actuator/health/liveness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 90s
+    # No container healthcheck: Paketo image ships no shell or probe binary
+    # (no /bin/sh, wget, or curl). Liveness/readiness are exposed via
+    # http://<host>:8099/actuator/health and Prometheus.
     deploy:
       resources:
         limits:
