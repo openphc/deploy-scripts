@@ -689,7 +689,9 @@ services:
       - openmrs-emitter-data:/app/data
     environment:
       SERVER_PORT: "8085"
-      JAVA_TOOL_OPTIONS: "-Xms128m -Xmx512m -XX:+UseG1GC"
+      # Paketo-built image — let the buildpack memory calculator size the JVM
+      # based on the container limit; lower thread budget so it fits in 768M.
+      BPL_JVM_THREAD_COUNT: 50
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       # OpenMRS — reached via the O3 gateway container on cce-net
       OPENMRS_BASE_URL: ${OPENMRS_EMITTER_OPENMRS_BASE_URL:-http://gateway:80/openmrs}
@@ -703,11 +705,12 @@ services:
       CHECKPOINT_FILE_PATH: /app/data/checkpoints.json
       MANAGEMENT_METRICS_TAGS_APPLICATION: openmrs-cce-emitter-adaptor
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8085/actuator/health/liveness"]
+      # Paketo image has neither wget nor curl; use bash /dev/tcp instead.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8085 && echo -e 'GET /actuator/health/liveness HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 90s
     deploy:
       resources:
         limits:
