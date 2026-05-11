@@ -703,6 +703,11 @@ services:
       OPENHIM_AUTH_PASSWORD: ${OPENMRS_EMITTER_OPENHIM_AUTH_PASSWORD:-password}
       # Checkpoint persistence (volume mount)
       CHECKPOINT_FILE_PATH: /app/data/checkpoints.json
+      # Overlap window — set to 0 because CheckpointStore already bumps the
+      # saved timestamp by +1s to compensate for OpenMRS fhir2's `gt` being
+      # inclusive at the second boundary. With overlap > 0 each row gets
+      # re-emitted on every poll cycle.
+      POLLING_FHIR_OVERLAP_SECONDS: "0"
       MANAGEMENT_METRICS_TAGS_APPLICATION: openmrs-cce-emitter-adaptor
     healthcheck:
       # Paketo image has neither wget nor curl; use bash /dev/tcp instead.
