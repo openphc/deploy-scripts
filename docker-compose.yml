@@ -556,6 +556,11 @@ services:
       # ── ADD THESE TWO MOUNTS ──
       - /opt/openmrs/frontend/40-merge-custom-esms.sh:/docker-entrypoint.d/40-merge-custom-esms.sh:ro
       - /opt/openmrs/frontend/custom-esms:/usr/share/nginx/html/custom-esms:ro
+      # Override nginx.conf to disable the 1y JS cache for /custom-esms/.
+      # Custom ESM bundles use stable filenames; without this they get
+      # pinned in the browser for a year after the first load and any
+      # hot rebuild requires users to manually wipe site data.
+      - /opt/openmrs/frontend/nginx.conf:/etc/nginx/nginx.conf:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       timeout: 5s
@@ -652,6 +657,10 @@ services:
       SPICE_FHIR_LOOKUP_RESOURCE: ${SPICE_FHIR_LOOKUP_RESOURCE:-RelatedPerson}
       SPICE_FHIR_IDENTIFIER_SYSTEM: ${SPICE_FHIR_IDENTIFIER_SYSTEM:-http://mdtlabs.com/national-id}
       SPICE_FHIR_TIMEOUT: ${SPICE_FHIR_TIMEOUT:-30000}
+      # Comma-separated OpenMRS user UUIDs that receive the referral-arrived alert
+      # (POST /alert) fired after a successful referral order create. Resolve via:
+      #   GET {OPENMRS_REST_BASE_URL}/user?v=custom:(uuid,display)
+      OPENMRS_NOTIFICATION_RECIPIENTS_STATIC_UUIDS: ${OPENMRS_NOTIFICATION_RECIPIENTS_STATIC_UUIDS:-82f18b44-6814-11e8-923f-e9a88dcb533f}
       CCE_SECURITY_ENABLED: "false"
       CCE_SECURITY_TOKEN: ""
       LOG_LEVEL: INFO
