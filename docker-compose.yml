@@ -692,7 +692,11 @@ services:
       # Paketo-built image — let the buildpack memory calculator size the JVM
       # based on the container limit; lower thread budget so it fits in 768M.
       BPL_JVM_THREAD_COUNT: 50
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # NOTE: must be `production` (not `prod`) until the next image build
+      # picks up the logback-spring.xml fix that adds `prod` as an alias.
+      # Without this the project's logback config attaches no appender to the
+      # root logger and stdout is silenced after the Spring Boot banner.
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-production}
       # OpenMRS — reached via the O3 gateway container on cce-net
       OPENMRS_BASE_URL: ${OPENMRS_EMITTER_OPENMRS_BASE_URL:-http://gateway:80/openmrs}
       OPENMRS_AUTH_USERNAME: ${OPENMRS_EMITTER_OPENMRS_AUTH_USERNAME:-${OPENMRS_USERNAME:-admin}}
