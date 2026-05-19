@@ -28,31 +28,18 @@ secretGenerator:
 generatorOptions:
   disableNameSuffixHash: true
 
-# UAT-specific patches — lower resource limits + imagePullPolicy: Never
+# UAT-specific patches — imagePullPolicy: Never (images pre-loaded into containerd)
 patches:
   - target:
       kind: Deployment
-      name: cce-compliance-service
-    patch: |
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 512Mi
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
-  - target:
-      kind: Deployment
-      name: cce-insights-service
-    patch: |
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 512Mi
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
-  - target:
-      kind: Deployment
       name: cce-collector-service
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+  - target:
+      kind: Deployment
+      name: cce-compliance-service
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
@@ -66,7 +53,7 @@ patches:
         value: Never
   - target:
       kind: Deployment
-      name: cce-scheduler-service
+      name: cce-insights-service
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
@@ -74,6 +61,13 @@ patches:
   - target:
       kind: Deployment
       name: cce-insights-ui
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+  - target:
+      kind: Deployment
+      name: cce-scheduler-service
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
