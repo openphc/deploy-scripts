@@ -15,6 +15,8 @@ configMapGenerator:
       - POSTGRES_PORT=5433
       - KAFKA_BOOTSTRAP_SERVERS=${VM_HOST_IP}:9093
       - KAFKA_UI_CLUSTER_NAME=cce-uat
+      - OPENHIM_CORE_HOST=197.243.24.138
+      - KEYCLOAK_HOST=
 
 secretGenerator:
   - name: cce-secrets
@@ -24,6 +26,12 @@ secretGenerator:
       - CCE_COLLECTOR_AUTH_TOKEN=cce-uat-token-2024
       - GRAFANA_ADMIN_USER=admin
       - GRAFANA_ADMIN_PASSWORD=grafana@uat2024
+      - KEYCLOAK_ADMIN_USER=admin
+      - KEYCLOAK_ADMIN_PASSWORD=keycloak@uat2024
+      - OPENHIM_USERNAME=
+      - OPENHIM_PASSWORD=
+      - KEYCLOAK_CLIENT_ID=
+      - KEYCLOAK_CLIENT_SECRET=
 
 generatorOptions:
   disableNameSuffixHash: true

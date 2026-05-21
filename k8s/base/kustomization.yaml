@@ -11,6 +11,8 @@ resources:
   - services/cce-scheduler-service.yaml
   - services/cce-insights-service.yaml
   - services/cce-insights-ui.yaml
+  # Identity & Access Management
+  - services/keycloak.yaml
   # Monitoring
   - monitoring/prometheus.yaml
   - monitoring/grafana.yaml

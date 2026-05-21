@@ -57,6 +57,13 @@ spec:
                 name: cce-emitter-adaptor
                 port:
                   number: 8082
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8080
           - path: /grafana
             pathType: Prefix
             backend:

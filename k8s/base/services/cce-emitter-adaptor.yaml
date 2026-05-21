@@ -22,6 +22,21 @@ spec:
           ports:
             - containerPort: 8082
           env:
+            - name: OPENHIM_CORE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: OPENHIM_CORE_HOST
+            - name: OPENHIM_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: OPENHIM_USERNAME
+            - name: OPENHIM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: OPENHIM_PASSWORD
             - name: CCE_COLLECTOR_URL
               value: "http://cce-collector-service:8080"
             - name: CCE_COLLECTOR_AUTH_TOKEN
@@ -29,6 +44,23 @@ spec:
                 secretKeyRef:
                   name: cce-secrets
                   key: CCE_COLLECTOR_AUTH_TOKEN
+            - name: EBUZIMA_CLIENT_ID
+              value: "ebuzima"
+            - name: KEYCLOAK_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: KEYCLOAK_HOST
+            - name: KEYCLOAK_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: KEYCLOAK_CLIENT_ID
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: KEYCLOAK_CLIENT_SECRET
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
             - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
