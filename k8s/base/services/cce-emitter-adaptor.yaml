@@ -46,21 +46,6 @@ spec:
                   key: CCE_COLLECTOR_AUTH_TOKEN
             - name: EBUZIMA_CLIENT_ID
               value: "ebuzima"
-            - name: KEYCLOAK_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: cce-config
-                  key: KEYCLOAK_HOST
-            - name: KEYCLOAK_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: cce-secrets
-                  key: KEYCLOAK_CLIENT_ID
-            - name: KEYCLOAK_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: cce-secrets
-                  key: KEYCLOAK_CLIENT_SECRET
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
             - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
@@ -75,14 +60,12 @@ spec:
               memory: 768Mi
               cpu: 500m
           livenessProbe:
-            httpGet:
-              path: /actuator/health
+            tcpSocket:
               port: 8082
             initialDelaySeconds: 60
             periodSeconds: 15
           readinessProbe:
-            httpGet:
-              path: /actuator/health
+            tcpSocket:
               port: 8082
             initialDelaySeconds: 30
             periodSeconds: 10
