@@ -43,7 +43,7 @@ spec:
                 name: cce-collector-service
                 port:
                   number: 8080
-          - path: /api/compliance
+          - path: /v1/compliance
             pathType: Prefix
             backend:
               service:
