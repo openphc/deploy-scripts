@@ -21,10 +21,11 @@ jobs:
         run: echo "Deploying to $TARGET_ENV"
         shell: bash
 
-      - uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Sync files to Dev Host
-        uses: burnett01/rsync-deployments@v8
+        uses: burnett01/rsync-deployments@v8.0.4
         with:
           switches: -av --exclude='.git' --exclude='.github' --exclude='.gitignore'
           path: ./
