@@ -1,0 +1,53 @@
+name: Redeploy Data Pipeline on Host
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Select the environment to deploy"
+        required: true
+        type: choice
+        options:
+          - dev
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_ENV: ${{ github.event.inputs.target_env }}
+
+    steps:
+      - name: Confirm environment input
+        run: echo "Deploying to $TARGET_ENV"
+        shell: bash
+
+      - uses: actions/checkout@v6
+
+      - name: Sync files to Dev Host
+        uses: burnett01/rsync-deployments@v8
+        with:
+          switches: -av --exclude='.git' --exclude='.github' --exclude='.gitignore'
+          path: ./
+          remote_path: ${{ vars.DEV_REMOTE_PROJECT_PATH }}
+          remote_host: ${{ secrets.DEV_HOST }}
+          remote_user: ${{ secrets.DEV_USER }}
+          remote_key: ${{ secrets.DEV_SSH_KEY }}
+
+      - name: Deploy to dev
+        if: env.TARGET_ENV == 'dev'
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.DEV_HOST }}
+          username: ${{ secrets.DEV_USER }}
+          key: ${{ secrets.DEV_SSH_KEY }}
+          script: |
+            set -Eeuo pipefail
+            REMOTE_PROJECT_PATH="${{ vars.DEV_REMOTE_PROJECT_PATH }}"
+            if [ -z "${REMOTE_PROJECT_PATH}" ]; then
+              echo "Set the DEV_REMOTE_PROJECT_PATH repository variable to the project directory on the dev host."
+              exit 1
+            fi
+            cd "${REMOTE_PROJECT_PATH}"
+            cd data-pipeline
+            docker compose down
+            docker compose up -d
