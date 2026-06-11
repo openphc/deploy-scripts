@@ -51,8 +51,28 @@ CREATE DICTIONARY IF NOT EXISTS dict_action_definitions (
 )
 PRIMARY KEY id
 SOURCE(CLICKHOUSE(
-    QUERY 'SELECT id, url AS canonical_url, name, kind AS action_type, status FROM cce_analytics.action_definitions FINAL'
+    QUERY 'SELECT id, canonical_url, name, action_type, status FROM cce_analytics.action_definitions FINAL'
     DB 'cce_analytics'
 ))
 LIFETIME(MIN 60 MAX 300)
+LAYOUT(HASHED());
+
+-- Delivery adaptor lookup (destination_adaptor_mapping_id → adaptor name/endpoint/destination)
+-- Resolves the adaptor metadata that is NOT denormalized onto intelligence_deliveries, by joining
+-- destination_adaptor_mapping → receiver_adaptor. Use in delivery queries, e.g.:
+--   dictGet('dict_delivery_adaptor', 'adaptor_name', destination_adaptor_mapping_id)
+-- Both source tables are ReplacingMergeTree, so the QUERY reads them with FINAL to avoid dupes.
+CREATE DICTIONARY IF NOT EXISTS dict_delivery_adaptor (
+    destination_adaptor_mapping_id UUID,
+    destination    String,
+    adaptor_name   String,
+    endpoint_url   String,
+    adaptor_status String
+)
+PRIMARY KEY destination_adaptor_mapping_id
+SOURCE(CLICKHOUSE(
+    QUERY 'SELECT m.id AS destination_adaptor_mapping_id, m.destination AS destination, r.name AS adaptor_name, r.endpoint_url AS endpoint_url, r.status AS adaptor_status FROM cce_analytics.destination_adaptor_mapping AS m FINAL INNER JOIN cce_analytics.receiver_adaptor AS r FINAL ON m.receiver_adaptor_id = r.id'
+    DB 'cce_analytics'
+))
+LIFETIME(MIN 300 MAX 600)
 LAYOUT(HASHED());

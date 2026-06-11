@@ -17,7 +17,7 @@
     "publication.autocreate.mode": "disabled",
 
     "snapshot.mode": "initial",
-    "table.include.list": "public.inbound_event_log,public.protocol_definition,public.protocol_instance,public.step_instance,public.deviation,public.intelligence_event_log,public.intelligence_delivery,public.action_definition,public.compliance_event_log",
+    "table.include.list": "public.inbound_event_log,public.protocol_definition,public.protocol_instance,public.step_instance,public.deviation,public.intelligence_event_log,public.intelligence_delivery,public.action_definition,public.compliance_event_log,public.receiver_adaptor,public.destination_adaptor_mapping",
     "column.exclude.list": "public.intelligence_event_log.event_payload,public.intelligence_delivery.fhir_payload",
 
     "key.converter": "org.apache.kafka.connect.json.JsonConverter",
@@ -31,7 +31,7 @@
 
     "post.processors": "reselector",
     "reselector.type": "io.debezium.processors.reselect.ReselectColumnsPostProcessor",
-    "reselector.reselect.columns.include.list": "public.inbound_event_log:raw_payload,public.protocol_definition:definition,public.action_definition:definition",
+    "reselector.reselect.columns.include.list": "public.inbound_event_log:raw_payload,public.protocol_definition:definition,public.action_definition:definition,public.intelligence_delivery:delivery_result,public.intelligence_event_log:evaluation_context,public.receiver_adaptor:definition,public.receiver_adaptor:config",
     "reselector.reselect.unavailable.values": "true",
     "reselector.reselect.null.values": "false",
 

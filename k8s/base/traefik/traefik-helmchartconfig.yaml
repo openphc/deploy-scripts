@@ -1,0 +1,64 @@
+# Traefik ACME / Let's Encrypt configuration — Caddy-style automatic HTTPS.
+#
+# K3s ships Traefik as a bundled HelmChart in kube-system. This HelmChartConfig overrides that
+# chart's values so Traefik will automatically obtain AND renew TLS certificates from Let's Encrypt,
+# and redirect all HTTP traffic to HTTPS — the same "just works" behaviour as Caddy.
+#
+# IMPORTANT:
+#   * This is CLUSTER-GLOBAL (one Traefik per k3s cluster, shared by cce-prod and cce-uat).
+#     It must live in kube-system, so it is applied OUTSIDE kustomize by deploy-*.sh
+#     (kustomize's `namespace:` transformer would otherwise rewrite it to the app namespace).
+#   * ${ACME_EMAIL} is substituted by deploy-*.sh via envsubst. Use the SAME email in
+#     .env.prod and .env (uat) since both share this one Traefik.
+#   * Applying this triggers a brief Traefik redeploy (helm upgrade) — a few seconds of LB downtime.
+#   * Requires the host's public DNS A record -> this VM and ports 80 + 443 reachable from the
+#     internet, so Let's Encrypt can validate the domain (TLS-ALPN-01 over 443).
+#
+# Two resolvers are defined:
+#   le        -> Let's Encrypt PRODUCTION  (trusted certs; strict rate limits)
+#   lestaging -> Let's Encrypt STAGING     (untrusted test certs; generous limits)
+# The ingress selects one via the `...router.tls.certresolver` annotation. Use `lestaging`
+# while validating DNS/firewall, then switch to `le` for real certs.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    # Persist acme.json across restarts so issued certs are reused (avoids LE rate limits).
+    persistence:
+      enabled: true
+      name: data
+      accessMode: ReadWriteOnce
+      size: 128Mi
+      storageClass: local-path
+      path: /data
+    # The Traefik process runs non-root; fix ownership of the PVC so it can write acme.json.
+    deployment:
+      initContainers:
+        - name: volume-permissions
+          image: busybox:1.36
+          command: ["sh", "-c", "touch /data/acme.json /data/acme-staging.json && chmod -v 600 /data/acme.json /data/acme-staging.json"]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /data
+    # Stable CLI args (work across Traefik v2/v3 regardless of bundled chart version).
+    additionalArguments:
+      # Global HTTP(:web) -> HTTPS(:websecure) redirect, like Caddy.
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+      # Production Let's Encrypt resolver "le" (TLS-ALPN-01 over :443, unaffected by the redirect).
+      - "--certificatesresolvers.le.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.le.acme.storage=/data/acme.json"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.caserver=https://acme-v02.api.letsencrypt.org/directory"
+      # Staging resolver "lestaging" — switch the ingress annotation to this for safe testing.
+      - "--certificatesresolvers.lestaging.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.lestaging.acme.storage=/data/acme-staging.json"
+      - "--certificatesresolvers.lestaging.acme.tlschallenge=true"
+      - "--certificatesresolvers.lestaging.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory"

@@ -38,6 +38,8 @@ EXPECTED_TABLES=(
     "action_definitions"
     "protocol_definitions"
     "compliance_event_logs"
+    "receiver_adaptor"
+    "destination_adaptor_mapping"
 )
 
 echo ""

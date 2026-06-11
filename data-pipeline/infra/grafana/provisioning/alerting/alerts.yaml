@@ -1,0 +1,84 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: CCE Pipeline Alerts
+    folder: CCE Data Pipeline
+    interval: 60s
+    rules:
+      # CDC liveness via the PostgreSQL replication slot: when Debezium stops consuming the
+      # slot, `active` flips to false. This is the source-side proxy for "mirror down".
+      # (Kafka Connect exposes Debezium metrics via JMX; if you wire a JMX/Prometheus exporter you
+      #  can additionally alert on the Debezium connector/task state.)
+      - uid: cdc-slot-inactive
+        title: "CDC Replication Slot Inactive"
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: postgresql
+            model:
+              rawSql: "SELECT count() FROM pg_replication_slots WHERE slot_name = 'cce_analytics_slot' AND active = false"
+        for: 2m
+        annotations:
+          summary: "Debezium is not consuming the cce_analytics_slot replication slot (CDC stalled)"
+        labels:
+          severity: critical
+
+      - uid: e2e-latency-high
+        title: "End-to-End Latency High"
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: clickhouse
+            model:
+              rawSql: "SELECT quantile(0.95)(dateDiff('second', event_time, received_at)) FROM cce_analytics.inbound_event_logs WHERE received_at >= now() - INTERVAL 5 MINUTE AND event_time IS NOT NULL"
+        for: 5m
+        annotations:
+          summary: "P95 end-to-end latency exceeds 60 seconds"
+        labels:
+          severity: warning
+
+      - uid: clickhouse-disk-full
+        title: "ClickHouse Disk > 85%"
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: "ClickHouseAsyncMetrics_DiskUsed_default / ClickHouseAsyncMetrics_DiskTotal_default * 100 > 85"
+              intervalMs: 60000
+        for: 5m
+        annotations:
+          summary: "ClickHouse disk usage exceeds 85%"
+        labels:
+          severity: critical
+
+      - uid: cdc-replication-lag
+        title: "CDC Replication Lag High"
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: postgresql
+            model:
+              rawSql: "SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn) FROM pg_replication_slots WHERE slot_name = 'cce_analytics_slot'"
+        for: 10m
+        annotations:
+          summary: "CDC replication slot lag exceeds 100MB"
+        labels:
+          severity: warning
+
+      # ClickHouse-side freshness proxy for a stalled mirror: at ~7 events/sec sustained,
+      # zero inbound rows for 10 minutes means CDC has stopped delivering.
+      - uid: clickhouse-insert-stall
+        title: "ClickHouse Insert Stall"
+        condition: A
+        data:
+          - refId: A
+            datasourceUid: clickhouse
+            model:
+              rawSql: "SELECT count() = 0 FROM cce_analytics.inbound_event_logs WHERE received_at >= now() - INTERVAL 10 MINUTE"
+        for: 5m
+        annotations:
+          summary: "No inbound events landed in ClickHouse for 10 minutes (CDC may be stalled)"
+        labels:
+          severity: warning
