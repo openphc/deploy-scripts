@@ -43,8 +43,7 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    networks: 
-      - cce-net
+    networks: [cce-net]
     deploy:
       resources:
         limits:
@@ -78,8 +77,15 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    networks: 
-      - cce-net
+    networks: [cce-net]
+
+networks:
+  # Join the existing network created by the root docker-compose.yml (which now pins
+  # `name: cce-net`). `external: true` means this stack attaches to it rather than creating
+  # its own — so clickhouse/kafka-connect sit on the same network as postgres/kafka.
+  cce-net:
+    external: true
+    name: cce-net
 
 volumes:
   clickhouse-data:
