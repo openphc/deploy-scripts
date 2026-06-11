@@ -593,7 +593,10 @@ services:
       JAVA_TOOL_OPTIONS: "-Xms512m -Xmx1536m -XX:+UseG1GC -XX:MaxMetaspaceSize=256m"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/openmrs"]
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
     volumes:
       - openmrs-data:/openmrs/data
     deploy:
