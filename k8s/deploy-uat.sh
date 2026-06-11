@@ -16,13 +16,19 @@ fi
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 
-export VM_HOST_IP VM_HOST_CIDR INGRESS_HOST
+: "${ACME_EMAIL:?Set ACME_EMAIL in .env (used for Traefik ACME/TLS certs)}"
+export VM_HOST_IP VM_HOST_CIDR INGRESS_HOST ACME_EMAIL
 
 echo "Deploying CCE UAT with VM_HOST_IP=${VM_HOST_IP}"
 
 # Generate final manifests with variable substitution
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
+
+# Configure cluster-global Traefik ACME / TLS (kube-system) — applied outside kustomize so its
+# namespace is preserved. Triggers a brief Traefik redeploy.
+envsubst < "${SCRIPT_DIR}/base/traefik/traefik-helmchartconfig.yaml" > "${TMPDIR}/traefik-helmchartconfig.yaml"
+kubectl apply -f "${TMPDIR}/traefik-helmchartconfig.yaml"
 
 # Substitute variables in kustomization overlay
 envsubst < "${SCRIPT_DIR}/overlays/uat/kustomization.yaml" > "${TMPDIR}/kustomization.yaml"

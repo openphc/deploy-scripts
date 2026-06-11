@@ -45,6 +45,11 @@ patches:
       - op: add
         path: /spec/rules/0/host
         value: ${INGRESS_HOST}
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts:
+              - ${INGRESS_HOST}
   - target:
       kind: Deployment
       name: cce-collector-service

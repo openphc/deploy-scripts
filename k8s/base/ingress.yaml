@@ -3,7 +3,12 @@ kind: Ingress
 metadata:
   name: cce-ingress
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    # Serve on HTTPS (:websecure). HTTP(:web) is redirected to HTTPS globally by Traefik
+    # (see base/traefik/traefik-helmchartconfig.yaml).
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # ACME resolver that issues + auto-renews the cert. Use "lestaging" for testing, "le" for real.
+    traefik.ingress.kubernetes.io/router.tls.certresolver: le
 spec:
   rules:
     - http:
