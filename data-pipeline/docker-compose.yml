@@ -88,4 +88,4 @@ networks:
     # The root docker-compose.yml names its network <project>_cce-net. With the deploy-scripts
     # project that resolves to deploy-scripts_cce-net — point at it explicitly so this stack
     # joins the SAME network as postgres/kafka rather than creating a new isolated one.
-    name: deploy-scripts_cce-net
+    name: cce-net
