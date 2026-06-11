@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Debezium runs on Kafka Connect, which can expose Prometheus metrics via the JMX exporter.
+  # Enable the exporter on the kafka-connect worker, then add a job pointing at it, e.g.:
+  #   - job_name: kafka-connect
+  #     static_configs:
+  #       - targets: ['kafka-connect:9404']
+  # Left out by default so Prometheus doesn't error against a non-existent target.
+
+  - job_name: clickhouse
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - clickhouse:9363

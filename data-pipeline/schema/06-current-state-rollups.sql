@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS rollup_step_current
 (
     protocol_instance_id UUID,                                         -- stable dim (sort key)
     id                   UUID,                                         -- step id (sort key)
-    action_id            AggregateFunction(argMax, UUID, UInt64),
+    action_id            AggregateFunction(argMax, String, UInt64),    -- PlanDefinition action.id (VARCHAR in source)
     state                AggregateFunction(argMax, String, UInt64),
     completion_status    AggregateFunction(argMax, String, UInt64),
     is_deleted           AggregateFunction(argMax, UInt8, UInt64)
@@ -89,15 +89,16 @@ GROUP BY protocol_instance_id, id;
 -- intelligence_deliveries → current delivery outcome per delivery
 -- (adaptor success rate, latency, retry analysis, status breakdown)
 -- ============================================================
+-- NOTE: adaptor_name / endpoint are NOT on intelligence_deliveries — resolve them from
+-- `destination` (carried here) or via dict_delivery_adaptor. Latency is not a stored column;
+-- derive it on the base table as dateDiff('ms', created_at, delivered_at) when needed.
 CREATE TABLE IF NOT EXISTS rollup_delivery_current
 (
     id            UUID,                                                -- delivery id (sort key)
-    adaptor_name  AggregateFunction(argMax, String, UInt64),
     destination   AggregateFunction(argMax, String, UInt64),
     action_type   AggregateFunction(argMax, String, UInt64),
     subject       AggregateFunction(argMax, String, UInt64),
     status        AggregateFunction(argMax, String, UInt64),
-    latency_ms    AggregateFunction(argMax, Int64, UInt64),
     attempt_count AggregateFunction(argMax, Int32, UInt64),
     created_at    AggregateFunction(argMax, DateTime64(6), UInt64),
     is_deleted    AggregateFunction(argMax, UInt8, UInt64)
@@ -108,12 +109,10 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS rollup_delivery_current_mv
 TO rollup_delivery_current
 AS SELECT
     id,
-    argMaxState(adaptor_name,       _version) AS adaptor_name,
     argMaxState(destination,        _version) AS destination,
     argMaxState(action_type,        _version) AS action_type,
     argMaxState(subject,            _version) AS subject,
     argMaxState(status,             _version) AS status,
-    argMaxState(latency_ms,         _version) AS latency_ms,
     argMaxState(attempt_count,      _version) AS attempt_count,
     argMaxState(created_at,         _version) AS created_at,
     argMaxState(_is_deleted, _version) AS is_deleted
@@ -151,21 +150,27 @@ GROUP BY id;
 --   ) WHERE is_deleted = 0
 --   GROUP BY protocol_instance_id;
 --
--- Adaptor success rate + latency:
---   SELECT adaptor_name, destination,
+-- Delivery success rate by destination (resolve adaptor_name via dict_delivery_adaptor if needed;
+-- latency is derived on the base table, not stored in this rollup):
+--   SELECT destination,
 --          count()                              AS total,
 --          countIf(status = 'DELIVERED')        AS delivered,
 --          round(countIf(status='DELIVERED')/nullIf(count(),0)*100, 1) AS success_rate_pct,
---          round(avg(latency_ms), 0)            AS avg_latency_ms,
---          round(quantile(0.95)(latency_ms), 0) AS p95_latency_ms
+--          round(avg(attempt_count), 2)         AS avg_attempts
 --   FROM (
 --       SELECT id,
---              argMaxMerge(adaptor_name) AS adaptor_name,
---              argMaxMerge(destination)  AS destination,
---              argMaxMerge(status)       AS status,
---              argMaxMerge(latency_ms)   AS latency_ms,
---              argMaxMerge(is_deleted)   AS is_deleted
+--              argMaxMerge(destination)   AS destination,
+--              argMaxMerge(status)        AS status,
+--              argMaxMerge(attempt_count) AS attempt_count,
+--              argMaxMerge(is_deleted)    AS is_deleted
 --       FROM rollup_delivery_current
 --       GROUP BY id
 --   ) WHERE is_deleted = 0
---   GROUP BY adaptor_name, destination;
+--   GROUP BY destination;
+--
+-- Latency (from the base table, since it is not a stored column):
+--   SELECT destination,
+--          round(avg(dateDiff('ms', created_at, delivered_at)), 0) AS avg_latency_ms
+--   FROM intelligence_deliveries FINAL
+--   WHERE _is_deleted = 0 AND delivered_at IS NOT NULL
+--   GROUP BY destination;
