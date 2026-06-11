@@ -43,7 +43,8 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    networks: [cce-net]
+    networks: 
+      - cce-net
     deploy:
       resources:
         limits:
@@ -77,15 +78,8 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    networks: [cce-net]
+    networks: 
+      - cce-net
 
 volumes:
   clickhouse-data:
-
-networks:
-  cce-net:
-    external: true
-    # The root docker-compose.yml names its network <project>_cce-net. With the deploy-scripts
-    # project that resolves to deploy-scripts_cce-net — point at it explicitly so this stack
-    # joins the SAME network as postgres/kafka rather than creating a new isolated one.
-    name: deploy-scripts_cce-net
