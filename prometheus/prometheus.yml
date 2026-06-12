@@ -28,3 +28,34 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["cce-compliance-service:8080"]
+
+  - job_name: "cce-scheduler-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["cce-scheduler-service:8083"]
+
+  - job_name: "cce-intelligence-service"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["cce-intelligence-service:8085"]
+
+  # Data pipeline — ClickHouse server metrics (analytics store)
+  - job_name: "clickhouse"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["clickhouse:9363"]
+
+  # PostgreSQL via postgres_exporter
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # Kafka via kafka_exporter
+  - job_name: "kafka"
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+
+  # Caddy reverse proxy (host-networked) — reached via the host gateway
+  - job_name: "caddy"
+    static_configs:
+      - targets: ["host.docker.internal:9180"]

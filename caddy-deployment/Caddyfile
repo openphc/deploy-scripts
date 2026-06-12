@@ -1,3 +1,16 @@
+# Global options: enable per-server Prometheus metrics collection.
+{
+    servers {
+        metrics
+    }
+}
+
+# Prometheus metrics endpoint — scraped by cce-prometheus (host.docker.internal:9180).
+# caddy runs with network_mode: host, so this binds on the host's :9180.
+:9180 {
+    metrics
+}
+
 keycloak.cce.mdtlabs.org {
     reverse_proxy localhost:8081 {
         header_up Host {host}

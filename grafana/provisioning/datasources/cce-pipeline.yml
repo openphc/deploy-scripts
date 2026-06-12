@@ -1,0 +1,30 @@
+apiVersion: 1
+
+# Data-pipeline datasources for the "CCE Pipeline Health" dashboard.
+# (Prometheus is already provisioned in prometheus.yml; the dashboard binds datasources by NAME.)
+datasources:
+  - name: ClickHouse
+    uid: clickhouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    jsonData:
+      host: clickhouse
+      port: 9000
+      defaultDatabase: cce_analytics
+      username: cce_pipeline
+    secureJsonData:
+      password: ${CLICKHOUSE_PASSWORD}
+    editable: true
+
+  - name: PostgreSQL
+    uid: postgresql
+    type: postgres
+    access: proxy
+    url: cce-postgres:5432
+    database: ccedb
+    user: cce_cdc_user
+    jsonData:
+      sslmode: disable
+    secureJsonData:
+      password: ${CDC_PASSWORD}
+    editable: true

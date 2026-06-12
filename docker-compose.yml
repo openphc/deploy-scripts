@@ -189,6 +189,42 @@ services:
     networks:
       - cce-net
 
+  # ==================== Postgres Exporter ====================
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: cce-postgres-exporter
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    environment:
+      DATA_SOURCE_URI: "cce-postgres:5432/ccedb?sslmode=disable"
+      DATA_SOURCE_USER: ${POSTGRES_USER:-admin}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD:-cceadmin@123}
+    depends_on:
+      - postgres
+    networks:
+      - cce-net
+
+  # ==================== Kafka Exporter ====================
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.7.0
+    container_name: cce-kafka-exporter
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    command:
+      - "--kafka.server=kafka:9092"
+    depends_on:
+      - kafka
+    networks:
+      - cce-net
+
   # ==================== Prometheus ====================
   prometheus:
     image: prom/prometheus:v2.51.2
@@ -207,6 +243,9 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=15d"
+    # Reach the host-networked caddy metrics endpoint (host.docker.internal:9180)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - cce-net
@@ -225,10 +264,15 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      # Data-pipeline: ClickHouse datasource plugin + credentials for the provisioned datasources
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-cce_analytics_dev}
+      CDC_PASSWORD: ${CDC_PASSWORD:-cce_cdc_dev2026}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus

@@ -1,0 +1,151 @@
+apiVersion: 1
+
+# CCE Data Pipeline alert rules (Grafana 10.4 unified-alerting provisioning).
+# Each rule has a query node (A) with an explicit relativeTimeRange plus a threshold expression
+# node (C) that the condition points at — both are REQUIRED by Grafana provisioning (the upstream
+# infra/grafana/.../alerts.yaml omitted them, which is a fatal provisioning error).
+groups:
+  - orgId: 1
+    name: CCE Pipeline Alerts
+    folder: CCE Data Pipeline
+    interval: 1m
+    rules:
+      # ---- CDC liveness: replication slot inactive ----------------------------------------
+      - uid: cce-cdc-slot-inactive
+        title: CDC Replication Slot Inactive
+        condition: C
+        for: 2m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Debezium is not consuming the cce_analytics_slot replication slot (CDC stalled)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: postgresql
+            model:
+              refId: A
+              datasource: { type: postgres, uid: postgresql }
+              rawSql: "SELECT count(*)::float8 AS value FROM pg_replication_slots WHERE slot_name = 'cce_analytics_slot' AND active = false"
+              format: table
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [0] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last, params: [] }
+
+      # ---- CDC replication slot lag > 100MB ------------------------------------------------
+      - uid: cce-cdc-replication-lag
+        title: CDC Replication Lag High
+        condition: C
+        for: 10m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "CDC replication slot lag exceeds 100MB"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: postgresql
+            model:
+              refId: A
+              datasource: { type: postgres, uid: postgresql }
+              rawSql: "SELECT coalesce(pg_wal_lsn_diff(pg_current_wal_lsn(), confirmed_flush_lsn), 0)::float8 AS value FROM pg_replication_slots WHERE slot_name = 'cce_analytics_slot'"
+              format: table
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [104857600] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last, params: [] }
+
+      # ---- ClickHouse disk usage > 85% (Prometheus) ----------------------------------------
+      - uid: cce-clickhouse-disk-full
+        title: ClickHouse Disk > 85%
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "ClickHouse disk usage exceeds 85%"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              datasource: { type: prometheus, uid: prometheus }
+              expr: "ClickHouseAsyncMetrics_DiskUsed_default / ClickHouseAsyncMetrics_DiskTotal_default * 100"
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: gt, params: [85] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last, params: [] }
+
+      # ---- ClickHouse insert stall: no inbound rows in 10 min ------------------------------
+      - uid: cce-clickhouse-insert-stall
+        title: ClickHouse Insert Stall
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "No inbound events landed in ClickHouse for 10 minutes (CDC may be stalled)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: clickhouse
+            model:
+              refId: A
+              datasource: { type: grafana-clickhouse-datasource, uid: clickhouse }
+              queryType: sql
+              rawSql: "SELECT count() AS value FROM cce_analytics.inbound_event_logs WHERE received_at >= now() - INTERVAL 10 MINUTE"
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: A
+              conditions:
+                - type: query
+                  evaluator: { type: lt, params: [1] }
+                  operator: { type: and }
+                  query: { params: [C] }
+                  reducer: { type: last, params: [] }
