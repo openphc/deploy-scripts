@@ -1,27 +1,29 @@
 <clickhouse>
+    <!-- The cce_pipeline USER is created by the container entrypoint from CLICKHOUSE_USER /
+         CLICKHOUSE_PASSWORD (users.d/default-user.xml). We only attach a grants block to it here.
+
+         IMPORTANT (ClickHouse 26.3):
+           * Do NOT redefine the user's password/profile here — merging with the entrypoint's
+             definition produces a "more than one field of password" error.
+           * A <grants> block is EXCLUSIVE: it defines the user's COMPLETE grant set. So we must
+             grant ALL *plus* the cce_kafka named collection, otherwise the user loses its implicit
+             full access (and could not create the schema or read the Kafka named collection). -->
     <profiles>
-        <!-- Analytics profile: FINAL applied automatically so reads from cce-insights-service
-             (and ad-hoc queries) get correct deduplication without explicit FINAL clauses. -->
+        <!-- Optional read-only profile (auto-FINAL) cce-insights-service can opt into for
+             consistent reads of the ReplacingMergeTree tables. -->
         <analytics>
             <final>1</final>
-            <max_memory_usage>10000000000</max_memory_usage>
             <max_execution_time>60</max_execution_time>
             <readonly>1</readonly>
         </analytics>
     </profiles>
 
     <users>
-        <!-- cce-insights-service / analysts: read-only with automatic FINAL.
-             (Kafka-engine consumer MVs run under the ClickHouse server context, so no separate
-             CDC-writer user is needed — Debezium writes to Kafka, not to ClickHouse.) -->
         <cce_pipeline>
-            <password_sha256_hex/>
-            <networks>
-                <ip>::/0</ip>
-            </networks>
-            <profile>analytics</profile>
-            <quota>default</quota>
-            <access_management>0</access_management>
+            <grants>
+                <query>GRANT ALL ON *.*</query>
+                <query>GRANT NAMED COLLECTION ON cce_kafka</query>
+            </grants>
         </cce_pipeline>
     </users>
 </clickhouse>

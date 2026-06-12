@@ -1,20 +1,30 @@
-# CCE Data Pipeline — ClickHouse + Kafka Connect (Debezium CDC)
-# Vendored from openphc/cce-data-pipeline (demo branch) for the MedLabs deploy-scripts stack.
+# CCE Data Pipeline — Docker Compose
+# Vendored from Jayaprakash8887/cce-data-pipeline (demo) for the MedLabs deploy-scripts stack.
+# Usage (run from this directory): docker compose up -d
 #
-# Attaches to the EXISTING `cce-net` network created by the root docker-compose.yml and reads
-# from the existing `postgres` (ccedb) and `kafka` services. Start the platform stack first.
+# This repo owns the analytics path only: ClickHouse + a Kafka Connect worker running the
+# Debezium PostgreSQL source connector. It plugs into the EXISTING platform stack
+# (the root docker-compose.yml) over the shared external network `cce-net`:
+#   - Kafka broker (confluentinc/cp-kafka, KRaft) — already deployed
+#   - PostgreSQL `ccedb` — already deployed (the CDC source)
+#   - Prometheus + Grafana — already deployed (reuse them; provisioning artifacts live in infra/)
+#   - cce-insights-service / cce-insights-ui — already deployed (query ClickHouse)
 #
-# Usage (run from this directory):
-#   cp .env.example .env            # then edit CDC_PASSWORD / CLICKHOUSE_PASSWORD
-#   set -a; source .env; set +a
-#   docker compose up -d
-#   # then: apply schema/*.sql, cdc/01-configure-replication.sql, ./scripts/register-connectors.sh
-#   # see README / scripts/ for the full init + validation sequence.
+# Flow:  ccedb → Debezium (Kafka Connect) → Kafka topics (cce.public.*) →
+#        ClickHouse Kafka-engine tables → parsing MVs → ReplacingMergeTree(_version,_is_deleted)
 #
-# NOTE: ClickHouse native port is published on host 9009 (not 9000) to avoid colliding with
-#       openhim-console (host 9000) in the root stack. In-network clients still use clickhouse:9000.
+# ClickHouse ingests from Kafka directly (Kafka table engine), so there is NO ClickHouse sink
+# connector and NO S3/MinIO staging.
+#
+# Port map (host):  8123 ClickHouse HTTP   9009 ClickHouse native   9363 ClickHouse metrics
+#                   8083 Kafka Connect REST
+# NOTE: ClickHouse native port is published on host 9009 (not upstream's 9000) to avoid colliding
+#       with openhim-console (host 9000) in the root stack. In-network clients still use clickhouse:9000.
 
 services:
+  # ============================================================
+  # Analytics Store
+  # ============================================================
   clickhouse:
     image: clickhouse/clickhouse-server:26.3-alpine
     container_name: cce-clickhouse
@@ -27,14 +37,18 @@ services:
       CLICKHOUSE_DB: cce_analytics
       CLICKHOUSE_USER: cce_pipeline
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-cce_analytics_dev}
+      # Single source for the Kafka broker — same var the Debezium worker uses. Consumed by the
+      # cce_kafka named collection (infra/clickhouse/named-collections.xml) via from_env.
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./infra/clickhouse/config.xml:/etc/clickhouse-server/config.d/custom.xml:ro
       - ./infra/clickhouse/named-collections.xml:/etc/clickhouse-server/config.d/named-collections.xml:ro
       - ./infra/clickhouse/users.xml:/etc/clickhouse-server/users.d/cce_pipeline.xml:ro
+      # NOTE: schema is applied manually (see deployment-guide) rather than via
+      # docker-entrypoint-initdb.d, because schema/02 Kafka-engine tables need the broker reachable.
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -49,12 +63,15 @@ services:
         limits:
           memory: 4g
 
+  # ============================================================
+  # CDC — Kafka Connect worker running the Debezium PostgreSQL source connector
+  # ============================================================
   kafka-connect:
     image: quay.io/debezium/connect:3.0.0.Final
     container_name: cce-kafka-connect
     restart: unless-stopped
     ports:
-      - "8083:8083"
+      - "8083:8083"   # Connect REST API (connector registration)
     environment:
       BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       GROUP_ID: cce-connect
@@ -82,10 +99,10 @@ services:
 volumes:
   clickhouse-data:
 
+# The platform's shared network (created by the root docker-compose.yml, which pins `name: cce-net`).
+# Lets ClickHouse + Kafka Connect reach the existing kafka broker and ccedb, and lets
+# cce-insights-service reach ClickHouse.
 networks:
-  # Join the existing network created by the root docker-compose.yml (which pins `name: cce-net`).
-  # `external: true` means this stack attaches to it rather than creating its own — so
-  # clickhouse/kafka-connect sit on the same network as postgres/kafka.
   cce-net:
     external: true
     name: cce-net

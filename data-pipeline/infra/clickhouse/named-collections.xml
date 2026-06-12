@@ -1,12 +1,11 @@
 <clickhouse>
     <!-- Single source of truth for the Kafka connection used by the schema/02 Kafka-engine tables.
          The broker is read from the KAFKA_BOOTSTRAP_SERVERS environment variable (set on the
-         ClickHouse container in docker-compose.yml, which in turn comes from .env) — so the broker
-         address is configured in exactly ONE place and shared with the Debezium worker.
+         ClickHouse container in docker-compose.yml, which in turn comes from .env).
 
-         The Kafka tables reference this as `ENGINE = Kafka(cce_kafka)` and only specify the
-         per-table topic / consumer group / format. Add SASL/TLS settings here too if the platform
-         Kafka requires them, e.g.:
+         NOTE: ClickHouse 26.3 rejects a from_env element that ALSO carries inline text unless it has
+         replace="replace". We use the self-closing form (no inline default) to avoid that error.
+         Add SASL/TLS settings here too if the platform Kafka requires them, e.g.:
              <security_protocol from_env="KAFKA_SECURITY_PROTOCOL"/>
              <sasl_mechanism from_env="KAFKA_SASL_MECHANISM"/>
              <sasl_username from_env="KAFKA_SASL_USERNAME"/>
@@ -14,7 +13,7 @@
     -->
     <named_collections>
         <cce_kafka>
-            <kafka_broker_list from_env="KAFKA_BOOTSTRAP_SERVERS">kafka:9092</kafka_broker_list>
+            <kafka_broker_list from_env="KAFKA_BOOTSTRAP_SERVERS"/>
         </cce_kafka>
     </named_collections>
 </clickhouse>
