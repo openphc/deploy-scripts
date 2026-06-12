@@ -1,4 +1,14 @@
 <clickhouse>
+    <!-- ClickHouse 26.3 rejects user/profile-level settings (max_memory_usage,
+         max_bytes_before_external_group_by, async_insert) at the top level. Disable that strict
+         check so the server starts; relocate them into a <profiles> entry in users.xml if you want
+         them enforced. -->
+    <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+
+    <!-- Listen on all IPv4 so the in-container healthcheck (127.0.0.1:8123) and docker-proxy both
+         reach it. The image default listens on ::1 only, which fails on IPv6-disabled hosts. -->
+    <listen_host>0.0.0.0</listen_host>
+
     <max_concurrent_queries>100</max_concurrent_queries>
     <max_memory_usage>28000000000</max_memory_usage>
     <max_bytes_before_external_group_by>10000000000</max_bytes_before_external_group_by>

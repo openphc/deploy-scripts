@@ -237,7 +237,7 @@ AS SELECT
     countState() AS deviation_count,
     uniqState(d.protocol_instance_id) AS unique_protocols
 FROM deviations d
-LEFT JOIN protocol_instances FINAL pi ON d.protocol_instance_id = pi.id
+LEFT JOIN protocol_instances AS pi FINAL ON d.protocol_instance_id = pi.id
 GROUP BY day, patient_id, d.deviation_type;
 
 -- Patient-level intelligence actions
