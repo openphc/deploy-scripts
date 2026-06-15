@@ -568,7 +568,9 @@ services:
           memory: 512m
           cpus: '0.5'
     networks:
-      - cce-net
+      cce-net:
+        aliases:
+          - frontend
 
   openmrs-backend:
     image: openmrs/openmrs-reference-application-3-backend:3.6.0
@@ -599,7 +601,9 @@ services:
           memory: 2g
           cpus: '2.00'
     networks:
-      - cce-net
+      cce-net:
+        aliases:
+          - backend
 
   # MariaDB
   openmrs-db:
@@ -730,6 +734,8 @@ services:
       - cce-net
 
   # ==================== Insights Service ====================
+  # Reads analytics data from ClickHouse (data-pipeline stack).
+  # Start the data-pipeline stack (cd data-pipeline && docker compose up -d) before this service.
   cce-insights-service:
     image: ${CCE_INSIGHTS_SERVICE_IMAGE:-cce-insights-service:latest}
     container_name: cce-insights-service
@@ -739,19 +745,19 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    depends_on:
-      - postgres
     ports:
       - "9080:8084"
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SERVER_PORT: 8084
-      DB_HOST: ${POSTGRES_DB_HOST:-cce-postgres}
-      DB_PORT: ${POSTGRES_DB_PORT:-5432}
-      DB_NAME: ${POSTGRES_DB:-ccedb}
-      DB_USERNAME: ${POSTGRES_USER:-admin}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # ClickHouse analytics backend (cce-clickhouse from data-pipeline stack)
+      DB_HOST: ${CH_HOST:-cce-clickhouse}
+      DB_PORT: ${CH_PORT:-8123}
+      DB_NAME: ${CH_DATABASE:-cce_analytics}
+      DB_USERNAME: ${CH_USER:-cce_pipeline}
+      DB_PASSWORD: ${CLICKHOUSE_PASSWORD:-cce_analytics_dev}
       DB_POOL_SIZE: ${INSIGHTS_DB_POOL_SIZE:-10}
+      CLICKHOUSE_USE_FINAL: ${CLICKHOUSE_USE_FINAL:-true}
       CACHE_TTL_LOOKUPS: ${CACHE_TTL_LOOKUPS:-60}
       CACHE_TTL_ANALYTICS: ${CACHE_TTL_ANALYTICS:-30}
       CACHE_TTL_METRICS: ${CACHE_TTL_METRICS:-15}
