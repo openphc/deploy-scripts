@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cce-intelligence-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cce-intelligence-service
+  template:
+    metadata:
+      labels:
+        app: cce-intelligence-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8085"
+    spec:
+      containers:
+        - name: cce-intelligence-service
+          image: ghcr.io/openphc/cce-intelligence-service:release-1.0.0
+          ports:
+            - containerPort: 8085
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: SERVER_PORT
+              value: "8085"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_DB
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DB_POOL_SIZE
+              value: "10"
+            - name: DB_POOL_MIN_IDLE
+              value: "5"
+            # Schema managed by Hibernate (consistent with cce-compliance-service in k8s),
+            # which sidesteps the Flyway baseline race on a shared public schema.
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: "update"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              value: "health,info,prometheus,metrics"
+            - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+              value: "cce-intelligence-service"
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 200m
+            limits:
+              memory: 1Gi
+              cpu: "1"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8085
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8085
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cce-intelligence-service
+spec:
+  selector:
+    app: cce-intelligence-service
+  ports:
+    - port: 8085
+      targetPort: 8085

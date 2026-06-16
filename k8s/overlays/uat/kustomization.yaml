@@ -36,7 +36,7 @@ secretGenerator:
 generatorOptions:
   disableNameSuffixHash: true
 
-# UAT-specific patches — imagePullPolicy: Never (images pre-loaded into containerd)
+# UAT-specific patches — imagePullPolicy: Always (pull :latest from GHCR)
 patches:
   - target:
       kind: Ingress
@@ -56,42 +56,56 @@ patches:
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: Always
   - target:
       kind: Deployment
       name: cce-compliance-service
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: Always
   - target:
       kind: Deployment
       name: cce-emitter-adaptor
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: Always
   - target:
       kind: Deployment
       name: cce-insights-service
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: Always
   - target:
       kind: Deployment
       name: cce-insights-ui
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: Always
   - target:
       kind: Deployment
       name: cce-scheduler-service
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Never
+        value: Always
+  - target:
+      kind: Deployment
+      name: cce-intelligence-service
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
+  - target:
+      kind: Deployment
+      name: gateway-service
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
 
 images:
   - name: ghcr.io/openphc/cce-collector-service
@@ -99,6 +113,12 @@ images:
     newTag: latest
   - name: ghcr.io/openphc/cce-compliance-service
     newName: ghcr.io/openphc/cce-compliance-service:latest
+    newTag: latest
+  - name: ghcr.io/openphc/cce-intelligence-service
+    newName: ghcr.io/openphc/cce-intelligence-service:latest
+    newTag: latest
+  - name: ghcr.io/openphc/gateway-service
+    newName: ghcr.io/openphc/gateway-service:latest
     newTag: latest
   - name: ghcr.io/openphc/openhim-cce-emitter-adaptor
     newName: ghcr.io/openphc/openhim-cce-emitter-adaptor:latest

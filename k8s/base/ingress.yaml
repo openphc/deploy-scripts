@@ -48,6 +48,14 @@ spec:
                 name: cce-collector-service
                 port:
                   number: 8080
+          # API gateway (JWT validation + routing to downstream services)
+          - path: /v1/events
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-service
+                port:
+                  number: 8090
           - path: /v1/compliance
             pathType: Prefix
             backend:

@@ -8,9 +8,12 @@ resources:
   - services/cce-emitter-adaptor.yaml
   - services/cce-collector-service.yaml
   - services/cce-compliance-service.yaml
+  - services/cce-intelligence-service.yaml
   - services/cce-scheduler-service.yaml
   - services/cce-insights-service.yaml
   - services/cce-insights-ui.yaml
+  # API Gateway
+  - services/gateway-service.yaml
   # Identity & Access Management
   - services/keycloak.yaml
   # Monitoring
