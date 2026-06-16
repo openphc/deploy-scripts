@@ -26,31 +26,33 @@ spec:
               value: "prod"
             - name: SERVER_PORT
               value: "8084"
+            # insights-service's datasource is ClickHouse (jdbc:clickhouse://${DB_HOST}:${DB_PORT}/${DB_NAME}),
+            # NOT Postgres — so DB_* must point at ClickHouse, not the cce-config Postgres values.
             - name: DB_HOST
               valueFrom:
                 configMapKeyRef:
                   name: cce-config
-                  key: POSTGRES_HOST
+                  key: CLICKHOUSE_HOST
             - name: DB_PORT
               valueFrom:
                 configMapKeyRef:
                   name: cce-config
-                  key: POSTGRES_PORT
+                  key: CLICKHOUSE_PORT
             - name: DB_NAME
               valueFrom:
                 configMapKeyRef:
                   name: cce-config
-                  key: POSTGRES_DB
+                  key: CLICKHOUSE_DB
             - name: DB_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: cce-secrets
-                  key: POSTGRES_USER
+                  key: CLICKHOUSE_USER
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: cce-secrets
-                  key: POSTGRES_PASSWORD
+                  key: CLICKHOUSE_PASSWORD
             - name: DB_POOL_SIZE
               value: "10"
             - name: CACHE_TTL_LOOKUPS

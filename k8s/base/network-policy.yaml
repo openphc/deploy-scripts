@@ -46,6 +46,13 @@ spec:
           port: 9092
         - protocol: TCP
           port: 9093
+        # ClickHouse (data-pipeline): HTTP 8123, native 9009, metrics 9363
+        - protocol: TCP
+          port: 8123
+        - protocol: TCP
+          port: 9009
+        - protocol: TCP
+          port: 9363
     # Allow external traffic (pulling images, etc.)
     - to:
         - ipBlock:

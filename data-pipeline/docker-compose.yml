@@ -36,7 +36,7 @@ services:
     environment:
       CLICKHOUSE_DB: cce_analytics
       CLICKHOUSE_USER: cce_pipeline
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-cce_analytics_dev}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
       # Single source for the Kafka broker — same var the Debezium worker uses. Consumed by the
       # cce_kafka named collection (infra/clickhouse/named-collections.xml) via from_env.
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}

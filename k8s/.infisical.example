@@ -1,0 +1,20 @@
+# Infisical machine-identity credentials for pulling config/secrets at deploy time.
+#
+# Copy to one of:
+#   k8s/.infisical.uat    (used by deploy-uat-infisical.sh  -> project cce-uat, env uat)
+#   k8s/.infisical.prod   (used by deploy-prod-infisical.sh -> project cce-prod, env prod)
+#
+# These files are gitignored (.infisical.* except this example). NEVER commit real values.
+# Create the machine identity + Universal Auth credentials in the Infisical UI/API and
+# add it as a member of the matching project.
+
+# Base URL of the self-hosted Infisical instance
+INFISICAL_API_URL=http://localhost:8080
+
+# Project (workspace) id and environment slug
+INFISICAL_PROJECT_ID=<project-id>
+INFISICAL_ENV=uat
+
+# Universal Auth machine-identity credentials (scoped to the one project above)
+INFISICAL_CLIENT_ID=<machine-identity-client-id>
+INFISICAL_CLIENT_SECRET=<machine-identity-client-secret>

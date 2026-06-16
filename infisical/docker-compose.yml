@@ -1,0 +1,55 @@
+# Self-hosted Infisical secret manager (server-side install).
+# Holds config/secrets for the cce projects: cce-uat (env uat) and cce-prod (env prod).
+#
+# Setup on the host:
+#   cp .env.example .env   # then fill ENCRYPTION_KEY / AUTH_SECRET / DB_PASSWORD / SITE_URL
+#   docker-compose up -d
+# First visit (or POST /api/v1/admin/signup) bootstraps the instance super-admin.
+#
+# .env is gitignored — never commit the instance secrets.
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: infisical-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: infisical
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: infisical
+    volumes:
+      - infisical_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U infisical"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: infisical-redis
+    restart: unless-stopped
+    volumes:
+      - infisical_redis:/data
+
+  backend:
+    image: infisical/infisical:latest
+    container_name: infisical-backend
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+    ports:
+      # Bound to loopback only — reachable via SSH tunnel (ssh -L 8080:localhost:8080)
+      # or the on-server CLI, never exposed on a network interface.
+      - "127.0.0.1:8080:8080"
+    environment:
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY in .env}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      DB_CONNECTION_URI: postgres://infisical:${DB_PASSWORD}@db:5432/infisical?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      SITE_URL: ${SITE_URL:?set SITE_URL in .env}
+      TELEMETRY_ENABLED: "false"
+
+volumes:
+  infisical_pg:
+  infisical_redis:

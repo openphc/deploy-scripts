@@ -13,11 +13,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+# Auto-export every variable defined in .env.prod so envsubst can resolve the
+# ${...} placeholders in the kustomization (config + secrets) and network policy.
+set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
+set +a
 
 : "${ACME_EMAIL:?Set ACME_EMAIL in .env.prod (used for Traefik ACME/TLS certs)}"
-export VM_HOST_IP VM_HOST_CIDR INGRESS_HOST ACME_EMAIL
 
 echo "Deploying CCE PROD with VM_HOST_IP=${VM_HOST_IP}, INGRESS_HOST=${INGRESS_HOST}"
 

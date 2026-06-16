@@ -17,7 +17,7 @@ services:
       - "5433:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_UAT_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_UAT_PASSWORD:-cceuat@2024}
+      POSTGRES_PASSWORD: ${POSTGRES_UAT_PASSWORD:?set POSTGRES_UAT_PASSWORD in the environment / .env}
       POSTGRES_DB: ${POSTGRES_UAT_DB:-ccedb}
     volumes:
       - postgres_uat_data:/var/lib/postgresql/data

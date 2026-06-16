@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
 # Deploy CCE UAT environment to k3s
-# Usage: ./deploy-uat.sh
+# Usage:
+#   ./deploy-uat.sh                      # reads config/secrets from k8s/.env
+#   ./deploy-uat-infisical.sh            # pulls config/secrets from Infisical (no .env needed)
+#   infisical run --env=uat -- ./deploy-uat.sh
 #
-# Requires: .env file in k8s/ directory (copy from .env.example)
+# Config/secrets are resolved from the process environment (envsubst). They can be
+# supplied either by a local k8s/.env file OR injected by Infisical — if neither is
+# present the required-variable checks below will fail loudly.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env"
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "ERROR: $ENV_FILE not found. Copy .env.example to .env and fill in values."
-  exit 1
+if [[ -f "$ENV_FILE" ]]; then
+  # Auto-export every variable defined in .env so envsubst can resolve the
+  # ${...} placeholders in the kustomization (config + secrets) and network policy.
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+else
+  echo "No $ENV_FILE found — using variables already in the environment (e.g. injected by Infisical)."
 fi
 
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-
-: "${ACME_EMAIL:?Set ACME_EMAIL in .env (used for Traefik ACME/TLS certs)}"
-export VM_HOST_IP VM_HOST_CIDR INGRESS_HOST ACME_EMAIL
+: "${VM_HOST_IP:?VM_HOST_IP not set (provide via k8s/.env or Infisical)}"
+: "${ACME_EMAIL:?Set ACME_EMAIL (used for Traefik ACME/TLS certs)}"
 
 echo "Deploying CCE UAT with VM_HOST_IP=${VM_HOST_IP}"
 

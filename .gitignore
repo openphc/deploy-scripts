@@ -1,5 +1,11 @@
 .env
+.env.*
+!.env.example
+.infisical
+.infisical.*
+!.infisical.example
 k8s/**/*.rendered
 docs/
 remote-deployment/
 .vscode/
+.claude/

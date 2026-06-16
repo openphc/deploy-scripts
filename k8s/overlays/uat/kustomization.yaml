@@ -15,23 +15,35 @@ configMapGenerator:
       - POSTGRES_PORT=5433
       - KAFKA_BOOTSTRAP_SERVERS=${VM_HOST_IP}:9093
       - KAFKA_UI_CLUSTER_NAME=cce-uat
-      - OPENHIM_CORE_HOST=197.243.24.138
+      - OPENHIM_CORE_HOST=${OPENHIM_CORE_HOST}
       - KEYCLOAK_HOST=http://keycloak:8080/auth
+      # ClickHouse (data-pipeline) — insights-service's datasource. The data-pipeline
+      # runs as docker containers; CLICKHOUSE_HOST is the docker bridge gateway IP.
+      - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_DB=cce_analytics
+      # gateway-service CORS allowed origin. Must be a concrete origin, never "*"
+      # (the gateway sets allowCredentials=true). Set per-environment in .env.
+      - ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
 
 secretGenerator:
   - name: cce-secrets
+    # All values are injected from the gitignored .env at deploy time (envsubst) —
+    # never hard-code credentials here.
     literals:
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=cceuat@2024
-      - CCE_COLLECTOR_AUTH_TOKEN=cce-uat-token-2024
-      - GRAFANA_ADMIN_USER=admin
-      - GRAFANA_ADMIN_PASSWORD=grafana@uat2024
-      - KEYCLOAK_ADMIN_USER=admin
-      - KEYCLOAK_ADMIN_PASSWORD=keycloak@uat2024
-      - OPENHIM_USERNAME=
-      - OPENHIM_PASSWORD=
-      - KEYCLOAK_CLIENT_ID=
-      - KEYCLOAK_CLIENT_SECRET=
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - CCE_COLLECTOR_AUTH_TOKEN=${CCE_COLLECTOR_AUTH_TOKEN}
+      - GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - KEYCLOAK_ADMIN_USER=${KEYCLOAK_ADMIN_USER}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+      - OPENHIM_USERNAME=${OPENHIM_USERNAME}
+      - OPENHIM_PASSWORD=${OPENHIM_PASSWORD}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
 
 generatorOptions:
   disableNameSuffixHash: true
@@ -109,28 +121,28 @@ patches:
 
 images:
   - name: ghcr.io/openphc/cce-collector-service
-    newName: ghcr.io/openphc/cce-collector-service:latest
+    newName: ghcr.io/openphc/cce-collector-service
     newTag: latest
   - name: ghcr.io/openphc/cce-compliance-service
-    newName: ghcr.io/openphc/cce-compliance-service:latest
+    newName: ghcr.io/openphc/cce-compliance-service
     newTag: latest
   - name: ghcr.io/openphc/cce-intelligence-service
-    newName: ghcr.io/openphc/cce-intelligence-service:latest
+    newName: ghcr.io/openphc/cce-intelligence-service
     newTag: latest
   - name: ghcr.io/openphc/gateway-service
-    newName: ghcr.io/openphc/gateway-service:latest
+    newName: ghcr.io/openphc/gateway-service
     newTag: latest
   - name: ghcr.io/openphc/openhim-cce-emitter-adaptor
-    newName: ghcr.io/openphc/openhim-cce-emitter-adaptor:latest
+    newName: ghcr.io/openphc/openhim-cce-emitter-adaptor
     newTag: latest
   - name: ghcr.io/openphc/cce-insights-service
-    newName: ghcr.io/openphc/cce-insights-service:latest
+    newName: ghcr.io/openphc/cce-insights-service
     newTag: latest
   - name: ghcr.io/openphc/cce-insights-ui
-    newName: ghcr.io/openphc/cce-insights-ui:latest
-    newTag: latest
+    newName: ghcr.io/openphc/cce-insights-ui
+    newTag: demo-rw-latest
   - name: ghcr.io/openphc/cce-scheduler-service
-    newName: ghcr.io/openphc/cce-scheduler-service:latest
+    newName: ghcr.io/openphc/cce-scheduler-service
     newTag: latest
 
 commonLabels:

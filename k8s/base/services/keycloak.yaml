@@ -18,7 +18,7 @@ spec:
           args:
             - start
             - --http-relative-path=/auth
-            - --proxy=edge
+            - --proxy-headers=xforwarded
             - --hostname-strict=false
           ports:
             - containerPort: 8080
@@ -70,17 +70,25 @@ spec:
             limits:
               memory: 1Gi
               cpu: "1"
+          # Keycloak 26.x serves health on the MANAGEMENT port (9000), and --http-relative-path=/auth
+          # applies there too -> /auth/health/*. It also runs a build + (on upgrade) a DB migration
+          # on `start` (minutes), so a startupProbe keeps the liveness probe from killing it early.
+          startupProbe:
+            httpGet:
+              path: /auth/health/started
+              port: 9000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /auth/health/ready
-              port: 8080
-            initialDelaySeconds: 60
+              port: 9000
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /auth/health/live
-              port: 8080
-            initialDelaySeconds: 90
+              port: 9000
             periodSeconds: 15
 ---
 apiVersion: v1

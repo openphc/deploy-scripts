@@ -266,8 +266,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
       # Data-pipeline: ClickHouse datasource plugin + credentials for the provisioned datasources
       GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-cce_analytics_dev}
-      CDC_PASSWORD: ${CDC_PASSWORD:-cce_cdc_dev2026}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD in .env}
+      CDC_PASSWORD: ${CDC_PASSWORD:?set CDC_PASSWORD in .env}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro

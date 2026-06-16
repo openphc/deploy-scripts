@@ -17,7 +17,7 @@ NAME="cce-ccedb-source"
 
 CH_HOST="${CH_HOST:-localhost}"
 CH_USER="${CH_USER:-cce_pipeline}"
-CH_PASS="${CH_PASSWORD:-${CLICKHOUSE_PASSWORD:-cce_analytics_dev}}"
+CH_PASS="${CH_PASSWORD:-${CLICKHOUSE_PASSWORD:?set CLICKHOUSE_PASSWORD (or CH_PASSWORD) in the environment}}"
 CH_URL="http://${CH_HOST}:${CH_PORT:-8123}"
 
 # Source PG (to drop the replication slot) — optional but recommended for a clean snapshot.

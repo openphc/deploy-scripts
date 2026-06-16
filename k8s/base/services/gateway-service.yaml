@@ -55,8 +55,14 @@ spec:
                   name: cce-secrets
                   key: POSTGRES_PASSWORD
             # ---- CORS ----
+            # Must NOT be "*" — the gateway sets allowCredentials=true, and Spring rejects
+            # the wildcard with credentials (every request 500s otherwise). Set a concrete
+            # origin per environment via cce-config.
             - name: ALLOWED_ORIGINS
-              value: "*"
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: ALLOWED_ORIGINS
             # ---- JWT (must match the Keycloak realm that issues tokens) ----
             - name: JWT_ISSUER
               value: "http://keycloak:8080/auth/realms/cce"
