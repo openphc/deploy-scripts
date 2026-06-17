@@ -19,6 +19,8 @@ configMapGenerator:
       - KEYCLOAK_HOST=http://keycloak:8080/auth
       # Public token issuer (gateway validates iss against this). Built from INGRESS_HOST.
       - KEYCLOAK_ISSUER=https://${INGRESS_HOST}/auth/realms/cce
+      # Grafana served under /grafana by the ingress (root_url + serve_from_sub_path).
+      - GRAFANA_ROOT_URL=https://${INGRESS_HOST}/grafana
       # ClickHouse (data-pipeline) — insights-service's datasource. In PROD the pipeline
       # runs natively on the host, so this is the host IP reachable from k3s pods.
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}

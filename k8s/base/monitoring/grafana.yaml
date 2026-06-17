@@ -4,6 +4,9 @@ metadata:
   name: grafana
 spec:
   replicas: 1
+  # Single replica on a RWO PVC: Recreate so the old pod releases the DB before the new starts.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: grafana
@@ -28,6 +31,36 @@ spec:
                 secretKeyRef:
                   name: cce-secrets
                   key: GRAFANA_ADMIN_PASSWORD
+            # Served under /grafana by the ingress -> root_url + serve_from_sub_path.
+            - name: GF_SERVER_ROOT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: GRAFANA_ROOT_URL
+            - name: GF_SERVER_SERVE_FROM_SUB_PATH
+              value: "true"
+            # ClickHouse datasource plugin for the data-pipeline (pipeline-health) dashboard.
+            - name: GF_INSTALL_PLUGINS
+              value: "grafana-clickhouse-datasource"
+            # Datasource connection values (expanded into the provisioning YAML above).
+            - name: CLICKHOUSE_HOST
+              valueFrom: { configMapKeyRef: { name: cce-config, key: CLICKHOUSE_HOST } }
+            - name: CLICKHOUSE_DB
+              valueFrom: { configMapKeyRef: { name: cce-config, key: CLICKHOUSE_DB } }
+            - name: CLICKHOUSE_USER
+              valueFrom: { secretKeyRef: { name: cce-secrets, key: CLICKHOUSE_USER } }
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom: { secretKeyRef: { name: cce-secrets, key: CLICKHOUSE_PASSWORD } }
+            - name: POSTGRES_HOST
+              valueFrom: { configMapKeyRef: { name: cce-config, key: POSTGRES_HOST } }
+            - name: POSTGRES_PORT
+              valueFrom: { configMapKeyRef: { name: cce-config, key: POSTGRES_PORT } }
+            - name: POSTGRES_DB
+              valueFrom: { configMapKeyRef: { name: cce-config, key: POSTGRES_DB } }
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: cce-secrets, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: cce-secrets, key: POSTGRES_PASSWORD } }
           volumeMounts:
             - name: grafana-data
               mountPath: /var/lib/grafana
@@ -35,6 +68,10 @@ spec:
               mountPath: /etc/grafana/provisioning/datasources
             - name: grafana-dashboards-provisioning
               mountPath: /etc/grafana/provisioning/dashboards
+            # Dashboard JSONs (provisioned). Created from grafana/dashboards/ by the deploy
+            # step (rw/uat/03, rw/prod/05) with the datasource uid rewritten to "prometheus".
+            - name: grafana-dashboards
+              mountPath: /var/lib/grafana/dashboards
           resources:
             requests:
               memory: 128Mi
@@ -52,6 +89,10 @@ spec:
         - name: grafana-dashboards-provisioning
           configMap:
             name: grafana-dashboards-provisioning
+        - name: grafana-dashboards
+          configMap:
+            name: grafana-dashboards
+            optional: true
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -82,12 +123,40 @@ metadata:
 data:
   prometheus.yml: |
     apiVersion: 1
+    # ${VAR} values are expanded by Grafana from the container env (see the deployment).
     datasources:
       - name: Prometheus
         type: prometheus
         access: proxy
         url: http://prometheus:9090
         isDefault: true
+        # Fixed uid so the provisioned dashboards (which reference uid "prometheus") bind.
+        uid: prometheus
+      # Used by the data-pipeline (pipeline-health) dashboard, which references datasources
+      # by NAME: "ClickHouse", "PostgreSQL", "Prometheus".
+      - name: ClickHouse
+        uid: clickhouse
+        type: grafana-clickhouse-datasource
+        access: proxy
+        jsonData:
+          host: ${CLICKHOUSE_HOST}
+          port: 8123
+          protocol: http
+          defaultDatabase: ${CLICKHOUSE_DB}
+          username: ${CLICKHOUSE_USER}
+        secureJsonData:
+          password: ${CLICKHOUSE_PASSWORD}
+      - name: PostgreSQL
+        uid: postgresql
+        type: postgres
+        access: proxy
+        url: ${POSTGRES_HOST}:${POSTGRES_PORT}
+        database: ${POSTGRES_DB}
+        user: ${POSTGRES_USER}
+        jsonData:
+          sslmode: disable
+        secureJsonData:
+          password: ${POSTGRES_PASSWORD}
 ---
 apiVersion: v1
 kind: ConfigMap

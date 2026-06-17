@@ -4,6 +4,10 @@ metadata:
   name: prometheus
 spec:
   replicas: 1
+  # Single replica on a RWO PVC: Recreate (not RollingUpdate) so the old pod releases the
+  # TSDB lock before the new one starts (otherwise the new pod crash-loops on the DB lock).
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: prometheus
@@ -109,9 +113,21 @@ data:
         static_configs:
           - targets: ["cce-insights-service:8084"]
 
+      - job_name: "cce-intelligence-service"
+        metrics_path: /actuator/prometheus
+        static_configs:
+          - targets: ["cce-intelligence-service:8085"]
+
       - job_name: "node-exporter"
         static_configs:
           - targets: ["node-exporter:9100"]
+
+      # ClickHouse (data-pipeline) metrics. On RW UAT the pipeline runs as docker containers,
+      # so the metrics port is published on the docker bridge gateway (172.18.0.1:9363).
+      # For PROD (ClickHouse installed natively on the host) change this to the host IP:9363.
+      - job_name: "clickhouse"
+        static_configs:
+          - targets: ["172.18.0.1:9363"]
 
   alert-rules.yml: |
     groups:
