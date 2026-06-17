@@ -455,7 +455,8 @@
      "containerId": "81a2bcb8-25e2-40f7-b15c-3094ec3d5c79",
      "attributes": {}
     }
-   ]
+   ],
+   "cce-insights-ui": []
   }
  },
  "groups": [],
@@ -740,6 +741,56 @@
     "acr",
     "roles",
     "profile",
+    "basic",
+    "email"
+   ],
+   "optionalClientScopes": [
+    "address",
+    "phone",
+    "offline_access",
+    "organization",
+    "microprofile-jwt"
+   ]
+  },
+  {
+   "id": "79247ad5-4e10-4a3d-b526-c3cc75bd8e0a",
+   "clientId": "cce-insights-ui",
+   "surrogateAuthRequired": false,
+   "enabled": true,
+   "alwaysDisplayInConsole": false,
+   "clientAuthenticatorType": "client-secret",
+   "redirectUris": [
+    "/insights/*"
+   ],
+   "webOrigins": [
+    "+"
+   ],
+   "notBefore": 0,
+   "bearerOnly": false,
+   "consentRequired": false,
+   "standardFlowEnabled": true,
+   "implicitFlowEnabled": false,
+   "directAccessGrantsEnabled": false,
+   "serviceAccountsEnabled": false,
+   "publicClient": true,
+   "frontchannelLogout": true,
+   "protocol": "openid-connect",
+   "attributes": {
+    "realm_client": "false",
+    "backchannel.logout.session.required": "true",
+    "post.logout.redirect.uris": "/insights/*",
+    "pkce.code.challenge.method": "S256",
+    "backchannel.logout.revoke.offline.tokens": "false"
+   },
+   "authenticationFlowBindingOverrides": {},
+   "fullScopeAllowed": true,
+   "nodeReRegistrationTimeout": -1,
+   "defaultClientScopes": [
+    "web-origins",
+    "acr",
+    "roles",
+    "profile",
+    "gateway-audience",
     "basic",
     "email"
    ],
