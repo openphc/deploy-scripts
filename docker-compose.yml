@@ -94,6 +94,8 @@ services:
       KC_PROXY_HEADERS: ${KC_PROXY_HEADERS}
       KC_HTTP_ENABLED: ${KC_HTTP_ENABLED}
     command: start
+    volumes:
+      - ./keycloak-themes/insights-ui-theme:/opt/keycloak/themes/insights-ui-theme:ro
     networks:
       - cce-net
 
