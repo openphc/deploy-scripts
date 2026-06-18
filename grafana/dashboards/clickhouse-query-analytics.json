@@ -1,0 +1,493 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Queries",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT count() AS total FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%'",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "title": "Failed Queries",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT count() AS failed FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%'",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Avg Query Duration",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT round(avg(query_duration_ms)) AS avg_ms FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%'",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1000, "color": "yellow" },
+              { "value": 5000, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Currently Running Queries",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT count() AS running FROM system.processes",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 10, "color": "yellow" },
+              { "value": 50, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Query Volume over Time (successful vs failed)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT toStartOfMinute(event_time) AS time, countIf(type = 'QueryFinish') AS successful, countIf(type = 'ExceptionWhileProcessing') AS failed FROM system.query_log WHERE $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY time ORDER BY time",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "failed" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Query Duration Percentiles (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT toStartOfMinute(event_time) AS time, round(quantile(0.5)(query_duration_ms)) AS p50_ms, round(quantile(0.95)(query_duration_ms)) AS p95_ms, round(quantile(0.99)(query_duration_ms)) AS p99_ms FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY time ORDER BY time",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms" }
+      }
+    },
+    {
+      "title": "Top 10 Slowest Query Shapes (by avg duration)",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 12 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT any(query) AS sample_query, user, count() AS executions, round(avg(query_duration_ms)) AS avg_ms, max(query_duration_ms) AS max_ms, round(quantile(0.95)(query_duration_ms)) AS p95_ms, formatReadableSize(max(memory_usage)) AS peak_mem FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY normalized_query_hash, user ORDER BY avg_ms DESC LIMIT 10",
+          "format": "table"
+        }
+      ],
+      "options": { "sortBy": [{ "displayName": "avg_ms", "desc": true }] },
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "sample_query" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.width", "value": 500 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Top 10 Memory-Consuming Query Shapes",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 24 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT any(query) AS sample_query, user, count() AS executions, formatReadableSize(sum(memory_usage)) AS total_mem, formatReadableSize(max(memory_usage)) AS peak_mem, round(avg(query_duration_ms)) AS avg_ms FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY normalized_query_hash, user ORDER BY sum(memory_usage) DESC LIMIT 10",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "sample_query" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.width", "value": 500 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Top 10 High Read-Volume Query Shapes (data scanned)",
+      "type": "table",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 36 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT any(query) AS sample_query, user, count() AS executions, formatReadableSize(sum(read_bytes)) AS total_read_bytes, sum(read_rows) AS total_read_rows, round(avg(query_duration_ms)) AS avg_ms FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY normalized_query_hash, user ORDER BY sum(read_bytes) DESC LIMIT 10",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "total_read_rows" },
+            "properties": [{ "id": "unit", "value": "short" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "sample_query" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.width", "value": 500 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Failed Queries — Recent Errors",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 48 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT event_time, user, query, exception FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' ORDER BY event_time DESC LIMIT 20",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "query" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.width", "value": 400 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "exception" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.width", "value": 400 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Query Volume by User",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 58 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT user, count() AS queries, round(avg(query_duration_ms)) AS avg_ms, formatReadableSize(sum(memory_usage)) AS total_mem FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY user ORDER BY queries DESC",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "title": "Currently Running Queries (live)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 58 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT user, round(elapsed * 1000) AS elapsed_ms, formatReadableSize(memory_usage) AS memory, query FROM system.processes ORDER BY elapsed DESC",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "elapsed_ms" },
+            "properties": [{ "id": "unit", "value": "ms" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "query" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.width", "value": 400 }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "title": "Error Breakdown by Type",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 66 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT exception_code, any(exception) AS message, count() AS occurrences FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY exception_code ORDER BY occurrences DESC LIMIT 15",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Queries Exceeding 500 MB Memory",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 66 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT any(query) AS sample_query, user, count() AS hits, formatReadableSize(max(memory_usage)) AS max_mem, round(avg(query_duration_ms)) AS avg_ms FROM system.query_log WHERE $__timeFilter(event_time) AND memory_usage > 500000000 AND query NOT LIKE '%system.%' GROUP BY normalized_query_hash, user ORDER BY max(memory_usage) DESC LIMIT 10",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "sample_query" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.width", "value": 400 }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "title": "ClickHouse Memory Tracking over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 76 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT event_time AS time, CurrentMetric_MemoryTracking AS memory_bytes FROM system.metric_log WHERE $__timeFilter(event_time) ORDER BY time",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 20000000000, "color": "yellow" },
+              { "value": 25000000000, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Concurrent Queries in Flight over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 76 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT event_time AS time, CurrentMetric_Query AS concurrent_queries FROM system.metric_log WHERE $__timeFilter(event_time) ORDER BY time",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 50, "color": "yellow" },
+              { "value": 90, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "title": "Table Sizes — cce_analytics",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 84 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT table, formatReadableSize(sum(bytes_on_disk)) AS disk_size, formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed, round(sum(bytes_on_disk) * 100.0 / sum(data_uncompressed_bytes), 1) AS compression_pct, formatReadableQuantity(sum(rows)) AS total_rows, count() AS parts FROM system.parts WHERE database = 'cce_analytics' AND active GROUP BY table ORDER BY sum(bytes_on_disk) DESC",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "ReplacingMergeTree Parts Health",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 84 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT table, count() AS active_parts, sum(rows) AS total_rows, formatReadableSize(sum(bytes_on_disk)) AS disk_size, max(modification_time) AS last_merge FROM system.parts WHERE database = 'cce_analytics' AND active GROUP BY table ORDER BY active_parts DESC",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "total_rows" },
+            "properties": [{ "id": "unit", "value": "short" }]
+          }
+        ]
+      }
+    },
+
+    {
+      "title": "Kafka Consumer Status",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 94 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT database, table, consumer_id, length(assignments.topic) AS partitions, num_messages_read, last_poll_time, length(exceptions.text) AS exceptions, if(length(exceptions.text) > 0, exceptions.text[1], '') AS last_exception FROM system.kafka_consumers ORDER BY num_messages_read DESC",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "exceptions" },
+            "properties": [
+              { "id": "color", "value": { "mode": "thresholds" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "value": null, "color": "green" },
+                    { "value": 1, "color": "red" }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "title": "Most Repeated Queries (cache candidates)",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 102 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT any(query) AS sample_query, user, count() AS executions, round(avg(query_duration_ms)) AS avg_ms, formatReadableSize(sum(memory_usage)) AS total_mem FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY normalized_query_hash, user HAVING count() > 5 ORDER BY executions DESC LIMIT 10",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "sample_query" },
+            "properties": [
+              { "id": "custom.inspect", "value": true },
+              { "id": "custom.width", "value": 400 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Active Background Merges",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 102 },
+      "datasource": "ClickHouse",
+      "targets": [
+        {
+          "rawSql": "SELECT table, round(elapsed) AS elapsed_s, formatReadableSize(bytes_read_uncompressed) AS read, formatReadableSize(bytes_written_uncompressed) AS written, round(progress * 100, 1) AS progress_pct FROM system.merges WHERE database = 'cce_analytics' ORDER BY elapsed DESC",
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "progress_pct" },
+            "properties": [{ "id": "unit", "value": "percent" }]
+          }
+        ]
+      }
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["cce", "clickhouse", "query-analytics"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "ClickHouse Query Analytics",
+  "uid": "cce-query-analytics",
+  "version": 1
+}
