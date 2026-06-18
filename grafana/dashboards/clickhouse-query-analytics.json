@@ -13,7 +13,7 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT count() AS total FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time)",
+          "rawSql": "SELECT count() AS total FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%'",
           "format": "table"
         }
       ],
@@ -28,7 +28,7 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT count() AS failed FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time)",
+          "rawSql": "SELECT count() AS failed FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%'",
           "format": "table"
         }
       ],
@@ -53,7 +53,7 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT round(avg(query_duration_ms)) AS avg_ms FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time)",
+          "rawSql": "SELECT round(avg(query_duration_ms)) AS avg_ms FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%'",
           "format": "table"
         }
       ],
@@ -105,7 +105,7 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT toStartOfMinute(event_time) AS time, countIf(type = 'QueryFinish') AS successful, countIf(type = 'ExceptionWhileProcessing') AS failed FROM system.query_log WHERE $__timeFilter(event_time) GROUP BY time ORDER BY time",
+          "rawSql": "SELECT toStartOfMinute(event_time) AS time, countIf(type = 'QueryFinish') AS successful, countIf(type = 'ExceptionWhileProcessing') AS failed FROM system.query_log WHERE $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY time ORDER BY time",
           "format": "table"
         }
       ],
@@ -126,7 +126,7 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT toStartOfMinute(event_time) AS time, round(quantile(0.5)(query_duration_ms)) AS p50_ms, round(quantile(0.95)(query_duration_ms)) AS p95_ms, round(quantile(0.99)(query_duration_ms)) AS p99_ms FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) GROUP BY time ORDER BY time",
+          "rawSql": "SELECT toStartOfMinute(event_time) AS time, round(quantile(0.5)(query_duration_ms)) AS p50_ms, round(quantile(0.95)(query_duration_ms)) AS p95_ms, round(quantile(0.99)(query_duration_ms)) AS p99_ms FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY time ORDER BY time",
           "format": "table"
         }
       ],
@@ -215,7 +215,7 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT event_time, user, query, exception FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time) ORDER BY event_time DESC LIMIT 20",
+          "rawSql": "SELECT event_time, user, query, exception FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' ORDER BY event_time DESC LIMIT 20",
           "format": "table"
         }
       ],
@@ -245,7 +245,7 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT user, count() AS queries, round(avg(query_duration_ms)) AS avg_ms, formatReadableSize(sum(memory_usage)) AS total_mem FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) GROUP BY user ORDER BY queries DESC",
+          "rawSql": "SELECT user, count() AS queries, round(avg(query_duration_ms)) AS avg_ms, formatReadableSize(sum(memory_usage)) AS total_mem FROM system.query_log WHERE type = 'QueryFinish' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY user ORDER BY queries DESC",
           "format": "table"
         }
       ],
@@ -288,7 +288,7 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT exception_code, any(exception) AS message, count() AS occurrences FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time) GROUP BY exception_code ORDER BY occurrences DESC LIMIT 15",
+          "rawSql": "SELECT exception_code, any(exception) AS message, count() AS occurrences FROM system.query_log WHERE type = 'ExceptionWhileProcessing' AND $__timeFilter(event_time) AND query NOT LIKE '%system.%' GROUP BY exception_code ORDER BY occurrences DESC LIMIT 15",
           "format": "table"
         }
       ]
