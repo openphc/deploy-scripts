@@ -11,11 +11,14 @@ metadata:
   name: prod-resource-quota
   namespace: cce-prod
 spec:
+  # Sized for the vertically-scaled services (compliance 6x; insights-ui/scheduler 4x; rest 3x),
+  # with headroom for rolling-update surge (old+new pod briefly co-exist). Still bounded so
+  # cce-prod cannot starve the shared node (UAT + native infra).
   hard:
-    requests.cpu: "6"
-    requests.memory: 8Gi
-    limits.cpu: "10"
-    limits.memory: 16Gi
+    requests.cpu: "12"
+    requests.memory: 16Gi
+    limits.cpu: "40"
+    limits.memory: 64Gi
 ---
 apiVersion: v1
 kind: LimitRange

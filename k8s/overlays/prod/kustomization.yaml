@@ -6,6 +6,7 @@ namespace: cce-prod
 resources:
   - ../../base
   - namespace.yaml
+  - scheduler-hpa.yaml
 
 configMapGenerator:
   - name: cce-config
@@ -24,7 +25,9 @@ configMapGenerator:
       # ClickHouse (data-pipeline) — insights-service's datasource. In PROD the pipeline
       # runs natively on the host, so this is the host IP reachable from k3s pods.
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
-      - CLICKHOUSE_PORT=8123
+      # PROD ClickHouse is installed natively on the host with shifted ports (UAT's docker
+      # ClickHouse already holds 8123/9009/9363 on this shared VM): HTTP 8124, metrics 9364.
+      - CLICKHOUSE_PORT=8124
       - CLICKHOUSE_DB=cce_analytics
       # gateway-service CORS allowed origin. Concrete origin only, never "*".
       - ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
@@ -65,74 +68,110 @@ patches:
         value:
           - hosts:
               - ${INGRESS_HOST}
+  # Vertical scaling (2026-06-18): compliance 6x; insights-ui + scheduler 4x; rest 3x — over the
+  # base requests/limits. Requires the raised ResourceQuota in namespace.yaml. imagePullPolicy
+  # Always on every service. NOTE: cce-scheduler-service is leader-elected — see strategy note below.
   - target:
       kind: Deployment
       name: cce-collector-service
     patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 512Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 500m
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "1500m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "1536Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "2304Mi"}
   - target:
       kind: Deployment
       name: cce-compliance-service
     patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 512Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 500m
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "2100m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "2150Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "4200m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "6451Mi"}
   - target:
       kind: Deployment
       name: cce-intelligence-service
     patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "3Gi"}
   - target:
       kind: Deployment
       name: gateway-service
     patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
-  - target:
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "1536Mi"}
+  # Scheduler: greedy partitioned leader-election (HA). 3 replicas (managed by scheduler-hpa.yaml)
+  # = 1 active leader (owns the partitions) + hot standbys that take over on failure.
+  # SCHEDULER_TOTAL_PARTITIONS=3 parallelizes work within the active leader. CRITICAL: probes MUST
+  # use the dedicated liveness/readiness endpoints — the aggregate /actuator/health returns 503 on
+  # a standby (leadership indicator DOWN), which would liveness-kill standbys into a crashloop.
+  # maxSurge=0/maxUnavailable=1 avoids a partition-less surge pod. Strategic-merge (merges env by name).
+  - patch: |
+      apiVersion: apps/v1
       kind: Deployment
-      name: cce-scheduler-service
-    patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
+      metadata:
+        name: cce-scheduler-service
+      spec:
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+        template:
+          spec:
+            containers:
+              - name: cce-scheduler-service
+                imagePullPolicy: Always
+                env:
+                  - name: SCHEDULER_TOTAL_PARTITIONS
+                    value: "3"
+                livenessProbe:
+                  httpGet:
+                    path: /actuator/health/liveness
+                readinessProbe:
+                  httpGet:
+                    path: /actuator/health/readiness
+                resources:
+                  requests:
+                    cpu: 400m
+                    memory: 1Gi
+                  limits:
+                    cpu: "2"
+                    memory: 3Gi
   - target:
       kind: Deployment
       name: cce-emitter-adaptor
     patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "300m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "1500m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "2304Mi"}
   - target:
       kind: Deployment
       name: cce-insights-service
     patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "3Gi"}
   - target:
       kind: Deployment
       name: cce-insights-ui
     patch: |
-      - op: add
-        path: /spec/template/spec/containers/0/imagePullPolicy
-        value: Always
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "200m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "256Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "1"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "1Gi"}
 
 images:
   - name: ghcr.io/openphc/cce-collector-service

@@ -1,0 +1,24 @@
+# HPA for cce-scheduler-service (PROD). minReplicas=3 keeps the HA floor (1 active leader + 2 hot
+# standbys); maxReplicas=5 is burst headroom. NOTE: the scheduler is leader-elected — only the
+# leader is active, so CPU stays low and the HPA normally sits at min=3 (autoscaling on CPU does
+# not add throughput here; for that you'd need SCHEDULER_TOTAL_PARTITIONS >= replica count AND each
+# replica to own a partition). The HPA primarily enforces the >=3 HA floor.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cce-scheduler-service
+  namespace: cce-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cce-scheduler-service
+  minReplicas: 3
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

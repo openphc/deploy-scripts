@@ -45,13 +45,18 @@ spec:
           port: 9092
         - protocol: TCP
           port: 9093
-        # ClickHouse (data-pipeline): HTTP 8123, native 9009, metrics 9363
+        # ClickHouse (data-pipeline). UAT docker: HTTP 8123, native 9009, metrics 9363.
+        # PROD native (shifted to coexist on the shared host): HTTP 8124, metrics 9364.
         - protocol: TCP
           port: 8123
         - protocol: TCP
           port: 9009
         - protocol: TCP
           port: 9363
+        - protocol: TCP
+          port: 8124
+        - protocol: TCP
+          port: 9364
     # Allow external traffic (pulling images, etc.)
     - to:
         - ipBlock:
