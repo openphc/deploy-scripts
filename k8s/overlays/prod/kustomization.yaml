@@ -7,6 +7,7 @@ resources:
   - ../../base
   - namespace.yaml
   - scheduler-hpa.yaml
+  - ratelimit.yaml
 
 configMapGenerator:
   - name: cce-config
@@ -68,6 +69,34 @@ patches:
         value:
           - hosts:
               - ${INGRESS_HOST}
+  # Rate-limit ingresses (ratelimit.yaml) — inject the host + TLS like the main ingress.
+  - target: { kind: Ingress, name: cce-ingress-rl-compliance }
+    patch: |
+      - op: add
+        path: /spec/rules/0/host
+        value: ${INGRESS_HOST}
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [ "${INGRESS_HOST}" ]
+  - target: { kind: Ingress, name: cce-ingress-rl-insights }
+    patch: |
+      - op: add
+        path: /spec/rules/0/host
+        value: ${INGRESS_HOST}
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [ "${INGRESS_HOST}" ]
+  - target: { kind: Ingress, name: cce-ingress-rl-events }
+    patch: |
+      - op: add
+        path: /spec/rules/0/host
+        value: ${INGRESS_HOST}
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [ "${INGRESS_HOST}" ]
   # Vertical scaling (2026-06-18): compliance 6x; insights-ui + scheduler 4x; rest 3x — over the
   # base requests/limits. Requires the raised ResourceQuota in namespace.yaml. imagePullPolicy
   # Always on every service. NOTE: cce-scheduler-service is leader-elected — see strategy note below.

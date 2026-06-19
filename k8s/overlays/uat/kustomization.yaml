@@ -6,6 +6,7 @@ namespace: cce-uat
 resources:
   - ../../base
   - namespace.yaml
+  - ratelimit.yaml
 
 configMapGenerator:
   - name: cce-config
@@ -67,6 +68,34 @@ patches:
         value:
           - hosts:
               - ${INGRESS_HOST}
+  # Rate-limit ingresses (ratelimit.yaml) — inject the host + TLS like the main ingress.
+  - target: { kind: Ingress, name: cce-ingress-rl-compliance }
+    patch: |
+      - op: add
+        path: /spec/rules/0/host
+        value: ${INGRESS_HOST}
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [ "${INGRESS_HOST}" ]
+  - target: { kind: Ingress, name: cce-ingress-rl-insights }
+    patch: |
+      - op: add
+        path: /spec/rules/0/host
+        value: ${INGRESS_HOST}
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [ "${INGRESS_HOST}" ]
+  - target: { kind: Ingress, name: cce-ingress-rl-events }
+    patch: |
+      - op: add
+        path: /spec/rules/0/host
+        value: ${INGRESS_HOST}
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts: [ "${INGRESS_HOST}" ]
   - target:
       kind: Deployment
       name: cce-collector-service
