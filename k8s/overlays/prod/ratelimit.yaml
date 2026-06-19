@@ -1,0 +1,139 @@
+# Traefik rate-limit for the gateway APIs (cce-prod). Two chained rateLimit middlewares per API
+# (per-client-IP + per-host "global"); a request must pass BOTH. Path-specific ingresses route the
+# longer /v1/compliance and /v1/insights prefixes through these middlewares (Traefik prefers the
+# longer match), while the main cce-ingress /v1 stays unthrottled for the rest.
+# Host + TLS are injected by the kustomization patches (envsubst ${INGRESS_HOST}); the middleware
+# refs are namespace-prefixed (cce-prod-…@kubernetescrd) per Traefik's k8s middleware naming.
+#
+# Limits:  compliance  per-IP 50/h   · global 1000/h
+#          events      per-IP 50/h   · global 1000/h   (same as compliance, independent bucket)
+#          insights    per-IP 2000/h · global 100000/h
+# 'burst' is the token-bucket depth (allowed short spike); tune as needed.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ratelimit-compliance-perip
+spec:
+  rateLimit:
+    average: 50
+    period: 1h
+    burst: 10
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ratelimit-compliance-global
+spec:
+  rateLimit:
+    average: 1000
+    period: 1h
+    burst: 50
+    sourceCriterion:
+      requestHost: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ratelimit-insights-perip
+spec:
+  rateLimit:
+    average: 2000
+    period: 1h
+    burst: 200
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ratelimit-insights-global
+spec:
+  rateLimit:
+    average: 100000
+    period: 1h
+    burst: 5000
+    sourceCriterion:
+      requestHost: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ratelimit-events-perip
+spec:
+  rateLimit:
+    average: 50
+    period: 1h
+    burst: 10
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ratelimit-events-global
+spec:
+  rateLimit:
+    average: 1000
+    period: 1h
+    burst: 50
+    sourceCriterion:
+      requestHost: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cce-ingress-rl-compliance
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: le
+    traefik.ingress.kubernetes.io/router.middlewares: cce-prod-ratelimit-compliance-perip@kubernetescrd,cce-prod-ratelimit-compliance-global@kubernetescrd
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /v1/compliance
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-service
+                port:
+                  number: 8090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cce-ingress-rl-insights
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: le
+    traefik.ingress.kubernetes.io/router.middlewares: cce-prod-ratelimit-insights-perip@kubernetescrd,cce-prod-ratelimit-insights-global@kubernetescrd
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /v1/insights
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-service
+                port:
+                  number: 8090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cce-ingress-rl-events
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: le
+    traefik.ingress.kubernetes.io/router.middlewares: cce-prod-ratelimit-events-perip@kubernetescrd,cce-prod-ratelimit-events-global@kubernetescrd
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /v1/events
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-service
+                port:
+                  number: 8090

@@ -17,7 +17,7 @@ spec:
   hard:
     requests.cpu: "12"
     requests.memory: 16Gi
-    limits.cpu: "40"
+    limits.cpu: "32"
     limits.memory: 64Gi
 ---
 apiVersion: v1
