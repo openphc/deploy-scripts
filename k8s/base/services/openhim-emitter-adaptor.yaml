@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cce-emitter-adaptor
+  name: openhim-emitter-adaptor
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: cce-emitter-adaptor
+      app: openhim-emitter-adaptor
   template:
     metadata:
       labels:
-        app: cce-emitter-adaptor
+        app: openhim-emitter-adaptor
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: /actuator/prometheus
         prometheus.io/port: "8082"
     spec:
       containers:
-        - name: cce-emitter-adaptor
+        - name: openhim-emitter-adaptor
           image: ghcr.io/openphc/openhim-cce-emitter-adaptor:release-1.0.0
           ports:
             - containerPort: 8082
@@ -51,7 +51,7 @@ spec:
             - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
               value: "health,info,prometheus,metrics"
             - name: MANAGEMENT_METRICS_TAGS_APPLICATION
-              value: "cce-emitter-adaptor"
+              value: "openhim-emitter-adaptor"
           resources:
             requests:
               memory: 256Mi
@@ -73,10 +73,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cce-emitter-adaptor
+  name: openhim-emitter-adaptor
 spec:
   selector:
-    app: cce-emitter-adaptor
+    app: openhim-emitter-adaptor
   ports:
     - port: 8082
       targetPort: 8082

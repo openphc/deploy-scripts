@@ -6,9 +6,9 @@ set -euo pipefail
 
 CONNECT_URL="${CONNECT_URL:-http://localhost:8083}"
 NAME="cce-ccedb-source"
-CH_HOST="${CH_HOST:-localhost}"
-CH_PORT="${CH_PORT:-8123}"
-CH_URL="http://${CH_HOST}:${CH_PORT}"
+CLICKHOUSE_HOST="${CLICKHOUSE_HOST:-localhost}"
+CLICKHOUSE_PORT="${CLICKHOUSE_PORT:-8123}"
+CH_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}"
 
 UNHEALTHY=0
 

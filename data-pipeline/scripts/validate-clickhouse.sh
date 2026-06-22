@@ -4,9 +4,9 @@
 
 set -euo pipefail
 
-CH_HOST="${1:-localhost}"
-CH_PORT="${2:-8123}"
-CH_URL="http://${CH_HOST}:${CH_PORT}"
+CLICKHOUSE_HOST="${1:-localhost}"
+CLICKHOUSE_PORT="${2:-8123}"
+CH_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}"
 
 echo "=== ClickHouse Schema Validation ==="
 echo "Target: ${CH_URL}"

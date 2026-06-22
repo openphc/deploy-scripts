@@ -93,10 +93,10 @@ data:
         static_configs:
           - targets: ["cce-collector-service:8080"]
 
-      - job_name: "cce-emitter-adaptor"
+      - job_name: "openhim-emitter-adaptor"
         metrics_path: /actuator/prometheus
         static_configs:
-          - targets: ["cce-emitter-adaptor:8082"]
+          - targets: ["openhim-emitter-adaptor:8082"]
 
       - job_name: "cce-compliance-service"
         metrics_path: /actuator/prometheus

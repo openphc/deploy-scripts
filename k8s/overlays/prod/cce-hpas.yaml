@@ -33,9 +33,9 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: cce-emitter-adaptor
+  name: openhim-emitter-adaptor
 spec:
-  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: cce-emitter-adaptor }
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: openhim-emitter-adaptor }
   minReplicas: 2
   maxReplicas: 3
   metrics:

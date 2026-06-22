@@ -5,7 +5,7 @@ resources:
   # Infrastructure (Kafka UI only — Postgres & Kafka run on host)
   - infrastructure/kafka-ui.yaml
   # Application Services
-  - services/cce-emitter-adaptor.yaml
+  - services/openhim-emitter-adaptor.yaml
   - services/cce-collector-service.yaml
   - services/cce-compliance-service.yaml
   - services/cce-intelligence-service.yaml

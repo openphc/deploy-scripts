@@ -12,9 +12,9 @@ configMapGenerator:
   - name: cce-config
     literals:
       - POSTGRES_DB=ccedb
-      - POSTGRES_HOST=${VM_HOST_IP}
+      - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=5433
-      - KAFKA_BOOTSTRAP_SERVERS=${VM_HOST_IP}:9093
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_HOST}:9093
       - KAFKA_UI_CLUSTER_NAME=cce-uat
       - OPENHIM_CORE_HOST=${OPENHIM_CORE_HOST}
       - KEYCLOAK_HOST=http://keycloak:8080/auth
@@ -112,7 +112,7 @@ patches:
         value: Always
   - target:
       kind: Deployment
-      name: cce-emitter-adaptor
+      name: openhim-emitter-adaptor
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy

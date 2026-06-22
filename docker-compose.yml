@@ -803,10 +803,10 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SERVER_PORT: 8084
       # ClickHouse analytics backend (cce-clickhouse from data-pipeline stack)
-      DB_HOST: ${CH_HOST:-cce-clickhouse}
-      DB_PORT: ${CH_PORT:-8123}
-      DB_NAME: ${CH_DATABASE:-cce_analytics}
-      DB_USERNAME: ${CH_USER:-cce_pipeline}
+      DB_HOST: ${CLICKHOUSE_HOST:-cce-clickhouse}
+      DB_PORT: ${CLICKHOUSE_PORT:-8123}
+      DB_NAME: ${CLICKHOUSE_DB:-cce_analytics}
+      DB_USERNAME: ${CLICKHOUSE_USER:-cce_pipeline}
       DB_PASSWORD: ${CLICKHOUSE_PASSWORD:-cce_analytics_dev}
       DB_POOL_SIZE: ${INSIGHTS_DB_POOL_SIZE:-10}
       CLICKHOUSE_USE_FINAL: ${CLICKHOUSE_USE_FINAL:-true}

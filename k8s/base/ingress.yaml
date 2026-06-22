@@ -55,7 +55,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: cce-emitter-adaptor
+                name: openhim-emitter-adaptor
                 port:
                   number: 8082
           - path: /auth
