@@ -2,23 +2,26 @@
 # Deploy CCE PROD environment to k3s
 # Usage: ./deploy-prod.sh
 #
-# Requires: .env.prod file in k8s/ directory (copy from .env.example)
+# Config/secrets are resolved from the process environment (envsubst). Supply them either via a
+# local k8s/.env.prod file OR by running under Infisical (rw/lib/infisical-run.sh prod -- ...),
+# which injects them — if neither is present the required-variable checks below fail loudly.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/.env.prod"
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "ERROR: $ENV_FILE not found. Copy .env.example to .env.prod and fill in PROD values."
-  exit 1
+if [[ -f "$ENV_FILE" ]]; then
+  # Auto-export every variable defined in .env.prod so envsubst can resolve the
+  # ${...} placeholders in the kustomization (config + secrets) and network policy.
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+else
+  echo "No $ENV_FILE found — using variables already in the environment (e.g. injected by Infisical)."
 fi
 
-# Auto-export every variable defined in .env.prod so envsubst can resolve the
-# ${...} placeholders in the kustomization (config + secrets) and network policy.
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+: "${VM_HOST_IP:?VM_HOST_IP not set (provide via k8s/.env.prod or Infisical)}"
 
 : "${ACME_EMAIL:?Set ACME_EMAIL in .env.prod (used for Traefik ACME/TLS certs)}"
 
