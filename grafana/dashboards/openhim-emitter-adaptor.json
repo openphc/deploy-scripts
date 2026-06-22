@@ -56,7 +56,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_received_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[5m])",
+          "expr": "rate(cce_emitter_events_received_total{job=\"openhim-emitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[5m])",
           "legendFormat": "{{source}}",
           "refId": "A"
         }
@@ -92,7 +92,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_forwarded_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[5m])",
+          "expr": "rate(cce_emitter_events_forwarded_total{job=\"openhim-emitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[5m])",
           "legendFormat": "{{source}}",
           "refId": "A"
         }
@@ -132,7 +132,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(cce_emitter_events_forwarded_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]) / rate(cce_emitter_events_received_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]) * 100",
+          "expr": "rate(cce_emitter_events_forwarded_total{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}[5m]) / rate(cce_emitter_events_received_total{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}[5m]) * 100",
           "legendFormat": "Success %",
           "refId": "A"
         }
@@ -171,7 +171,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "up{job=\"openhim-cce-emmitter-adaptor\"}",
+          "expr": "up{job=\"openhim-emitter-adaptor\"}",
           "legendFormat": "Emitter Adaptor",
           "refId": "A"
         }
@@ -237,25 +237,25 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "increase(cce_emitter_events_forwarded_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[1m])",
+          "expr": "increase(cce_emitter_events_forwarded_total{job=\"openhim-emitter-adaptor\",instance=~\"$instance\",source=~\"$source\"}[1m])",
           "legendFormat": "Forwarded",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "increase(cce_emitter_events_duplicate_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[1m])",
+          "expr": "increase(cce_emitter_events_duplicate_total{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}[1m])",
           "legendFormat": "Duplicates",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "increase(cce_emitter_events_rejected_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[1m])",
+          "expr": "increase(cce_emitter_events_rejected_total{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}[1m])",
           "legendFormat": "Rejected",
           "refId": "C"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "increase(cce_emitter_collector_retries_total{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[1m])",
+          "expr": "increase(cce_emitter_collector_retries_total{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}[1m])",
           "legendFormat": "Retries Exhausted",
           "refId": "D"
         }
@@ -313,19 +313,19 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.50, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]))",
+          "expr": "histogram_quantile(0.50, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}[5m]))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]))",
+          "expr": "histogram_quantile(0.95, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}[5m]))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.99, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}[5m]))",
+          "expr": "histogram_quantile(0.99, rate(cce_emitter_collector_latency_seconds_bucket{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}[5m]))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -385,7 +385,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "jvm_memory_used_bytes{area=\"heap\",job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"} / jvm_memory_max_bytes{area=\"heap\",job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}",
+          "expr": "jvm_memory_used_bytes{area=\"heap\",job=\"openhim-emitter-adaptor\",instance=~\"$instance\"} / jvm_memory_max_bytes{area=\"heap\",job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}",
           "legendFormat": "Heap Usage %",
           "refId": "A"
         }
@@ -429,13 +429,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "process_cpu_usage{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}",
+          "expr": "process_cpu_usage{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}",
           "legendFormat": "Process CPU",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "system_cpu_usage{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}",
+          "expr": "system_cpu_usage{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}",
           "legendFormat": "System CPU",
           "refId": "B"
         }
@@ -477,7 +477,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "jvm_threads_live_threads{job=\"openhim-cce-emmitter-adaptor\",instance=~\"$instance\"}",
+          "expr": "jvm_threads_live_threads{job=\"openhim-emitter-adaptor\",instance=~\"$instance\"}",
           "legendFormat": "Live Threads",
           "refId": "A"
         }
@@ -526,7 +526,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(http_server_requests_seconds_count{job=\"openhim-cce-emmitter-adaptor\",uri=\"/inbound\",instance=~\"$instance\"}[5m])",
+          "expr": "rate(http_server_requests_seconds_count{job=\"openhim-emitter-adaptor\",uri=\"/inbound\",instance=~\"$instance\"}[5m])",
           "legendFormat": "{{status}} {{method}}",
           "refId": "A"
         }
@@ -568,7 +568,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job=\"openhim-cce-emmitter-adaptor\",uri=\"/inbound\",instance=~\"$instance\"}[5m]))",
+          "expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{job=\"openhim-emitter-adaptor\",uri=\"/inbound\",instance=~\"$instance\"}[5m]))",
           "legendFormat": "p95",
           "refId": "A"
         }
@@ -610,7 +610,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-          "expr": "rate(http_server_requests_seconds_count{job=\"openhim-cce-emmitter-adaptor\",uri=\"/inbound\",status=~\"4..|5..\",instance=~\"$instance\"}[5m])",
+          "expr": "rate(http_server_requests_seconds_count{job=\"openhim-emitter-adaptor\",uri=\"/inbound\",status=~\"4..|5..\",instance=~\"$instance\"}[5m])",
           "legendFormat": "{{status}} {{method}}",
           "refId": "A"
         }
@@ -649,13 +649,13 @@
       {
         "current": { "selected": true, "text": "All", "value": "$__all" },
         "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-        "definition": "label_values(up{job=\"openhim-cce-emmitter-adaptor\"}, instance)",
+        "definition": "label_values(up{job=\"openhim-emitter-adaptor\"}, instance)",
         "hide": 0,
         "includeAll": true,
         "multi": false,
         "name": "instance",
         "options": [],
-        "query": "label_values(up{job=\"openhim-cce-emmitter-adaptor\"}, instance)",
+        "query": "label_values(up{job=\"openhim-emitter-adaptor\"}, instance)",
         "refresh": 2,
         "sort": 1,
         "type": "query"
@@ -665,7 +665,7 @@
   "time": { "from": "now-3h", "to": "now" },
   "timepicker": {},
   "timezone": "",
-  "title": "CCE Emitter Adaptor",
-  "uid": "cce-emitter-adaptor",
+  "title": "OpenHIM Emitter Adaptor",
+  "uid": "openhim-emitter-adaptor",
   "version": 1
 }

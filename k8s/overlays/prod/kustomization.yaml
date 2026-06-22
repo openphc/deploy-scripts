@@ -14,9 +14,9 @@ configMapGenerator:
   - name: cce-config
     literals:
       - POSTGRES_DB=ccedb
-      - POSTGRES_HOST=${VM_HOST_IP}
+      - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=5432
-      - KAFKA_BOOTSTRAP_SERVERS=${VM_HOST_IP}:9092
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_HOST}:9092
       - KAFKA_UI_CLUSTER_NAME=cce-prod
       - OPENHIM_CORE_HOST=${OPENHIM_CORE_HOST}
       - KEYCLOAK_HOST=http://keycloak:8080/auth

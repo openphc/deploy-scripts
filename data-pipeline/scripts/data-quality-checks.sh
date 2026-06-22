@@ -6,13 +6,13 @@
 
 set -euo pipefail
 
-CH_HOST="${1:-localhost}"
-CH_PORT="${CH_PORT:-8123}"
+CLICKHOUSE_HOST="${1:-localhost}"
+CLICKHOUSE_PORT="${CLICKHOUSE_PORT:-8123}"
 CH_DB="cce_analytics"
 FAILURES=0
 
 query() {
-    curl -s "http://${CH_HOST}:${CH_PORT}/?database=${CH_DB}" --data-binary "$1"
+    curl -s "http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}/?database=${CH_DB}" --data-binary "$1"
 }
 
 check() {
@@ -63,7 +63,7 @@ check_eq_zero() {
 }
 
 echo "=== CCE Data Quality Checks ==="
-echo "Host: ${CH_HOST}:${CH_PORT} | Database: ${CH_DB}"
+echo "Host: ${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT} | Database: ${CH_DB}"
 echo ""
 
 echo "--- Table Row Counts ---"
