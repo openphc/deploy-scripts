@@ -202,14 +202,22 @@ patches:
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "256Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "1"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "1Gi"}
-  # PROD node-exporter shares the single node with UAT's (hostPort 9100). Shift PROD's hostPort to
-  # 9101 so both DaemonSets can schedule (the base manifest uses 9100; without this PROD's pod stays
-  # Pending — "didn't have free ports"). Service/containerPort stay 9100 (in-cluster scrape unaffected).
+  # PROD node-exporter shares the single node with UAT's. Both run hostNetwork:true and would bind
+  # host :9100 — so PROD's pod stayed Pending ("didn't have free ports"). Shift PROD to :9101: change
+  # the listen-address + containerPort/hostPort (must match under hostNetwork). The Service keeps
+  # port 9100 (targetPort 9101) so prometheus's "node-exporter:9100" target is unchanged.
   - target:
       kind: DaemonSet
       name: node-exporter
     patch: |
-      - {op: replace, path: /spec/template/spec/containers/0/ports/0/hostPort, value: 9101}
+      - {op: add, path: /spec/template/spec/containers/0/args/-, value: "--web.listen-address=:9101"}
+      - {op: replace, path: /spec/template/spec/containers/0/ports/0, value: {containerPort: 9101, hostPort: 9101}}
+      - {op: replace, path: /spec/template/metadata/annotations/prometheus.io~1port, value: "9101"}
+  - target:
+      kind: Service
+      name: node-exporter
+    patch: |
+      - {op: replace, path: /spec/ports/0/targetPort, value: 9101}
 
 images:
   - name: ghcr.io/openphc/cce-collector-service
