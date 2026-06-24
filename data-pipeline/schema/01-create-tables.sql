@@ -332,3 +332,27 @@ CREATE TABLE IF NOT EXISTS destination_adaptor_mapping
 ENGINE = ReplacingMergeTree(_version, _is_deleted)
 ORDER BY (id)
 SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
+
+
+-- ============================================================
+-- COMPLIANCE SERVICE: Reference Data
+-- ============================================================
+
+-- Facility roster auto-captured from inbound FHIR clinical events by FacilityReferenceService.
+-- CDC-sourced: PostgreSQL (compliance service) → Kafka → ClickHouse.
+-- Used as denominator in facility activity rate and e-Buzima adoption KPI calculations.
+CREATE TABLE IF NOT EXISTS facility
+(
+    id                        UUID,
+    facility_id               String,    -- HIE-assigned facility identifier (UNIQUE in source)
+    facility_name             String,    -- display name from FHIR Reference.display
+    expected_patients_per_day UInt32     DEFAULT 0,
+    created_at                DateTime64(6),
+    updated_at                DateTime64(6),
+
+    _version                  UInt64,
+    _is_deleted               UInt8 DEFAULT 0
+)
+ENGINE = ReplacingMergeTree(_version, _is_deleted)
+ORDER BY (id)
+SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
