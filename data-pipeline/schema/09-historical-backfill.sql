@@ -3,6 +3,22 @@
 --        --param_from_date=2026-01-01 --param_to_date=2026-06-27 \
 --        < schema/09-historical-backfill.sql
 --
+-- ============================================================================
+-- ⚠️  WHEN TO RUN — READ FIRST
+-- ============================================================================
+--   Run this ONLY to rebuild historical daily-MV rows AFTER a full ClickHouse
+--   re-snapshot (or to fill a known gap), AND only if historical backfill is needed.
+--
+--   It is NOT part of normal operation or any deploy:
+--     - deliberately EXCLUDED from the schema-apply list (redeploy-clickhouse.sh
+--       applies 01–08 only; 09 is never auto-run);
+--     - requires --param_from_date / --param_to_date, so it cannot run by accident.
+--
+--   In steady state, NEVER run it — the schema/07 refreshable MVs populate today's
+--   rows automatically every 30 min. This script is purely for recovering PAST
+--   snapshot_date rows that a re-snapshot cannot rebuild on its own.
+-- ============================================================================
+--
 -- WHY THIS EXISTS
 --   The schema/07 refreshable MVs only ever snapshot "today" (toDate(now())).
 --   They cannot rebuild PAST snapshot_date rows. After a full ClickHouse
