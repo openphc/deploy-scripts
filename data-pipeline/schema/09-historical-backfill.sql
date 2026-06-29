@@ -38,9 +38,14 @@
 --   This vectorizes the as-of lookup across the whole date range in one pass.
 --
 -- IMPORTANT
---   * Reconstruction is only as complete as the history. Dates BEFORE the V4
---     triggers were deployed rely on the one-time seed (exact for
---     protocol_instance; best-effort for step_instance DUE/OVERDUE/MISSED/SKIPPED).
+--   * Reconstruction is only as complete as the history: every transition is captured
+--     forward from enrollment (a fresh start has no pre-existing rows), so an instance
+--     appears from its first history row onward.
+--   * The history tables carry only their direct parent id; protocol_definition_id and
+--     protocol_instance_id are recovered by INNER JOIN to the immutable base tables
+--     (protocol_instances / step_instances). A hard-deleted instance/step (purged by
+--     clean_deleted_rows) therefore drops out of the backfill — by design, a deleted
+--     entity is excluded from historical rollups too.
 --   * This aggregation MUST stay in lockstep with mv_daily_compliance_kpis in
 --     schema/07. If that MV's logic changes, change this query to match, so
 --     backfilled days and live days are computed identically.
@@ -65,11 +70,15 @@ enrollment_asof AS (
     SELECT
         d.snapshot_date                                            AS snapshot_date,
         h.protocol_instance_id                                     AS protocol_instance_id,
-        any(h.protocol_definition_id)                              AS protocol_definition_id,
+        any(pi.protocol_definition_id)                             AS protocol_definition_id,
         argMax(h.status, h.changed_at)                             AS status
     FROM dates d
     INNER JOIN protocol_instance_history h FINAL
             ON toDate(h.changed_at) <= d.snapshot_date
+    -- protocol_definition_id is no longer denormalized on the history row; recover it from
+    -- the immutable base table. INNER JOIN: a hard-deleted (and purged) instance drops out.
+    INNER JOIN protocol_instances pi FINAL
+            ON pi.id = h.protocol_instance_id
     GROUP BY d.snapshot_date, h.protocol_instance_id
 ),
 -- Deviations attributable to each enrollment as-of D (deviations are append-only).
@@ -91,12 +100,16 @@ step_asof AS (
     SELECT
         d.snapshot_date                                            AS snapshot_date,
         h.step_instance_id                                         AS step_instance_id,
-        any(h.protocol_instance_id)                                AS protocol_instance_id,
+        any(si.protocol_instance_id)                               AS protocol_instance_id,
         argMax(h.state, h.changed_at)                              AS state,
         argMax(h.completion_status, h.changed_at)                  AS completion_status
     FROM dates d
     INNER JOIN step_instance_history h FINAL
             ON toDate(h.changed_at) <= d.snapshot_date
+    -- protocol_instance_id is no longer denormalized on the history row; recover it from
+    -- the immutable base table. INNER JOIN: a hard-deleted (and purged) step drops out.
+    INNER JOIN step_instances si FINAL
+            ON si.id = h.step_instance_id
     GROUP BY d.snapshot_date, h.step_instance_id
 ),
 -- Enrollment breakdown per (day, protocol_definition_id).
@@ -322,10 +335,13 @@ enr AS (
     SELECT
         d.snapshot_date                 AS snapshot_date,
         h.protocol_instance_id          AS protocol_instance_id,
-        any(h.protocol_definition_id)   AS protocol_definition_id
+        any(pi.protocol_definition_id)  AS protocol_definition_id
     FROM dates d
     INNER JOIN protocol_instance_history h FINAL
             ON toDate(h.changed_at) <= d.snapshot_date
+    -- protocol_definition_id recovered from the immutable base table (see section 1).
+    INNER JOIN protocol_instances pi FINAL
+            ON pi.id = h.protocol_instance_id
     GROUP BY d.snapshot_date, h.protocol_instance_id
 )
 SELECT

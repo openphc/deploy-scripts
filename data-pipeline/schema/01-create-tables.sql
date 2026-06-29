@@ -166,8 +166,7 @@ SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 CREATE TABLE IF NOT EXISTS protocol_instance_history
 (
     id                      Int64,         -- PostgreSQL BIGSERIAL PK
-    protocol_instance_id    UUID,
-    protocol_definition_id  UUID,
+    protocol_instance_id    UUID,          -- backfill joins protocol_instances to recover protocol_definition_id
     status                  String,        -- ACTIVE | COMPLETED | WITHDRAWN | EXPIRED
     changed_at              DateTime64(6), -- when the transition occurred
 
@@ -182,8 +181,7 @@ SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 CREATE TABLE IF NOT EXISTS step_instance_history
 (
     id                    Int64,           -- PostgreSQL BIGSERIAL PK
-    step_instance_id      UUID,
-    protocol_instance_id  UUID,
+    step_instance_id      UUID,            -- backfill joins step_instances to recover protocol_instance_id
     state                 String,          -- PENDING | DUE | OVERDUE | MISSED | COMPLETED | SKIPPED
     completion_status     String,          -- EARLY | ON_TIME | LATE  (set when state = COMPLETED)
     changed_at            DateTime64(6),   -- when the transition occurred

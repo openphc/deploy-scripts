@@ -160,7 +160,6 @@ WITH
 SELECT
     JSONExtractInt(payload, 'id')                                                  AS id,
     toUUID(JSONExtractString(payload, 'protocol_instance_id'))                     AS protocol_instance_id,
-    toUUID(JSONExtractString(payload, 'protocol_definition_id'))                   AS protocol_definition_id,
     JSONExtractString(payload, 'status')                                           AS status,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'changed_at'), 6)   AS changed_at,
     JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                          AS _version,
@@ -184,7 +183,6 @@ WITH
 SELECT
     JSONExtractInt(payload, 'id')                                                  AS id,
     toUUID(JSONExtractString(payload, 'step_instance_id'))                         AS step_instance_id,
-    toUUID(JSONExtractString(payload, 'protocol_instance_id'))                     AS protocol_instance_id,
     JSONExtractString(payload, 'state')                                            AS state,
     JSONExtractString(payload, 'completion_status')                                AS completion_status,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'changed_at'), 6)   AS changed_at,
