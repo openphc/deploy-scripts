@@ -28,12 +28,16 @@ spec:
                 configMapKeyRef:
                   name: cce-config
                   key: KAFKA_BOOTSTRAP_SERVERS
+            # Cap the JVM heap under the container limit so kafka-ui (Java 17 / Spring Boot) doesn't
+            # OOMKill (it was crash-looping at 512Mi — exit 137). Heap ~60% of 1Gi leaves room for non-heap.
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=60.0"
           resources:
             requests:
-              memory: 256Mi
+              memory: 512Mi
               cpu: 100m
             limits:
-              memory: 512Mi
+              memory: 1Gi
               cpu: 500m
 ---
 apiVersion: v1
