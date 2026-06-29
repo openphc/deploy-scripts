@@ -32,7 +32,8 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT toStartOfMinute(received_at) AS time, count() AS events FROM cce_analytics.inbound_event_logs WHERE received_at >= now() - INTERVAL 1 HOUR GROUP BY time ORDER BY time"
+          "rawSql": "SELECT toStartOfMinute(received_at) AS time, count() AS events FROM cce_analytics.inbound_event_logs WHERE received_at >= now() - INTERVAL 1 HOUR GROUP BY time ORDER BY time",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -46,7 +47,8 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT now() AS time, dateDiff('second', max(received_at), now()) AS seconds_since_last_event FROM cce_analytics.inbound_event_logs"
+          "rawSql": "SELECT now() AS time, dateDiff('second', max(received_at), now()) AS seconds_since_last_event FROM cce_analytics.inbound_event_logs",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -129,7 +131,8 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT toStartOfMinute(received_at) AS time, quantile(0.5)(dateDiff('second', event_time, received_at)) AS p50, quantile(0.95)(dateDiff('second', event_time, received_at)) AS p95 FROM cce_analytics.inbound_event_logs WHERE received_at >= now() - INTERVAL 1 HOUR AND event_time IS NOT NULL GROUP BY time ORDER BY time"
+          "rawSql": "SELECT toStartOfMinute(received_at) AS time, quantile(0.5)(dateDiff('second', event_time, received_at)) AS p50, quantile(0.95)(dateDiff('second', event_time, received_at)) AS p95 FROM cce_analytics.inbound_event_logs WHERE received_at >= now() - INTERVAL 1 HOUR AND event_time IS NOT NULL GROUP BY time ORDER BY time",
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -158,7 +161,8 @@
       "datasource": "ClickHouse",
       "targets": [
         {
-          "rawSql": "SELECT now() AS time, table, count() AS active_parts FROM system.parts WHERE database = 'cce_analytics' AND active GROUP BY table ORDER BY active_parts DESC"
+          "rawSql": "SELECT now() AS time, table, count() AS active_parts FROM system.parts WHERE database = 'cce_analytics' AND active GROUP BY table ORDER BY active_parts DESC",
+          "format": "table"
         }
       ],
       "fieldConfig": {
