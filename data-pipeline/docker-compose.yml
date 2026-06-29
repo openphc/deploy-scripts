@@ -3,8 +3,8 @@
 # Usage (run from this directory): docker compose up -d
 #
 # This repo owns the analytics path only: ClickHouse + a Kafka Connect worker running the
-# Debezium PostgreSQL source connector. It plugs into the EXISTING platform stack
-# (the root docker-compose.yml) over the shared external network `cce-net`:
+# Debezium PostgreSQL source connector. It plugs into the EXISTING platform stack over a shared
+# external docker network (PIPELINE_NETWORK, default `cce-net` — see the networks: block below):
 #   - Kafka broker (confluentinc/cp-kafka, KRaft) — already deployed
 #   - PostgreSQL `ccedb` — already deployed (the CDC source)
 #   - Prometheus + Grafana — already deployed (reuse them; provisioning artifacts live in infra/)
@@ -57,7 +57,6 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    networks: [cce-net]
     deploy:
       resources:
         limits:
@@ -94,15 +93,21 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-    networks: [cce-net]
 
 volumes:
   clickhouse-data:
 
-# The platform's shared network (created by the root docker-compose.yml, which pins `name: cce-net`).
-# Lets ClickHouse + Kafka Connect reach the existing kafka broker and ccedb, and lets
-# cce-insights-service reach ClickHouse.
+# Attach to the platform's EXISTING shared docker network so ClickHouse + Kafka Connect can reach
+# the Kafka broker and ccedb by name (and cce-insights-service can reach ClickHouse). This is the
+# compose default network for every service above, set to an external network so it joins (not
+# creates) the platform's network.
+#
+# Defaults to `cce-net` — the network the root docker-compose.yml pins (the all-in-one forker stack).
+# If your infra runs as a SEPARATE compose project (so its default network is e.g.
+# `infrastructure_default`), point PIPELINE_NETWORK at that network instead of standing up a
+# second bridge — dual-homing port-published containers across two networks breaks published-port
+# routing. (RW UAT sets PIPELINE_NETWORK=infrastructure_default; see rw/uat/01-infra-docker.sh.)
 networks:
-  cce-net:
+  default:
     external: true
-    name: cce-net
+    name: ${PIPELINE_NETWORK:-cce-net}

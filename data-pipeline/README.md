@@ -10,7 +10,7 @@ ccedb (PG16) → Debezium (Kafka Connect) → Kafka topics (cce.public.*)
             → MVs / argMaxState rollups → cce-insights-service / cce-insights-ui (separate repos)
 ```
 
-**Reuses the platform's existing Kafka.** This repo runs only **ClickHouse** + a **Kafka Connect worker** (the Debezium PostgreSQL source connector), joined to the shared `cce-net` network from [openphc/deploy-scripts](https://github.com/openphc/deploy-scripts) (which already provides Kafka, `ccedb`, Prometheus/Grafana, and the insights apps). Debezium publishes change events to Kafka; ClickHouse **Kafka-engine tables** consume them and parsing MVs land them into `ReplacingMergeTree` base tables — **no ClickHouse sink connector, no S3/MinIO staging**. All field enrichment is done by ClickHouse `MATERIALIZED` columns and MVs.
+**Reuses the platform's existing Kafka.** This repo runs only **ClickHouse** + a **Kafka Connect worker** (the Debezium PostgreSQL source connector), joined to the platform's shared docker network (`PIPELINE_NETWORK`, default `cce-net`) from [openphc/deploy-scripts](https://github.com/openphc/deploy-scripts) (which already provides Kafka, `ccedb`, Prometheus/Grafana, and the insights apps). Debezium publishes change events to Kafka; ClickHouse **Kafka-engine tables** consume them and parsing MVs land them into `ReplacingMergeTree` base tables — **no ClickHouse sink connector, no S3/MinIO staging**. All field enrichment is done by ClickHouse `MATERIALIZED` columns and MVs.
 
 ## Components
 
@@ -20,19 +20,21 @@ ccedb (PG16) → Debezium (Kafka Connect) → Kafka topics (cce.public.*)
 | Kafka Connect + Debezium | `quay.io/debezium/connect:3.0.0.Final` | PostgreSQL CDC source connector (pgoutput) with ReselectColumns for TOAST |
 | Kafka | confluentinc/cp-kafka 7.6.1 (KRaft) | **Reused** from the platform deploy (the change-event bus) |
 
-> Prometheus + Grafana are the platform's existing instances on `cce-net`; this repo ships their
-> provisioning artifacts (`infra/grafana`, `infra/prometheus`) to add there, not its own services.
+> Prometheus + Grafana are the platform's existing instances on the shared network; this repo ships
+> their provisioning artifacts (`infra/grafana`, `infra/prometheus`) to add there, not its own services.
 
 ## Quick Start
 
-> `ccedb`, Kafka, and the insights apps live in the **platform stack** (openphc/deploy-scripts) on
-> the external `cce-net` network. Bring that up first (or `docker network create cce-net`).
+> `ccedb`, Kafka, and the insights apps live in the **platform stack** (openphc/deploy-scripts) on a
+> shared docker network. Bring that up first; this stack joins it via `PIPELINE_NETWORK` (default
+> `cce-net` — `docker network create cce-net`; for a separate-project infra set it to that network,
+> e.g. `infrastructure_default`).
 
 ```bash
-cp .env.example .env   # edit CDC_*/CLICKHOUSE_PASSWORD/KAFKA_BOOTSTRAP_SERVERS
+cp .env.example .env   # edit PIPELINE_NETWORK/CLICKHOUSE_PASSWORD/KAFKA_BOOTSTRAP_SERVERS
 set -a; source .env; set +a
 
-# Start ClickHouse + Kafka Connect (joins the shared cce-net)
+# Start ClickHouse + Kafka Connect (joins the shared network, $PIPELINE_NETWORK)
 docker compose up -d
 
 # 1. ClickHouse schema: base tables, Kafka-engine queues + consumer MVs, aggregation MVs, indexes, dicts, rollups
@@ -51,7 +53,7 @@ psql -h "$POSTGRES_HOST" -U postgres -d "$POSTGRES_DATABASE" -f cdc/01-configure
 
 **UIs:** Kafka UI http://localhost:8080 (platform) · Kafka Connect http://localhost:8083 · ClickHouse http://localhost:8123
 
-`cce-insights-service` (already on `cce-net`) reads ClickHouse via the `cce_pipeline` user (HTTP 8123 / native 9000).
+`cce-insights-service` (already on the shared network) reads ClickHouse via the `cce_pipeline` user (HTTP 8123 / native 9000).
 
 ## CDC Tables
 
