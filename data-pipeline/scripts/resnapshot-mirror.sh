@@ -54,9 +54,11 @@ fi
 
 # 3. Truncate ClickHouse tables (base + MV backing + rollups) so the re-snapshot doesn't double-count.
 echo "Step 3: truncate ClickHouse tables..."
-chq() { curl -sf "${CH_URL}/" --data-binary "$1" >/dev/null 2>&1; }
+PW_ENC="$(python3 -c 'import urllib.parse,os;print(urllib.parse.quote(os.environ["CLICKHOUSE_PASSWORD"]))' 2>/dev/null || echo "$CH_PASS")"
+CH_QS="user=${CH_USER}&password=${PW_ENC}"
+chq() { curl -sf "${CH_URL}/?${CH_QS}" --data-binary "$1" >/dev/null 2>&1; }
 if curl -sf "${CH_URL}/ping" >/dev/null 2>&1; then
-    TABLES=$(curl -sf "${CH_URL}/?query=SELECT+name+FROM+system.tables+WHERE+database='cce_analytics'+AND+(engine='ReplacingMergeTree'+OR+engine='SummingMergeTree'+OR+engine='AggregatingMergeTree')" 2>/dev/null || true)
+    TABLES=$(curl -sf "${CH_URL}/?${CH_QS}&query=SELECT+name+FROM+system.tables+WHERE+database='cce_analytics'+AND+(engine='ReplacingMergeTree'+OR+engine='SummingMergeTree'+OR+engine='AggregatingMergeTree')" 2>/dev/null || true)
     for t in $TABLES; do chq "TRUNCATE TABLE cce_analytics.${t}" && echo "    ✓ ${t}"; done
 else
     echo "  ✗ ClickHouse unreachable — truncate manually before resuming"
