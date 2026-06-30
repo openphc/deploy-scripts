@@ -45,6 +45,8 @@ spec:
             # Datasource connection values (expanded into the provisioning YAML above).
             - name: CLICKHOUSE_HOST
               valueFrom: { configMapKeyRef: { name: cce-config, key: CLICKHOUSE_HOST } }
+            - name: CLICKHOUSE_PORT
+              valueFrom: { configMapKeyRef: { name: cce-config, key: CLICKHOUSE_PORT } }
             - name: CLICKHOUSE_DB
               valueFrom: { configMapKeyRef: { name: cce-config, key: CLICKHOUSE_DB } }
             - name: CLICKHOUSE_USER
@@ -140,7 +142,7 @@ data:
         access: proxy
         jsonData:
           host: ${CLICKHOUSE_HOST}
-          port: 8123
+          port: ${CLICKHOUSE_PORT}
           protocol: http
           defaultDatabase: ${CLICKHOUSE_DB}
           username: ${CLICKHOUSE_USER}
