@@ -19,6 +19,7 @@ configMapGenerator:
       - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
       - KAFKA_UI_CLUSTER_NAME=cce-prod
       - OPENHIM_CORE_HOST=${OPENHIM_CORE_HOST}
+      - FACILITY_FILTER_IDS=${FACILITY_FILTER_IDS}
       - KEYCLOAK_HOST=http://keycloak:8080/auth
       # Public token issuer (gateway validates iss against this). Built from INGRESS_HOST.
       - KEYCLOAK_ISSUER=https://${INGRESS_HOST}/auth/realms/cce
