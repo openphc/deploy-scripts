@@ -107,8 +107,6 @@ portainer.cce.mdtlabs.org {
 
 cc.mdtlabs.org {
     handle_path /cc/* {
-        # UI entry points (/cc/ui and /cc/) map to the app's root index.html.
-        # Everything else (styles.css, app.js, /api/*) passes through unchanged.
         @ui path /ui /ui/ /
         rewrite @ui /
         reverse_proxy localhost:8075 {
@@ -118,7 +116,7 @@ cc.mdtlabs.org {
         }
     }
 
-    handle_path /bap/* {
+    handle /bap/* {
         reverse_proxy localhost:8076 {
             header_up Host {host}
             header_up X-Forwarded-For {remote}
@@ -126,7 +124,7 @@ cc.mdtlabs.org {
         }
     }
 
-    handle_path /bpp/* {
+    handle /bpp/* {
         reverse_proxy localhost:8077 {
             header_up Host {host}
             header_up X-Forwarded-For {remote}
