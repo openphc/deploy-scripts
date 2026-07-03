@@ -17,6 +17,7 @@ configMapGenerator:
       - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
       - KAFKA_UI_CLUSTER_NAME=cce-uat
       - OPENHIM_CORE_HOST=${OPENHIM_CORE_HOST}
+      - OPENHIM_CORE_API_PORT=${OPENHIM_CORE_API_PORT}
       - FACILITY_FILTER_IDS=${FACILITY_FILTER_IDS}
       - KEYCLOAK_HOST=http://keycloak:8080/auth
       # Public token issuer (gateway validates iss against this; external clients fetch
@@ -32,6 +33,8 @@ configMapGenerator:
       # gateway-service CORS allowed origin. Must be a concrete origin, never "*"
       # (the gateway sets allowCredentials=true). Set per-environment in .env.
       - ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
+      - BASIC_AUTH_ENABLED=${BASIC_AUTH_ENABLED}
+      - BASIC_AUTH_CLIENT_ID=${BASIC_AUTH_CLIENT_ID}
 
 secretGenerator:
   - name: cce-secrets
@@ -49,6 +52,7 @@ secretGenerator:
       - OPENHIM_PASSWORD=${OPENHIM_PASSWORD}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER}
       - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - BASIC_AUTH_CLIENT_SECRET=${BASIC_AUTH_CLIENT_SECRET}
 
 generatorOptions:
   disableNameSuffixHash: true

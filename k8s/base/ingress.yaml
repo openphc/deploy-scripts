@@ -20,30 +20,6 @@ spec:
                 name: cce-insights-ui
                 port:
                   number: 3001
-          - path: /assets
-            pathType: Prefix
-            backend:
-              service:
-                name: cce-insights-ui
-                port:
-                  number: 3001
-          - path: /api/insights
-            pathType: Prefix
-            backend:
-              service:
-                name: cce-insights-service
-                port:
-                  number: 8084
-          - path: /api/collector
-            pathType: Prefix
-            backend:
-              service:
-                name: cce-collector-service
-                port:
-                  number: 8080
-          # ALL /v1 API traffic goes through the gateway-service (JWT validation + DB-driven
-          # authorization), which routes to the backends: /v1/events -> collector,
-          # /v1/compliance -> compliance, /v1/insights -> insights-service.
           - path: /v1
             pathType: Prefix
             backend:
@@ -51,13 +27,6 @@ spec:
                 name: gateway-service
                 port:
                   number: 8090
-          - path: /inbound
-            pathType: Prefix
-            backend:
-              service:
-                name: openhim-emitter-adaptor
-                port:
-                  number: 8082
           - path: /auth
             pathType: Prefix
             backend:

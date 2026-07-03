@@ -76,6 +76,31 @@ spec:
               value: "gateway-service"
             - name: JWT_ROLES_CLAIM_PATH
               value: "resource_access.gateway-service.roles"
+            # ---- Basic Auth (OpenHIM -> gateway) ----
+            # OpenHIM channel routes can only send Basic auth; the gateway exchanges those creds
+            # for a Keycloak token (resource-owner-password grant) via the confidential
+            # 'openhim-basic' client, then applies the normal JWT + DB authorization.
+            - name: BASIC_AUTH_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: BASIC_AUTH_ENABLED
+            - name: BASIC_AUTH_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: BASIC_AUTH_CLIENT_ID
+            - name: BASIC_AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: BASIC_AUTH_CLIENT_SECRET
+                  # optional so the gateway still starts in an env where this key isn't set yet
+                  # (e.g. before that env's openhim-basic client exists); Basic auth is inert until set.
+                  optional: true
+            # Token endpoint on the SAME realm as JWT_ISSUER so the minted token's iss matches.
+            - name: BASIC_AUTH_TOKEN_URI
+              value: "$(JWT_ISSUER)/protocol/openid-connect/token"
             # ---- Downstream routes (in-cluster service names) ----
             - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_0_ID
               value: "cce-collector-service"
@@ -101,6 +126,20 @@ spec:
               value: "Path=/v1/insights/**"
             - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_FILTERS_0_NAME
               value: "JwtValidationFilter"
+            # openhim-emitter-adaptor inbound behind the gateway. StripPrefix=2 rewrites
+            # /v1/openhim-emitter-adaptor/inbound -> /inbound on the adaptor (which serves /inbound).
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_ID
+              value: "openhim-emitter-adaptor"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_URI
+              value: "http://openhim-emitter-adaptor:8082"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_PREDICATES_0
+              value: "Path=/v1/openhim-emitter-adaptor/**"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_FILTERS_0_NAME
+              value: "JwtValidationFilter"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_FILTERS_1_NAME
+              value: "StripPrefix"
+            - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_FILTERS_1_ARGS_PARTS
+              value: "2"
             # ---- Keycloak (in-cluster) ----
             - name: KEYCLOAK_SERVER_URL
               value: "http://keycloak:8080/auth"

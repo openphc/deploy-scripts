@@ -53,7 +53,8 @@ VALUES
     (7, 'COMPLIANCE_WRITE',       'POST',   '/v1/compliance/**', 'Create compliance resources',           'Compliance'),
     (8, 'COMPLIANCE_WRITE',       'PUT',    '/v1/compliance/**', 'Update compliance resources',           'Compliance'),
     (9, 'COMPLIANCE_WRITE',       'DELETE', '/v1/compliance/**', 'Delete compliance resources',           'Compliance'),
-    (10, 'INSIGHTS_READ',         'GET',    '/v1/insights/**',   'Read analytics from insights service',  'Insights')
+    (10, 'INSIGHTS_READ',         'GET',    '/v1/insights/**',   'Read analytics from insights service',  'Insights'),
+    (11, 'EMITTER_INBOUND_WRITE', 'POST',   '/v1/openhim-emitter-adaptor/**', 'Post inbound FHIR events to the OpenHIM emitter adaptor', 'Emitter')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT pg_catalog.setval('public.api_permissions_id_seq',

@@ -27,6 +27,11 @@ spec:
                 configMapKeyRef:
                   name: cce-config
                   key: OPENHIM_CORE_HOST
+            - name: OPENHIM_CORE_API_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: OPENHIM_CORE_API_PORT      
             - name: FACILITY_FILTER_IDS
               valueFrom:
                 configMapKeyRef:
