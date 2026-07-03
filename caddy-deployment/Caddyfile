@@ -106,7 +106,7 @@ portainer.cce.mdtlabs.org {
 }
 
 cc.mdtlabs.org {
-    handle_path /cc/* {
+    handle_path /cc/ui {
         reverse_proxy localhost:8075 {
             header_up Host {host}
             header_up X-Forwarded-For {remote}
