@@ -37,6 +37,16 @@ spec:
                 configMapKeyRef:
                   name: cce-config
                   key: FACILITY_FILTER_IDS
+            - name: OPENHIM_CORE_SCHEME
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: OPENHIM_CORE_SCHEME
+            - name: OPENHIM_CORE_AUTH_TYPE
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: OPENHIM_CORE_AUTH_TYPE
             - name: OPENHIM_USERNAME
               valueFrom:
                 secretKeyRef:

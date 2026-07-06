@@ -18,6 +18,8 @@ configMapGenerator:
       - KAFKA_UI_CLUSTER_NAME=cce-uat
       - OPENHIM_CORE_HOST=${OPENHIM_CORE_HOST}
       - OPENHIM_CORE_API_PORT=${OPENHIM_CORE_API_PORT}
+      - OPENHIM_CORE_SCHEME=${OPENHIM_CORE_SCHEME}
+      - OPENHIM_CORE_AUTH_TYPE=${OPENHIM_CORE_AUTH_TYPE}
       - FACILITY_FILTER_IDS=${FACILITY_FILTER_IDS}
       - KEYCLOAK_HOST=http://keycloak:8080/auth
       # Public token issuer (gateway validates iss against this; external clients fetch
