@@ -31,20 +31,21 @@ body {
 }
 
 .icon-wrap {
-  width: 56px;
-  height: 56px;
-  background: rgba(255, 255, 255, 0.15);
+  width: 64px;
+  height: 64px;
+  background: #ffffff;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 12px;
+  overflow: hidden;
 }
 
-.icon-wrap svg {
-  width: 32px;
-  height: 32px;
-  stroke: #ffffff;
+.icon-wrap img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
 }
 
 .banner h1 {
