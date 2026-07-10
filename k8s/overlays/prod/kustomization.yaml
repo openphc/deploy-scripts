@@ -111,8 +111,8 @@ patches:
       name: cce-collector-service
     patch: |
       - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
-      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "1500m"}
-      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "1536Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "758Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "2304Mi"}
   - target:
@@ -120,10 +120,10 @@ patches:
       name: cce-compliance-service
     patch: |
       - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
-      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "2100m"}
-      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "2150Mi"}
-      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "4200m"}
-      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "6451Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "758Mi"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "1200m"}
+      - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "1536Mi"}
   - target:
       kind: Deployment
       name: cce-intelligence-service

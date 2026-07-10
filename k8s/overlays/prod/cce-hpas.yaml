@@ -49,7 +49,7 @@ metadata:
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: cce-compliance-service }
   minReplicas: 1
-  maxReplicas: 2
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
@@ -73,7 +73,7 @@ metadata:
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: cce-insights-service }
   minReplicas: 1
-  maxReplicas: 2
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
@@ -85,7 +85,7 @@ metadata:
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: cce-insights-ui }
   minReplicas: 1
-  maxReplicas: 2
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }

@@ -24,6 +24,10 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
+            # Paketo caps -XX:MaxDirectMemorySize at 10m by default; the Kafka consumer needs
+            # bigger direct buffers to fetch a large backlog (e.g. a replay) — raise to 512m.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxDirectMemorySize=512m"
             - name: SERVER_PORT
               value: "8080"
             - name: DB_HOST
