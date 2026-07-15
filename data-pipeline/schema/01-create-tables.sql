@@ -406,6 +406,7 @@ CREATE TABLE IF NOT EXISTS facility
     facility_id               String,    -- HIE-assigned facility identifier (UNIQUE in source)
     facility_name             String,    -- display name from FHIR Reference.display
     expected_patients_per_day UInt32     DEFAULT 0,  -- 0 = not configured / admin facility
+    district_name             String     DEFAULT '',
     created_at                DateTime64(6),
     updated_at                DateTime64(6),
 

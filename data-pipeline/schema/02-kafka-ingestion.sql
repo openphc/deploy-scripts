@@ -424,6 +424,7 @@ SELECT
     JSONExtractString(payload, 'facility_id')                                         AS facility_id,
     JSONExtractString(payload, 'facility_name')                                       AS facility_name,
     JSONExtractUInt(payload, 'expected_patients_per_day')                             AS expected_patients_per_day,
+    JSONExtractString(payload, 'district_name')                                       AS district_name,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'created_at'), 6)      AS created_at,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'updated_at'), 6)      AS updated_at,
     JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                             AS _version,
