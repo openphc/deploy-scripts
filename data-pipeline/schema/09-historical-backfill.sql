@@ -26,9 +26,11 @@
 --   rows by replaying the append-only transition history:
 --       protocol_instance_history  (status as-of date D)
 --       step_instance_history      (state / completion_status as-of date D)
---   joined with the already-durable, time-anchored sources:
---       deviations (detected_at), inbound_event_log (received_at),
---       compliance_event_log (received_at), facility.
+--   joined with the already-durable, time-anchored source:
+--       deviations (detected_at).
+--   (Only section 1 / mv_daily_compliance_kpis still backfills this way. The event_time MVs —
+--    event, deviation-page, adoption, referral — self-heal on refresh, so this script no longer
+--    reads inbound_event_log / compliance_event_log / facility.)
 --
 -- AS-OF PATTERN (used throughout)
 --   For a snapshot_date D, an entity's state = the history row with the latest
@@ -195,264 +197,61 @@ LEFT JOIN step_agg    sa ON ea.snapshot_date = sa.snapshot_date AND ea.protocol_
 
 
 -- ============================================================
--- 2. mv_daily_facility_kpis  (per snapshot_date × facility_id)
+-- 2 & 3. mv_daily_facility_kpis / mv_daily_facility_activity_summary — REMOVED.
 -- ============================================================
--- ACTIVE enrollments as-of D (protocol_instance_history) × patient->facility as-of D
--- (latest accepted event on/before D from inbound_event_logs — NOT the current
--- mv_patient_facility_latest) + deviations as-of D + events on D.
-INSERT INTO mv_daily_facility_kpis
-WITH
-dates AS (
-    SELECT toDate({from_date:Date}) + number AS snapshot_date
-    FROM numbers(toUInt64(dateDiff('day', toDate({from_date:Date}), toDate({to_date:Date})) + 1))
-),
--- ACTIVE enrollments as-of D, with immutable patient_id from the base table
-active_enr AS (
-    SELECT
-        e.snapshot_date         AS snapshot_date,
-        e.protocol_instance_id  AS protocol_instance_id,
-        any(pi.patient_id)      AS patient_id
-    FROM (
-        SELECT d.snapshot_date, h.protocol_instance_id,
-               argMax(h.status, h.changed_at) AS status
-        FROM dates d
-        INNER JOIN protocol_instance_history h FINAL
-                ON toDate(h.changed_at) <= d.snapshot_date
-        GROUP BY d.snapshot_date, h.protocol_instance_id
-    ) e
-    INNER JOIN protocol_instances pi FINAL ON pi.id = e.protocol_instance_id
-    WHERE e.status = 'ACTIVE'
-    GROUP BY e.snapshot_date, e.protocol_instance_id
-),
--- each patient's most-recently-seen facility on/before D
-patient_facility AS (
-    SELECT
-        d.snapshot_date                              AS snapshot_date,
-        iel.subject                                  AS patient_id,
-        argMax(iel.facility_id, iel.received_at)     AS facility_id
-    FROM dates d
-    INNER JOIN inbound_event_logs iel
-            ON toDate(iel.received_at) <= d.snapshot_date
-    WHERE iel.facility_id != ''
-    GROUP BY d.snapshot_date, iel.subject
-),
-dev_asof AS (
-    SELECT d.snapshot_date AS snapshot_date, dv.protocol_instance_id AS protocol_instance_id,
-           count() AS deviation_count
-    FROM dates d
-    INNER JOIN deviations dv FINAL ON toDate(dv.detected_at) <= d.snapshot_date
-    GROUP BY d.snapshot_date, dv.protocol_instance_id
-),
-inst AS (
-    SELECT
-        ae.snapshot_date                    AS snapshot_date,
-        ae.protocol_instance_id             AS protocol_instance_id,
-        coalesce(pf.facility_id, '')        AS facility_id,
-        coalesce(dv.deviation_count, 0)     AS deviation_count
-    FROM active_enr ae
-    LEFT JOIN patient_facility pf ON pf.snapshot_date = ae.snapshot_date AND pf.patient_id = ae.patient_id
-    LEFT JOIN dev_asof dv         ON dv.snapshot_date = ae.snapshot_date AND dv.protocol_instance_id = ae.protocol_instance_id
-),
-compliance_by_facility AS (
-    SELECT
-        snapshot_date,
-        facility_id,
-        toUInt32(count())                       AS tracked_patients,
-        toUInt32(countIf(deviation_count = 0))  AS compliant_patients,
-        toUInt32(countIf(deviation_count > 0))  AS non_compliant_patients,
-        coalesce(toFloat32(round(countIf(deviation_count = 0) / nullIf(count(), 0) * 100, 1)), 0.0) AS compliance_rate_pct,
-        toUInt32(sum(deviation_count))          AS total_deviations
-    FROM inst
-    WHERE facility_id != ''
-    GROUP BY snapshot_date, facility_id
-),
-events_by_day AS (
-    SELECT toDate(hour) AS snapshot_date, facility_id, sum(event_count) AS event_count
-    FROM mv_event_volume_hourly
-    WHERE facility_id != ''
-    GROUP BY toDate(hour), facility_id
-)
-SELECT
-    cbf.snapshot_date                AS snapshot_date,
-    now64(3)                         AS refreshed_at,
-    cbf.facility_id,
-    cbf.tracked_patients,
-    cbf.compliant_patients,
-    cbf.non_compliant_patients,
-    cbf.compliance_rate_pct,
-    cbf.total_deviations,
-    coalesce(eb.event_count, 0)      AS event_count
-FROM compliance_by_facility cbf
-LEFT JOIN events_by_day eb ON eb.snapshot_date = cbf.snapshot_date AND eb.facility_id = cbf.facility_id;
+-- Both MVs were dropped (no live reader; the Facilities ranking and active-facility
+-- tiles are computed live in the insights service). Nothing to backfill here.
+
+-- ============================================================
+-- 4. mv_daily_deviation_kpis — NO historical backfill needed.
+-- ============================================================
+-- Redesigned (schema/07) as a refreshable FULL-RECOMPUTE MV keyed on the deviation's CLINICAL
+-- OCCURRENCE day (event_time-derived step dates: overdue/missed/completed), not a now() snapshot
+-- of detected_at-as-of-D. A re-snapshot restores the stored clinical dates and the MV rebuilds
+-- every past day itself. After a re-snapshot just run:
+--   SYSTEM REFRESH VIEW mv_daily_deviation_kpis_mv;
+-- (The old detected_at as-of-D reconstruction is gone — it targeted removed columns and the wrong
+--  model. A deviation belongs to one occurrence-day bucket, not "every day it was active".)
 
 
 -- ============================================================
--- 3. mv_daily_facility_activity_summary  (per snapshot_date — single row)
+-- 5. mv_daily_event_kpis — NO historical backfill needed.
 -- ============================================================
--- DEPENDS on section 2: reads the just-backfilled mv_daily_facility_kpis.
--- Mirrors the live MV exactly: "active" = a facility present in facility_kpis with
--- event_count > 0 (a facility with events but no ACTIVE patients counts as inactive).
-INSERT INTO mv_daily_facility_activity_summary
-WITH
-dates AS (
-    SELECT toDate({from_date:Date}) + number AS snapshot_date
-    FROM numbers(toUInt64(dateDiff('day', toDate({from_date:Date}), toDate({to_date:Date})) + 1))
-),
-in_scope AS (
-    -- facilities that existed (created) on/before D
-    SELECT d.snapshot_date AS snapshot_date, f.facility_id AS facility_id
-    FROM dates d
-    INNER JOIN facility f FINAL
-            ON toDate(f.created_at) <= d.snapshot_date AND f._is_deleted = 0
-),
-fk AS (
-    SELECT snapshot_date, facility_id, event_count
-    FROM mv_daily_facility_kpis FINAL
-)
-SELECT
-    isc.snapshot_date                                                                 AS snapshot_date,
-    now64(3)                                                                          AS refreshed_at,
-    toUInt32(count())                                                                 AS total_in_scope,
-    toUInt32(countIf(coalesce(fk.event_count, 0) > 0))                                AS active_facilities,
-    toUInt32(countIf(coalesce(fk.event_count, 0) = 0))                                AS inactive_facilities,
-    coalesce(toFloat32(round(countIf(coalesce(fk.event_count, 0) > 0) / nullIf(count(), 0) * 100, 1)), 0.0) AS active_facility_rate_pct
-FROM in_scope isc
-LEFT JOIN fk ON fk.snapshot_date = isc.snapshot_date AND fk.facility_id = isc.facility_id
-GROUP BY isc.snapshot_date;
+-- Redesigned (schema/07) as a refreshable FULL-RECOMPUTE MV keyed on the CLINICAL event_time day ×
+-- facility (inbound_event_logs ⋈ compliance_event_logs by cloudevents_id; pipeline_loss is the
+-- non-negative anti-join). Not a now()/received_at cumulative snapshot. A re-snapshot restores the
+-- stored event_time + cloudevents_id and the MV rebuilds every past day itself:
+--   SYSTEM REFRESH VIEW mv_daily_event_kpis_mv;
+-- (The old cumulative as-of-D reconstruction is gone — it targeted removed rate columns, lacked the
+--  facility dimension, and used the wrong received_at/cumulative model.)
 
 
 -- ============================================================
--- 4. mv_daily_deviation_kpis  (per snapshot_date × protocol_definition_id)
+-- 6. mv_daily_adoption_kpis — NO historical backfill needed.
 -- ============================================================
--- Deviations (detected_at <= D) for enrollments that existed as-of D.
-INSERT INTO mv_daily_deviation_kpis
-WITH
-dates AS (
-    SELECT toDate({from_date:Date}) + number AS snapshot_date
-    FROM numbers(toUInt64(dateDiff('day', toDate({from_date:Date}), toDate({to_date:Date})) + 1))
-),
-enr AS (
-    SELECT
-        d.snapshot_date                 AS snapshot_date,
-        h.protocol_instance_id          AS protocol_instance_id,
-        any(pi.protocol_definition_id)  AS protocol_definition_id
-    FROM dates d
-    INNER JOIN protocol_instance_history h FINAL
-            ON toDate(h.changed_at) <= d.snapshot_date
-    -- protocol_definition_id recovered from the immutable base table (see section 1).
-    INNER JOIN protocol_instances pi FINAL
-            ON pi.id = h.protocol_instance_id
-    GROUP BY d.snapshot_date, h.protocol_instance_id
-)
-SELECT
-    e.snapshot_date                                                  AS snapshot_date,
-    now64(3)                                                         AS refreshed_at,
-    e.protocol_definition_id                                         AS protocol_definition_id,
-    toUInt32(count(dv.id))                                           AS total_deviations,
-    toUInt32(countIf(dv.deviation_type = 'OVERDUE'))                 AS overdue_count,
-    toUInt32(countIf(dv.deviation_type = 'MISSED'))                  AS missed_count,
-    toUInt32(countIf(dv.deviation_type = 'ORDER_VIOLATION'))         AS order_violation_count
-FROM enr e
-INNER JOIN deviations dv FINAL
-        ON dv.protocol_instance_id = e.protocol_instance_id
-       AND toDate(dv.detected_at) <= e.snapshot_date
-GROUP BY e.snapshot_date, e.protocol_definition_id;
+-- Redesigned (schema/07) as a refreshable FULL-RECOMPUTE MV keyed on the CLINICAL event_time day
+-- (patients who walked in that day), not toDate(received_at). A re-snapshot restores event_time
+-- and the MV rebuilds every past day itself. After a re-snapshot just run:
+--   SYSTEM REFRESH VIEW mv_daily_adoption_kpis_mv;
+-- (The old received_at-based reconstruction is gone — it would have written data inconsistent with
+--  the live event_time MV.)
 
 
 -- ============================================================
--- 5. mv_daily_event_kpis  (per snapshot_date — single row, cumulative as-of D)
+-- 7. mv_daily_referral_kpis — NO historical backfill needed.
 -- ============================================================
--- The live MV stamps all-time cumulative totals each refresh, so as-of D =
--- cumulative through end of day D (received_at/hour <= D). processing_status is
--- terminal, so current values reconstruct the past accurately.
-INSERT INTO mv_daily_event_kpis
-WITH
-dates AS (
-    SELECT toDate({from_date:Date}) + number AS snapshot_date
-    FROM numbers(toUInt64(dateDiff('day', toDate({from_date:Date}), toDate({to_date:Date})) + 1))
-),
-ev AS (
-    SELECT d.snapshot_date AS snapshot_date, sum(h.event_count) AS total_events
-    FROM dates d
-    INNER JOIN mv_event_volume_hourly h ON toDate(h.hour) <= d.snapshot_date
-    GROUP BY d.snapshot_date
-),
-proc AS (
-    SELECT
-        d.snapshot_date                                       AS snapshot_date,
-        countIf(c.processing_status = 'MATCHED')              AS matched_count,
-        countIf(c.processing_status = 'ZERO_MATCH')           AS zero_match_count,
-        countIf(c.processing_status = 'DUPLICATE')            AS duplicate_count,
-        count()                                               AS total_processed
-    FROM dates d
-    INNER JOIN compliance_event_logs c FINAL ON toDate(c.received_at) <= d.snapshot_date
-    GROUP BY d.snapshot_date
-)
-SELECT
-    ev.snapshot_date                                                                  AS snapshot_date,
-    now64(3)                                                                          AS refreshed_at,
-    toUInt64(coalesce(ev.total_events, 0))                                            AS total_events,
-    toUInt64(coalesce(p.matched_count, 0))                                            AS matched_count,
-    toUInt64(coalesce(p.zero_match_count, 0))                                         AS zero_match_count,
-    toUInt64(coalesce(p.duplicate_count, 0))                                          AS duplicate_count,
-    coalesce(toFloat32(round(p.matched_count / nullIf(p.total_processed, 0) * 100, 1)), 0.0)    AS matched_rate_pct,
-    coalesce(toFloat32(round(p.zero_match_count / nullIf(p.total_processed, 0) * 100, 1)), 0.0) AS zero_match_rate_pct,
-    toInt64(coalesce(ev.total_events, 0)) - toInt64(coalesce(p.total_processed, 0))   AS pipeline_loss_count
-FROM ev
-LEFT JOIN proc p ON p.snapshot_date = ev.snapshot_date;
-
-
--- ============================================================
--- 6. mv_daily_adoption_kpis  (per snapshot_date × facility_id)
--- ============================================================
--- Per-DAY (not cumulative): unique ACCEPTED patients whose events landed on day D,
--- per facility, ÷ the facility baseline. Baseline is read from the CURRENT facility
--- row by design — expected_patients_per_day is intentionally NOT historised, so a
--- backfilled adoption_rate uses today's baseline even if it was revised since day D.
-INSERT INTO mv_daily_adoption_kpis
-WITH
-dates AS (
-    SELECT toDate({from_date:Date}) + number AS snapshot_date
-    FROM numbers(toUInt64(dateDiff('day', toDate({from_date:Date}), toDate({to_date:Date})) + 1))
-),
-fac AS (
-    SELECT
-        d.snapshot_date                          AS snapshot_date,
-        f.facility_id                            AS facility_id,
-        any(f.expected_patients_per_day)         AS expected_patients_per_day
-    FROM dates d
-    INNER JOIN facility f FINAL
-            ON toDate(f.created_at) <= d.snapshot_date AND f._is_deleted = 0
-    GROUP BY d.snapshot_date, f.facility_id
-),
-actual AS (
-    SELECT
-        toDate(received_at)        AS snapshot_date,
-        facility_id,
-        uniq(subject)              AS actual_patients
-    FROM inbound_event_logs
-    WHERE status = 'ACCEPTED' AND facility_id != ''
-    GROUP BY toDate(received_at), facility_id
-)
-SELECT
-    fac.snapshot_date                                                                 AS snapshot_date,
-    now64(3)                                                                          AS refreshed_at,
-    fac.facility_id,
-    fac.expected_patients_per_day,
-    toUInt32(coalesce(a.actual_patients, 0))                                          AS actual_patients,
-    coalesce(toFloat32(round(
-        coalesce(a.actual_patients, 0) / nullIf(toFloat64(fac.expected_patients_per_day), 0) * 100, 1
-    )), 0.0)                                                                          AS adoption_rate_pct,
-    toInt64(fac.expected_patients_per_day) - toInt64(coalesce(a.actual_patients, 0))  AS reporting_gap
-FROM fac
-LEFT JOIN actual a ON a.snapshot_date = fac.snapshot_date AND a.facility_id = fac.facility_id;
+-- Refreshable FULL-RECOMPUTE MV (schema/07) keyed on the CLINICAL event_time day of accepted
+-- referral-initiated events (step_instances ⋈ compliance_event_logs ⋈ inbound_event_logs). A
+-- re-snapshot restores event_time + the join keys and the MV rebuilds every past day itself:
+--   SYSTEM REFRESH VIEW mv_daily_referral_kpis_mv;
 
 
 -- ============================================================
 -- RUN ORDER
 -- ============================================================
--- Sections 1, 4, 5, 6 are independent. Section 2 (facility_kpis) MUST run before
--- section 3 (facility_activity_summary), which reads the rows section 2 inserts.
--- For very large windows, run in monthly date chunks (adjust from_date/to_date) to
+-- Only section 1 still backfills (the now()-keyed compliance state snapshot). Sections 4, 5, 6, 7
+-- self-heal via their schema/07 event_time refreshable MVs — nothing to run there. Sections 2 & 3
+-- were removed (their MVs no longer exist). Section 1 is independent.
+-- For very large windows, run section 1 in monthly date chunks (adjust from_date/to_date) to
 -- bound the as-of join fan-out. Safe to re-run: ReplacingMergeTree(refreshed_at)
 -- keeps the latest refreshed_at per key.

@@ -15,6 +15,7 @@ ALTER TABLE inbound_event_logs ADD INDEX IF NOT EXISTS idx_correlation         c
 ALTER TABLE inbound_event_logs ADD INDEX IF NOT EXISTS idx_source              source            TYPE bloom_filter GRANULARITY 4;
 ALTER TABLE inbound_event_logs ADD INDEX IF NOT EXISTS idx_subject             subject           TYPE bloom_filter GRANULARITY 4;  -- patient event history (/patients/{id}/events)
 ALTER TABLE inbound_event_logs ADD INDEX IF NOT EXISTS idx_facility            facility_id       TYPE bloom_filter GRANULARITY 4;  -- facility-scoped raw event browse
+ALTER TABLE inbound_event_logs ADD INDEX IF NOT EXISTS idx_event_time          event_time        TYPE minmax GRANULARITY 4;  -- range pruning for the clinical-time global date filter (data is partitioned/ordered by received_at, not event_time)
 
 -- protocol_instances
 ALTER TABLE protocol_instances ADD INDEX IF NOT EXISTS idx_patient_id          patient_id                TYPE bloom_filter GRANULARITY 4;
@@ -47,6 +48,7 @@ ALTER TABLE inbound_event_logs MATERIALIZE INDEX idx_correlation;
 ALTER TABLE inbound_event_logs MATERIALIZE INDEX idx_source;
 ALTER TABLE inbound_event_logs MATERIALIZE INDEX idx_subject;
 ALTER TABLE inbound_event_logs MATERIALIZE INDEX idx_facility;
+ALTER TABLE inbound_event_logs MATERIALIZE INDEX idx_event_time;
 
 ALTER TABLE protocol_instances MATERIALIZE INDEX idx_patient_id;
 ALTER TABLE protocol_instances MATERIALIZE INDEX idx_protocol_definition;

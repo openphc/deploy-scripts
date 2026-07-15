@@ -4,9 +4,14 @@
 
 set -euo pipefail
 
-CLICKHOUSE_HOST="${1:-localhost}"
-CLICKHOUSE_PORT="${2:-8123}"
-CH_URL="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT}"
+CH_HOST="${1:-localhost}"
+CH_PORT="${2:-8123}"
+CH_URL="http://${CH_HOST}:${CH_PORT}"
+# cce_analytics is owned by cce_pipeline, so every query below must authenticate. Without this,
+# `curl -f` turns the 401 into an empty string and the checks silently misreport (e.g. "database
+# does not exist"). /ping needs no auth. Override via CH_USER / CLICKHOUSE_PASSWORD (or CH_PASSWORD).
+CH_USER="${CH_USER:-cce_pipeline}"
+CH_PASS="${CH_PASSWORD:-${CLICKHOUSE_PASSWORD:-cce_analytics_dev}}"
 
 echo "=== ClickHouse Schema Validation ==="
 echo "Target: ${CH_URL}"
@@ -20,7 +25,7 @@ fi
 echo "✓ ClickHouse is reachable"
 
 # Check database exists
-DB_EXISTS=$(curl -sf "${CH_URL}/?query=SELECT+count()+FROM+system.databases+WHERE+name='cce_analytics'" | tr -d '[:space:]')
+DB_EXISTS=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.databases+WHERE+name='cce_analytics'" | tr -d '[:space:]')
 if [[ "$DB_EXISTS" != "1" ]]; then
     echo "ERROR: Database 'cce_analytics' does not exist"
     exit 1
@@ -46,7 +51,7 @@ echo ""
 echo "--- Tables (${#EXPECTED_TABLES[@]} expected) ---"
 MISSING=0
 for table in "${EXPECTED_TABLES[@]}"; do
-    EXISTS=$(curl -sf "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${table}'" | tr -d '[:space:]')
+    EXISTS=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${table}'" | tr -d '[:space:]')
     if [[ "$EXISTS" == "1" ]]; then
         echo "  ✓ ${table}"
     else
@@ -74,7 +79,7 @@ EXPECTED_MV_TABLES=(
 echo ""
 echo "--- MV Backing Tables (${#EXPECTED_MV_TABLES[@]} expected) ---"
 for tbl in "${EXPECTED_MV_TABLES[@]}"; do
-    EXISTS=$(curl -sf "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${tbl}'" | tr -d '[:space:]')
+    EXISTS=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${tbl}'" | tr -d '[:space:]')
     if [[ "$EXISTS" == "1" ]]; then
         echo "  ✓ ${tbl}"
     else
@@ -102,7 +107,7 @@ EXPECTED_MV_TRIGGERS=(
 echo ""
 echo "--- MV Triggers (${#EXPECTED_MV_TRIGGERS[@]} expected) ---"
 for mv in "${EXPECTED_MV_TRIGGERS[@]}"; do
-    EXISTS=$(curl -sf "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${mv}'+AND+engine='MaterializedView'" | tr -d '[:space:]')
+    EXISTS=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${mv}'+AND+engine='MaterializedView'" | tr -d '[:space:]')
     if [[ "$EXISTS" == "1" ]]; then
         echo "  ✓ ${mv}"
     else
@@ -119,8 +124,8 @@ INGEST=(
 echo ""
 echo "--- Kafka Ingestion (queue + consumer MV per table, ${#INGEST[@]} tables) ---"
 for t in "${INGEST[@]}"; do
-    Q=$(curl -sf "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${t}_queue'+AND+engine='Kafka'" | tr -d '[:space:]')
-    M=$(curl -sf "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${t}_mv'+AND+engine='MaterializedView'" | tr -d '[:space:]')
+    Q=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${t}_queue'+AND+engine='Kafka'" | tr -d '[:space:]')
+    M=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.tables+WHERE+database='cce_analytics'+AND+name='${t}_mv'+AND+engine='MaterializedView'" | tr -d '[:space:]')
     if [[ "$Q" == "1" && "$M" == "1" ]]; then
         echo "  ✓ ${t}_queue + ${t}_mv"
     else
@@ -139,7 +144,7 @@ EXPECTED_DICTS=(
 echo ""
 echo "--- Dictionaries (${#EXPECTED_DICTS[@]} expected) ---"
 for dict in "${EXPECTED_DICTS[@]}"; do
-    EXISTS=$(curl -sf "${CH_URL}/?query=SELECT+count()+FROM+system.dictionaries+WHERE+database='cce_analytics'+AND+name='${dict}'" | tr -d '[:space:]')
+    EXISTS=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.dictionaries+WHERE+database='cce_analytics'+AND+name='${dict}'" | tr -d '[:space:]')
     if [[ "$EXISTS" == "1" ]]; then
         echo "  ✓ ${dict}"
     else
@@ -151,9 +156,9 @@ done
 # Check MATERIALIZED columns were added to inbound_event_logs
 echo ""
 echo "--- MATERIALIZED columns on inbound_event_logs ---"
-MAT_COLS=("subject" "event_type" "facility_id" "event_time" "resource_type" "practitioner_ref" "practitioner_display")
+MAT_COLS=("subject" "event_type" "facility_id" "resource_type" "practitioner_ref" "practitioner_display")
 for col in "${MAT_COLS[@]}"; do
-    EXISTS=$(curl -sf "${CH_URL}/?query=SELECT+count()+FROM+system.columns+WHERE+database='cce_analytics'+AND+table='inbound_event_logs'+AND+name='${col}'" | tr -d '[:space:]')
+    EXISTS=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.columns+WHERE+database='cce_analytics'+AND+table='inbound_event_logs'+AND+name='${col}'" | tr -d '[:space:]')
     if [[ "$EXISTS" == "1" ]]; then
         echo "  ✓ ${col}"
     else
@@ -161,6 +166,59 @@ for col in "${MAT_COLS[@]}"; do
         MISSING=$((MISSING + 1))
     fi
 done
+
+# Check stored CDC columns (populated by the schema/02 consumer MV) on inbound_event_logs
+echo ""
+echo "--- Stored CDC columns on inbound_event_logs ---"
+STORED_COLS=("event_time")
+for col in "${STORED_COLS[@]}"; do
+    EXISTS=$(curl -sf --user "${CH_USER}:${CH_PASS}" "${CH_URL}/?query=SELECT+count()+FROM+system.columns+WHERE+database='cce_analytics'+AND+table='inbound_event_logs'+AND+name='${col}'" | tr -d '[:space:]')
+    if [[ "$EXISTS" == "1" ]]; then
+        echo "  ✓ ${col}"
+    else
+        echo "  ✗ ${col} MISSING — run schema/01-create-tables.sql"
+        MISSING=$((MISSING + 1))
+    fi
+done
+
+# Daily-summary MV clinical-time contract.
+# Every inbound_event_logs-derived / occurrence-keyed daily MV must (a) be keyed on CLINICAL
+# time (event_time for volume/adoption, occurrence date for deviations) and (b) carry the
+# 12-month rolling window that bounds full-recompute cost. This guards the class of bug where a
+# new or edited daily MV silently scans the whole table — e.g. mv_daily_adoption_kpis once
+# shipped without the window and re-scanned all history every 30 minutes.
+# ClickHouse normalizes stored DDL, so we match the normalized forms:
+#   INTERVAL 12 MONTH  ->  now() - toIntervalMonth(12)
+echo ""
+echo "--- Daily-summary MV clinical-time contract ---"
+check_mv_def() {
+    local mv="$1"; shift
+    local def
+    def=$(curl -sf --user "${CH_USER}:${CH_PASS}" -G "${CH_URL}/" \
+        --data-urlencode "query=SELECT create_table_query FROM system.tables WHERE database='cce_analytics' AND name='${mv}'" 2>/dev/null || true)
+    if [[ -z "$def" ]]; then
+        echo "  ✗ ${mv} MISSING (no definition found)"
+        MISSING=$((MISSING + 1))
+        return
+    fi
+    local ok=1 needle
+    for needle in "$@"; do
+        if ! grep -qF -- "$needle" <<< "$def"; then
+            echo "  ✗ ${mv} — definition must contain: ${needle}"
+            ok=0
+        fi
+    done
+    if [[ $ok -eq 1 ]]; then
+        echo "  ✓ ${mv}"
+    else
+        MISSING=$((MISSING + 1))
+    fi
+}
+
+check_mv_def "mv_daily_event_kpis_mv"     "now() - toIntervalMonth(12)" "toDate(iel.event_time)"
+check_mv_def "mv_daily_adoption_kpis_mv"  "now() - toIntervalMonth(12)" "toDate(iel.event_time)"
+check_mv_def "mv_daily_deviation_kpis_mv" "now() - toIntervalMonth(12)" "occurred_at"
+check_mv_def "mv_daily_referral_kpis_mv"  "now() - toIntervalMonth(12)" "toDate(iel.event_time)"
 
 echo ""
 if [[ $MISSING -eq 0 ]]; then

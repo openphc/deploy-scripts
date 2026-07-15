@@ -30,18 +30,25 @@ CREATE TABLE IF NOT EXISTS mv_event_volume_hourly (
 PARTITION BY toYYYYMM(hour)
 ORDER BY (facility_id, source, event_type, resource_type, hour);
 
--- Hourly event volume by facility/source/type
+-- Hourly CLINICAL event volume by facility/source/type. Keyed on event_time (when the clinical
+-- event happened), NOT received_at (ingestion) — so facility "Active/Events" reflect clinical
+-- activity. Incremental SummingMergeTree: fires per insert, no rescan (right for this large,
+-- append-only table). event_time is Nullable, so NULLs are excluded (hour is non-nullable).
+-- NOTE: on (re)create, the trigger only captures FUTURE inserts — backfill existing history once:
+--   INSERT INTO mv_event_volume_hourly SELECT toStartOfHour(event_time), facility_id, source,
+--   event_type, resource_type, count() FROM inbound_event_logs
+--   WHERE status='ACCEPTED' AND event_time IS NOT NULL GROUP BY 1,2,3,4,5;
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_event_volume_hourly_mv
 TO mv_event_volume_hourly
 AS SELECT
-    toStartOfHour(received_at) AS hour,
+    toStartOfHour(event_time) AS hour,
     facility_id,
     source,
     event_type,
     resource_type,
     count() AS event_count
 FROM inbound_event_logs
-WHERE status = 'ACCEPTED'
+WHERE status = 'ACCEPTED' AND event_time IS NOT NULL
 GROUP BY hour, facility_id, source, event_type, resource_type;
 
 -- ============================================================

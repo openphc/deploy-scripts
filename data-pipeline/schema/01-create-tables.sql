@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS inbound_event_logs
     error_details        String,
     received_at          DateTime64(6),
     updated_at           DateTime64(6),
+    -- Clinical occurrence time (ClinicalEventTimeExtractor in the collector service): extracted
+    -- from the FHIR resource's own date field (Observation.effectiveDateTime, Encounter.period, etc.),
+    -- falling back to the CloudEvents envelope 'time' and then received_at. Null only if the collector
+    -- itself stored null (should not happen given its own fallback chain). Source of truth for
+    -- "when did this clinically happen" — distinct from received_at ("when did we ingest it").
+    event_time           Nullable(DateTime64(6)),
 
     -- Debezium CDC metadata (set by the schema/02 consumer MV)
     _version             UInt64,
@@ -52,10 +58,16 @@ CREATE TABLE IF NOT EXISTS inbound_event_logs
     -- MATERIALIZED: zero-cost extraction from raw_payload JSONB at insert time
     subject              String    MATERIALIZED JSONExtractString(raw_payload, 'subject'),
     event_type           String    MATERIALIZED JSONExtractString(raw_payload, 'type'),
-    facility_id          String    MATERIALIZED JSONExtractString(raw_payload, 'facilityid'),
-    event_time           Nullable(DateTime64(3))
-                                   MATERIALIZED toDateTime64OrNull(
-                                       JSONExtractString(raw_payload, 'time'), 3),
+    -- Envelope 'facilityid' is only populated for Encounter events; fall back to the
+    -- FHIR resource's source-facility extension so every resource type carries a facility.
+    facility_id          String    MATERIALIZED if(
+                                       JSONExtractString(raw_payload, 'facilityid') != '',
+                                       JSONExtractString(raw_payload, 'facilityid'),
+                                       JSONExtractString(
+                                           arrayFirst(
+                                               x -> JSONExtractString(x, 'url') LIKE '%source-facility%',
+                                               JSONExtractArrayRaw(raw_payload, 'data', 'extension')),
+                                           'valueString')),
     resource_type        String    MATERIALIZED JSONExtractString(
                                        JSONExtractRaw(raw_payload, 'data'), 'resourceType'),
     practitioner_ref     String    MATERIALIZED JSONExtractString(
@@ -394,6 +406,7 @@ CREATE TABLE IF NOT EXISTS facility
     facility_id               String,    -- HIE-assigned facility identifier (UNIQUE in source)
     facility_name             String,    -- display name from FHIR Reference.display
     expected_patients_per_day UInt32     DEFAULT 0,  -- 0 = not configured / admin facility
+    district_name             String     DEFAULT '',
     created_at                DateTime64(6),
     updated_at                DateTime64(6),
 

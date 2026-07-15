@@ -49,6 +49,7 @@ SELECT
     JSONExtractString(payload, 'error_details')                                   AS error_details,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'received_at'), 6) AS received_at,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'updated_at'), 6)  AS updated_at,
+    parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'event_time'), 6)  AS event_time,
     JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                         AS _version,
     if(op = 'd', 1, 0)                                                            AS _is_deleted
 FROM inbound_event_logs_queue
@@ -423,6 +424,7 @@ SELECT
     JSONExtractString(payload, 'facility_id')                                         AS facility_id,
     JSONExtractString(payload, 'facility_name')                                       AS facility_name,
     JSONExtractUInt(payload, 'expected_patients_per_day')                             AS expected_patients_per_day,
+    JSONExtractString(payload, 'district_name')                                       AS district_name,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'created_at'), 6)      AS created_at,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'updated_at'), 6)      AS updated_at,
     JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                             AS _version,
