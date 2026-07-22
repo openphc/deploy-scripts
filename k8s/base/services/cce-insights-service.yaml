@@ -63,12 +63,24 @@ spec:
                   key: CLICKHOUSE_USE_FINAL
             - name: DB_POOL_SIZE
               value: "10"
+            # Caffeine cache TTLs (CacheConfig.java applies these as TimeUnit.SECONDS -- despite
+            # application.yml's "(minutes)" comment/these keys' historical minutes-style values,
+            # e.g. 60/30/15). From cce-config so they're adjustable without a redeploy-from-scratch.
             - name: CACHE_TTL_LOOKUPS
-              value: "60"
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: CACHE_TTL_LOOKUPS
             - name: CACHE_TTL_ANALYTICS
-              value: "30"
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: CACHE_TTL_ANALYTICS
             - name: CACHE_TTL_METRICS
-              value: "15"
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: CACHE_TTL_METRICS
             - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
               value: "health,info,prometheus,metrics"
             - name: MANAGEMENT_METRICS_TAGS_APPLICATION

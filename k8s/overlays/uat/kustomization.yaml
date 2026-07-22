@@ -32,9 +32,14 @@ configMapGenerator:
       - CLICKHOUSE_HOST=${CLICKHOUSE_HOST}
       - CLICKHOUSE_PORT=8123
       - CLICKHOUSE_DB=cce_analytics
-      # insights-service cce.clickhouse.use-final — "true" appends FINAL to MV reads so
+      # insights-service cce.clickhouse.use-final -- "true" appends FINAL to MV reads so
       # ReplacingMergeTree intraday snapshots are de-duplicated at query time. Set in Infisical.
       - CLICKHOUSE_USE_FINAL=${CLICKHOUSE_USE_FINAL}
+      # insights-service Caffeine cache TTLs (seconds -- CacheConfig.java uses TimeUnit.SECONDS
+      # despite these keys' historical minutes-style naming/values). Set in Infisical.
+      - CACHE_TTL_LOOKUPS=${CACHE_TTL_LOOKUPS}
+      - CACHE_TTL_ANALYTICS=${CACHE_TTL_ANALYTICS}
+      - CACHE_TTL_METRICS=${CACHE_TTL_METRICS}
       # gateway-service CORS allowed origin. Must be a concrete origin, never "*"
       # (the gateway sets allowCredentials=true). Set per-environment in .env.
       - ALLOWED_ORIGINS=${GATEWAY_ALLOWED_ORIGINS}
