@@ -112,13 +112,16 @@ patches:
         value:
           - hosts: [ "${INGRESS_HOST}" ]
   # Vertical scaling (2026-06-18): compliance 6x; insights-ui + scheduler 4x; rest 3x — over the
-  # base requests/limits. Requires the raised ResourceQuota in namespace.yaml. imagePullPolicy
-  # Always on every service. NOTE: cce-scheduler-service is leader-elected — see strategy note below.
+  # base requests/limits. Requires the raised ResourceQuota in namespace.yaml. imagePullPolicy is
+  # input-driven (${IMAGE_PULL_POLICY}, from Infisical /platform, default "Always") on every CCE
+  # service rather than hardcoded — 2026-07-22: lets an operator pin to IfNotPresent (e.g. to force
+  # a redeploy onto an exact prior digest without risking an unwanted mutable-tag pull mid-incident).
+  # NOTE: cce-scheduler-service is leader-elected — see strategy note below.
   - target:
       kind: Deployment
       name: cce-collector-service
     patch: |
-      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "758Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
@@ -127,7 +130,7 @@ patches:
       kind: Deployment
       name: cce-compliance-service
     patch: |
-      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "758Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "1200m"}
@@ -136,7 +139,7 @@ patches:
       kind: Deployment
       name: cce-intelligence-service
     patch: |
-      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
@@ -145,7 +148,7 @@ patches:
       kind: Deployment
       name: gateway-service
     patch: |
-      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
@@ -171,7 +174,7 @@ patches:
           spec:
             containers:
               - name: cce-scheduler-service
-                imagePullPolicy: Always
+                imagePullPolicy: ${IMAGE_PULL_POLICY}
                 env:
                   - name: SCHEDULER_TOTAL_PARTITIONS
                     value: "3"
@@ -192,7 +195,7 @@ patches:
       kind: Deployment
       name: openhim-emitter-adaptor
     patch: |
-      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "300m"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "1500m"}
@@ -201,7 +204,7 @@ patches:
       kind: Deployment
       name: cce-insights-service
     patch: |
-      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
@@ -210,7 +213,7 @@ patches:
       kind: Deployment
       name: cce-insights-ui
     patch: |
-      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: Always}
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "200m"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "256Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "1"}
