@@ -185,6 +185,15 @@ spec:
                 secretKeyRef:
                   name: cce-secrets
                   key: CCE_OPSALERT_TIER3_CC
+            # Kill switch on delivery only (OpsAlertProperties' javadoc) — required, no default,
+            # wired exactly like the thresholds above: a plain configMapKeyRef, no envsubst
+            # default needed since Infisical always has a value for it. Non-sensitive (just a
+            # boolean), so cce-config rather than cce-secrets.
+            - name: CCE_OPSALERT_NOTIFICATIONS_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: CCE_OPSALERT_NOTIFICATIONS_ENABLED
             # Still deliberately NOT wired: CCE_OPSALERT_POLL_INTERVAL_MS and each tier's
             # _SUBJECT. These still have a non-empty app-level default (the PRD's own copy) — a
             # plain passthrough isn't safe for them: envsubst turns a genuinely-unset ${VAR} into

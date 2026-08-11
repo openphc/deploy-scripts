@@ -541,6 +541,10 @@ services:
       CCE_OPSALERT_TIER1_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER1_THRESHOLD_MINUTES}
       CCE_OPSALERT_TIER2_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER2_THRESHOLD_MINUTES}
       CCE_OPSALERT_TIER3_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER3_THRESHOLD_MINUTES}
+      # Kill switch on delivery only (OpsAlertProperties' javadoc) — docker compose's own
+      # interpolation supports :-default (unlike envsubst in the k8s path), so this one gets a
+      # safe local-dev default matching the app's own.
+      CCE_OPSALERT_NOTIFICATIONS_ENABLED: ${CCE_OPSALERT_NOTIFICATIONS_ENABLED:-true}
       # Optional — every tier's app-level default is the same, empty (no built-in escalation
       # chain — see that repo's api-reference.md for why that was deliberately removed), so a
       # plain passthrough is safe for all three: an unset value resolves to the same "no cc" the

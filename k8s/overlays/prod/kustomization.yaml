@@ -58,6 +58,9 @@ configMapGenerator:
       - CCE_OPSALERT_TIER1_THRESHOLD_MINUTES=${CCE_OPSALERT_TIER1_THRESHOLD_MINUTES}
       - CCE_OPSALERT_TIER2_THRESHOLD_MINUTES=${CCE_OPSALERT_TIER2_THRESHOLD_MINUTES}
       - CCE_OPSALERT_TIER3_THRESHOLD_MINUTES=${CCE_OPSALERT_TIER3_THRESHOLD_MINUTES}
+      # Kill switch on delivery only — required, no default, wired exactly like the thresholds
+      # above. Set in Infisical.
+      - CCE_OPSALERT_NOTIFICATIONS_ENABLED=${CCE_OPSALERT_NOTIFICATIONS_ENABLED}
 
 secretGenerator:
   - name: cce-secrets
