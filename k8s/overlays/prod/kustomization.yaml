@@ -61,6 +61,9 @@ configMapGenerator:
       # Kill switch on delivery only — required, no default, wired exactly like the thresholds
       # above. Set in Infisical.
       - CCE_OPSALERT_NOTIFICATIONS_ENABLED=${CCE_OPSALERT_NOTIFICATIONS_ENABLED}
+      # Resends the last tier's email daily once escalation reaches it — required, no default,
+      # wired exactly like the kill switch above. Set in Infisical.
+      - CCE_OPSALERT_REPEAT_INTERVAL_MINUTES=${CCE_OPSALERT_REPEAT_INTERVAL_MINUTES}
 
 secretGenerator:
   - name: cce-secrets

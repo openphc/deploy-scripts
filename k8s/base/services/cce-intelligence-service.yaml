@@ -194,6 +194,15 @@ spec:
                 configMapKeyRef:
                   name: cce-config
                   key: CCE_OPSALERT_NOTIFICATIONS_ENABLED
+            # Resends the last tier's email daily once escalation reaches it (that repo's
+            # AlertEscalationEngine.attemptRepeat) — wired the same way as the kill switch above:
+            # required, no default here, Infisical always has a value. The app's own default
+            # (1440) only matters for a deployment that doesn't go through Infisical at all.
+            - name: CCE_OPSALERT_REPEAT_INTERVAL_MINUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: CCE_OPSALERT_REPEAT_INTERVAL_MINUTES
             # Still deliberately NOT wired: CCE_OPSALERT_POLL_INTERVAL_MS and each tier's
             # _SUBJECT. These still have a non-empty app-level default (the PRD's own copy) — a
             # plain passthrough isn't safe for them: envsubst turns a genuinely-unset ${VAR} into

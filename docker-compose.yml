@@ -545,6 +545,9 @@ services:
       # interpolation supports :-default (unlike envsubst in the k8s path), so this one gets a
       # safe local-dev default matching the app's own.
       CCE_OPSALERT_NOTIFICATIONS_ENABLED: ${CCE_OPSALERT_NOTIFICATIONS_ENABLED:-true}
+      # Resends the last tier's email daily once escalation reaches it — same :-default treatment
+      # as the kill switch above, matching the app's own default (1440, 24h).
+      CCE_OPSALERT_REPEAT_INTERVAL_MINUTES: ${CCE_OPSALERT_REPEAT_INTERVAL_MINUTES:-1440}
       # Optional — every tier's app-level default is the same, empty (no built-in escalation
       # chain — see that repo's api-reference.md for why that was deliberately removed), so a
       # plain passthrough is safe for all three: an unset value resolves to the same "no cc" the
