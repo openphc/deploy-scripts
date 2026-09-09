@@ -330,6 +330,24 @@ services:
       SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_PREDICATES_0: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_PREDICATES_0:-Path=/v1/insights/**}
       SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_FILTERS_0_NAME: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_FILTERS_0_NAME:-JwtValidationFilter}
       INSIGHTS_SERVICE_URI: ${INSIGHTS_SERVICE_URI:-http://cce-insights-service:8084}
+      # tibERbu CCE Emitter Adaptor route — externally POST /tiberbu/inbound, Basic Auth (tibERbu
+      # sends only Basic, never a Bearer token) exchanged for a Keycloak token below, then
+      # validated/authorized the same as every other route. Namespaced under /tiberbu/** — NOT
+      # the adaptor's own bare /inbound path — because openhim-cce-emmitter-adaptor's controller
+      # ALSO maps to /inbound; if that adaptor is ever given its own gateway route with the same
+      # bare Path=/inbound predicate, two routes sharing one predicate is ambiguous (whichever is
+      # evaluated first wins, the other is unreachable through the gateway). RewritePath strips
+      # the /tiberbu prefix before forwarding, since the adaptor's own controller only knows
+      # /inbound. Verified locally end-to-end (Basic Auth → token exchange → JWT validation →
+      # RewritePath → adaptor → real Collector, POST /tiberbu/inbound → 202) before committing —
+      # see the tibERbu adaptor's own docs for the exact worked example.
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_ID: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_ID:-tiberbu-cce-emitter-adaptor}
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_URI: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_URI:-http://tiberbu-cce-emitter-adaptor:8081}
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_PREDICATES_0: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_PREDICATES_0:-Path=/tiberbu/**}
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_FILTERS_0_NAME: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_FILTERS_0_NAME:-JwtValidationFilter}
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_FILTERS_1_NAME: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_FILTERS_1_NAME:-RewritePath}
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_FILTERS_1_ARGS_REGEXP: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_FILTERS_1_ARGS_REGEXP:-/tiberbu/(?<segment>.*)}
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_FILTERS_1_ARGS_REPLACEMENT: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_4_FILTERS_1_ARGS_REPLACEMENT:-/$${segment}}
       # Keycloak
       KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL}
       KEYCLOAK_REALM: ${KEYCLOAK_REALM}
@@ -337,6 +355,14 @@ services:
       KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID}
       KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Inbound HTTP Basic auth (tibERbu only sends Basic, never a Bearer token itself) — the
+      # gateway exchanges it for a Keycloak token via this dedicated confidential client before
+      # running the normal JWT validation/authorization pipeline. See gateway-service's own
+      # application.yml for why this must be a DEDICATED client, never gateway-service's own.
+      BASIC_AUTH_ENABLED: ${BASIC_AUTH_ENABLED:-true}
+      BASIC_AUTH_TOKEN_URI: ${BASIC_AUTH_TOKEN_URI}
+      BASIC_AUTH_CLIENT_ID: ${BASIC_AUTH_CLIENT_ID:-tiberbu-basic}
+      BASIC_AUTH_CLIENT_SECRET: ${BASIC_AUTH_CLIENT_SECRET}
       # Authorization
       AUTHORIZATION_ENABLED: ${AUTHORIZATION_ENABLED}
       LOAD_PERMISSIONS_FROM_DATABASE_ON_STARTUP: ${LOAD_PERMISSIONS_FROM_DATABASE_ON_STARTUP}
@@ -383,7 +409,43 @@ services:
       MANAGEMENT_METRICS_TAGS_APPLICATION: openhim-cce-emmitter-adaptor
     networks:
       - cce-net
-  
+
+  # tibERbu is reached ONLY through gateway-service (Path=/tiberbu/**, rewritten to /inbound — see
+  # that service's own routes above) — never given a public Caddy site of its own. The host port
+  # below is direct-to-adaptor, for local health checks/debugging only, exactly like every other
+  # backend service in this file.
+  tiberbu-cce-emitter-adaptor:
+    image: ${CCE_TIBERBU_EMITTER_ADAPTOR_IMAGE:-tiberbu-cce-emitter-adaptor:latest}
+    container_name: tiberbu-cce-emitter-adaptor
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      - cce-collector-service
+    ports:
+      - "8100:8081"
+    environment:
+      SERVER_PORT: "8081"
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      # Fixed identity — this adaptor serves tibERbu only, never reconfigured per environment
+      CCE_EMITTER_SOURCE: tiberbu
+      # CCE Collector — same actual target as the other emitter adaptors, but deliberately its own
+      # TIBERBU_-prefixed .env keys rather than reusing openhim's CCE_COLLECTOR_URL/AUTH_TOKEN, so
+      # the two adaptors can be rotated/repointed independently later without touching each other
+      CCE_COLLECTOR_URL: ${TIBERBU_CCE_COLLECTOR_URL:-http://cce-collector-service:8080}
+      CCE_COLLECTOR_EVENTS_PATH: ${TIBERBU_CCE_COLLECTOR_EVENTS_PATH:-/v1/events}
+      CCE_COLLECTOR_AUTH_TOKEN: ${TIBERBU_CCE_COLLECTOR_AUTH_TOKEN}
+      # Facility allowlist — empty/unset means every facility passes through unfiltered
+      FACILITY_FILTER_IDS: ${TIBERBU_FACILITY_FILTER_IDS:-}
+      # Actuator / Prometheus metrics
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+      MANAGEMENT_METRICS_TAGS_APPLICATION: tiberbu-cce-emitter-adaptor
+    networks:
+      - cce-net
+
   cce-collector-service:
     image: ${CCE_COLLECTOR_SERVICE_IMAGE:-cce-collector-service:latest}
     container_name: cce-collector-service
