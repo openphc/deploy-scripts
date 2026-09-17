@@ -68,6 +68,9 @@ CREATE TABLE IF NOT EXISTS inbound_event_logs
                                                x -> JSONExtractString(x, 'url') LIKE '%source-facility%',
                                                JSONExtractArrayRaw(raw_payload, 'data', 'extension')),
                                            'valueString')),
+    -- Facility display name — envelope-only, no body-extension fallback (unlike facility_id above):
+    -- no adaptor's FHIR body carries an equivalent "source-facility name" extension today.
+    facility_name        String    MATERIALIZED JSONExtractString(raw_payload, 'facilityname'),
     resource_type        String    MATERIALIZED JSONExtractString(
                                        JSONExtractRaw(raw_payload, 'data'), 'resourceType'),
     practitioner_ref     String    MATERIALIZED JSONExtractString(
