@@ -20,6 +20,11 @@ scrape_configs:
     static_configs:
       - targets: ["openhim-cce-emmitter-adaptor:8082"]
 
+  - job_name: "tiberbu-emitter-adaptor"
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["tiberbu-cce-emitter-adaptor:8081"]
+
   - job_name: "node-exporter"
     static_configs:
       - targets: ["node-exporter:9100"]

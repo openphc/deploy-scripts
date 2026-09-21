@@ -75,6 +75,105 @@ groups:
           summary: "CCE Emitter heap usage > 85%"
           description: "JVM heap usage exceeds 85% for >10 minutes. Consider increasing container memory limits."
 
+  # tibERbu emitter adaptor — a separate service from openhim-cce-emmitter-adaptor above, with its
+  # own metric prefix (tiberbu_cce_emitter_*, job="tiberbu-emitter-adaptor") — see that adaptor's
+  # own docs/monitoring-alerting.md, which these rules mirror exactly.
+  - name: tiberbu-emitter-adaptor-critical
+    rules:
+      - alert: TiberbuCceEmitterDown
+        expr: up{job="tiberbu-emitter-adaptor"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter Adaptor is down"
+          description: "Prometheus cannot scrape the emitter adaptor for >1 minute. Check container health."
+
+      - alert: TiberbuCceEmitterRetriesExhausted
+        expr: rate(tiberbu_cce_emitter_collector_retries_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter Adaptor retries exhausted"
+          description: "Collector forwarding retries are being exhausted (rate > 0 for 2+ minutes). Events are being dropped."
+
+  - name: tiberbu-emitter-adaptor-warning
+    rules:
+      - alert: TiberbuCceEmitterHighRejections
+        expr: rate(tiberbu_cce_emitter_entries_rejected_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter >5% entry rejection rate"
+          description: "More than 5% of bundle entries are being rejected by the Collector (4xx) for >5 minutes."
+
+      - alert: TiberbuCceEmitterHighDuplicates
+        expr: rate(tiberbu_cce_emitter_entries_duplicate_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) > 0.20
+        for: 10m
+        labels:
+          severity: warning
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter >20% duplicate entry rate"
+          description: "More than 20% of entries are duplicates (Collector returned 200). May indicate a retry storm or repeated source submissions."
+
+      - alert: TiberbuCceEmitterHighAdaptationFailures
+        expr: rate(tiberbu_cce_emitter_entries_failed_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter >5% entry adaptation failure rate"
+          description: "More than 5% of bundle entries are failing FHIR parsing or patient-identifier extraction for >5 minutes, before ever reaching the Collector. Check the `reason` tag to tell a malformed-payload issue (FhirMappingException) from a missing-patient-reference issue (PatientIdNotFoundException) apart."
+
+      - alert: TiberbuCceEmitterHighLatency
+        expr: histogram_quantile(0.95, rate(tiberbu_cce_emitter_collector_latency_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter Collector latency p95 > 2s"
+          description: "95th percentile Collector forwarding latency exceeds 2 seconds for >5 minutes."
+
+      - alert: TiberbuCceEmitterHighFilterDenialRate
+        expr: rate(tiberbu_cce_emitter_entries_filtered_total[5m]) / rate(tiberbu_cce_emitter_entries_received_total[5m]) > 0.50
+        for: 5m
+        labels:
+          severity: warning
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter facility filter denying >50% of entries"
+          description: "More than 50% of entries are being skipped by the facility filter for >5 minutes. May indicate a misconfigured FACILITY_FILTER_IDS allowlist."
+
+      - alert: TiberbuCceEmitterNoEventsReceived
+        expr: increase(tiberbu_cce_emitter_events_received_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter no events received for 30 minutes"
+          description: "No inbound requests received for 30+ minutes. May indicate a source system outage or a networking issue on the path to /inbound."
+
+  - name: tiberbu-emitter-adaptor-info
+    rules:
+      - alert: TiberbuCceEmitterHighMemory
+        expr: jvm_memory_used_bytes{area="heap",job="tiberbu-emitter-adaptor"} / jvm_memory_max_bytes{area="heap",job="tiberbu-emitter-adaptor"} > 0.85
+        for: 10m
+        labels:
+          severity: info
+          service: tiberbu-emitter-adaptor
+        annotations:
+          summary: "tibERbu CCE Emitter heap usage > 85%"
+          description: "JVM heap usage exceeds 85% for >10 minutes. Consider increasing container memory limits."
+
   - name: cce-collector-service-critical
     rules:
       - alert: CceCollectorDown
