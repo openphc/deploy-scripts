@@ -25,24 +25,30 @@
 --   re-snapshot (or to fill a gap), this script reconstructs historical daily
 --   rows by replaying the append-only transition history:
 --       protocol_instance_history  (status as-of date D)
---       step_instance_history      (state / completion_status as-of date D)
+--       step_instance_history      (step_status / sla_status as-of date D)
 --   joined with the already-durable, time-anchored source:
 --       deviations (detected_at).
 --   (Only section 1 / mv_daily_compliance_kpis still backfills this way. The event_time MVs —
 --    event, deviation-page, adoption, referral — self-heal on refresh, so this script no longer
---    reads inbound_event_log / compliance_event_log / facility.)
+--    reads inbound_event_log / matcher_event_log / facility.)
 --
 -- AS-OF PATTERN (used throughout)
 --   For a snapshot_date D, an entity's state = the history row with the latest
 --   changed_at whose DATE is <= D:
 --       INNER JOIN history h ON toDate(h.changed_at) <= d.snapshot_date
---       ... argMax(h.state, h.changed_at) GROUP BY d.snapshot_date, entity_id
+--       ... argMax(h.step_status, h.changed_at) GROUP BY d.snapshot_date, entity_id
 --   This vectorizes the as-of lookup across the whole date range in one pass.
 --
 -- IMPORTANT
 --   * Reconstruction is only as complete as the history: every transition is captured
 --     forward from enrollment (a fresh start has no pre-existing rows), so an instance
 --     appears from its first history row onward.
+--   * step_instance_history.changed_at is when the row was RECORDED (processing time), not the
+--     clinical time — a backdated completion lands on the day it was processed. Both writers
+--     (Matcher for step_status, Step SLA for sla_status) snapshot the whole pair on every row, so
+--     the latest row as-of D carries both statuses.
+--   * History ids are allocated in blocks per writer (Matcher V6) and are NOT in insert order;
+--     every as-of pick here orders by changed_at, never by id.
 --   * The history tables carry only their direct parent id; protocol_definition_id and
 --     protocol_instance_id are recovered by INNER JOIN to the immutable base tables
 --     (protocol_instances / step_instances). A hard-deleted instance/step (purged by
@@ -83,11 +89,12 @@ enrollment_asof AS (
             ON pi.id = h.protocol_instance_id
     GROUP BY d.snapshot_date, h.protocol_instance_id
 ),
--- Deviations attributable to each enrollment as-of D (deviations are append-only).
+-- Deviations attributable to each enrollment as-of D (deviations are append-only). 2.0.0 dropped
+-- deviation.protocol_instance_id, so it is recovered from the step (immutable per step id).
 deviations_asof AS (
     SELECT
         d.snapshot_date                                            AS snapshot_date,
-        dv.protocol_instance_id                                    AS protocol_instance_id,
+        si.protocol_instance_id                                    AS protocol_instance_id,
         countIf(dv.id != toUUID('00000000-0000-0000-0000-000000000000')) AS deviation_count,
         countIf(dv.deviation_type = 'OVERDUE')                     AS overdue_count,
         countIf(dv.deviation_type = 'MISSED')                      AS missed_count,
@@ -95,16 +102,22 @@ deviations_asof AS (
     FROM dates d
     INNER JOIN deviations dv FINAL
             ON toDate(dv.detected_at) <= d.snapshot_date
-    GROUP BY d.snapshot_date, dv.protocol_instance_id
+    INNER JOIN (
+        SELECT id, any(protocol_instance_id) AS protocol_instance_id
+        FROM step_instances
+        GROUP BY id
+    ) si ON si.id = dv.step_instance_id
+    WHERE dv._is_deleted = 0
+    GROUP BY d.snapshot_date, si.protocol_instance_id
 ),
--- Step state as-of each day (latest state at or before D), keyed to its enrollment.
+-- Step status pair as-of each day (latest history row at or before D), keyed to its enrollment.
 step_asof AS (
     SELECT
         d.snapshot_date                                            AS snapshot_date,
         h.step_instance_id                                         AS step_instance_id,
         any(si.protocol_instance_id)                               AS protocol_instance_id,
-        argMax(h.state, h.changed_at)                              AS state,
-        argMax(h.completion_status, h.changed_at)                  AS completion_status
+        argMax(h.step_status, h.changed_at)                        AS step_status,
+        argMax(h.sla_status, h.changed_at)                         AS sla_status
     FROM dates d
     INNER JOIN step_instance_history h FINAL
             ON toDate(h.changed_at) <= d.snapshot_date
@@ -150,15 +163,16 @@ step_agg AS (
     SELECT
         s.snapshot_date                                            AS snapshot_date,
         e.protocol_definition_id                                   AS protocol_definition_id,
-        toUInt32(count())                                          AS step_total,
-        toUInt32(countIf(s.state IN ('COMPLETED', 'SKIPPED')))     AS step_completed,
-        toUInt32(countIf(s.state = 'OVERDUE'))                     AS step_overdue,
-        toUInt32(countIf(s.state = 'MISSED'))                      AS step_missed,
-        toUInt32(countIf(s.state = 'DUE'))                         AS step_due,
-        toUInt32(countIf(s.state = 'PENDING'))                     AS step_pending,
-        toUInt32(countIf(s.completion_status = 'ON_TIME'))         AS step_on_time,
-        toUInt32(countIf(s.completion_status = 'EARLY'))           AS step_early,
-        toUInt32(countIf(s.completion_status = 'LATE'))            AS step_late
+        toUInt32(count())                                                        AS step_total,
+        toUInt32(countIf(s.step_status = 'COMPLETED'))                          AS step_completed,
+        toUInt32(countIf(s.step_status = 'NOT_STARTED'))                        AS step_not_started,
+        toUInt32(countIf(s.sla_status = 'MET'))                                 AS step_sla_met,
+        toUInt32(countIf(s.sla_status = 'OVERDUE'))                             AS step_sla_overdue,
+        toUInt32(countIf(s.sla_status = 'MISSED'))                              AS step_sla_missed,
+        toUInt32(countIf(s.sla_status = ''))                                    AS step_sla_unjudged,
+        toUInt32(countIf(s.step_status = 'COMPLETED' AND s.sla_status = 'MET')) AS step_completed_on_time,
+        toUInt32(countIf(s.step_status = 'COMPLETED'
+                         AND s.sla_status IN ('OVERDUE', 'MISSED')))            AS step_completed_late
     FROM step_asof s
     INNER JOIN enrollment_asof e
             ON e.snapshot_date = s.snapshot_date
@@ -182,15 +196,15 @@ SELECT
     pa.overdue_deviations,
     pa.missed_deviations,
     pa.order_violation_deviations,
-    coalesce(sa.step_total,     0)   AS step_total,
-    coalesce(sa.step_completed, 0)   AS step_completed,
-    coalesce(sa.step_overdue,   0)   AS step_overdue,
-    coalesce(sa.step_missed,    0)   AS step_missed,
-    coalesce(sa.step_due,       0)   AS step_due,
-    coalesce(sa.step_pending,   0)   AS step_pending,
-    coalesce(sa.step_on_time,   0)   AS step_on_time,
-    coalesce(sa.step_early,     0)   AS step_early,
-    coalesce(sa.step_late,      0)   AS step_late
+    coalesce(sa.step_total,             0)   AS step_total,
+    coalesce(sa.step_completed,         0)   AS step_completed,
+    coalesce(sa.step_not_started,       0)   AS step_not_started,
+    coalesce(sa.step_sla_met,           0)   AS step_sla_met,
+    coalesce(sa.step_sla_overdue,       0)   AS step_sla_overdue,
+    coalesce(sa.step_sla_missed,        0)   AS step_sla_missed,
+    coalesce(sa.step_sla_unjudged,      0)   AS step_sla_unjudged,
+    coalesce(sa.step_completed_on_time, 0)   AS step_completed_on_time,
+    coalesce(sa.step_completed_late,    0)   AS step_completed_late
 FROM enrollment_agg ea
 LEFT JOIN patient_agg pa ON ea.snapshot_date = pa.snapshot_date AND ea.protocol_definition_id = pa.protocol_definition_id
 LEFT JOIN step_agg    sa ON ea.snapshot_date = sa.snapshot_date AND ea.protocol_definition_id = sa.protocol_definition_id;
@@ -206,7 +220,7 @@ LEFT JOIN step_agg    sa ON ea.snapshot_date = sa.snapshot_date AND ea.protocol_
 -- 4. mv_daily_deviation_kpis — NO historical backfill needed.
 -- ============================================================
 -- Redesigned (schema/07) as a refreshable FULL-RECOMPUTE MV keyed on the deviation's CLINICAL
--- OCCURRENCE day (event_time-derived step dates: overdue/missed/completed), not a now() snapshot
+-- OCCURRENCE day (the breached SLA threshold or completed_at, all event_time-derived), not a now() snapshot
 -- of detected_at-as-of-D. A re-snapshot restores the stored clinical dates and the MV rebuilds
 -- every past day itself. After a re-snapshot just run:
 --   SYSTEM REFRESH VIEW mv_daily_deviation_kpis_mv;
@@ -218,7 +232,7 @@ LEFT JOIN step_agg    sa ON ea.snapshot_date = sa.snapshot_date AND ea.protocol_
 -- 5. mv_daily_event_kpis — NO historical backfill needed.
 -- ============================================================
 -- Redesigned (schema/07) as a refreshable FULL-RECOMPUTE MV keyed on the CLINICAL event_time day ×
--- facility (inbound_event_logs ⋈ compliance_event_logs by cloudevents_id; pipeline_loss is the
+-- facility (inbound_event_logs ⋈ matcher_event_logs by cloudevents_id; pipeline_loss is the
 -- non-negative anti-join). Not a now()/received_at cumulative snapshot. A re-snapshot restores the
 -- stored event_time + cloudevents_id and the MV rebuilds every past day itself:
 --   SYSTEM REFRESH VIEW mv_daily_event_kpis_mv;

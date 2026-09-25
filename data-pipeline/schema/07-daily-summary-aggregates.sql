@@ -125,16 +125,18 @@ CREATE TABLE IF NOT EXISTS mv_daily_compliance_kpis
     missed_deviations           UInt32,
     order_violation_deviations  UInt32,
 
-    -- Step metrics (maps to ComplianceSummary.stepMetrics)
+    -- Step metrics (maps to ComplianceSummary.stepMetrics). 2.0.0 two-status model: step_status says
+    -- whether the work was recorded, sla_status whether it was on time. The step_* counts split the
+    -- steps by one status each; the step_completed_* counts read the pair.
     step_total                  UInt32,
-    step_completed              UInt32,          -- state IN (COMPLETED, SKIPPED)
-    step_overdue                UInt32,
-    step_missed                 UInt32,
-    step_due                    UInt32,
-    step_pending                UInt32,
-    step_on_time                UInt32,          -- completion_status = ON_TIME
-    step_early                  UInt32,          -- completion_status = EARLY
-    step_late                   UInt32           -- completion_status = LATE
+    step_completed              UInt32,          -- step_status = COMPLETED
+    step_not_started            UInt32,          -- step_status = NOT_STARTED
+    step_sla_met                UInt32,          -- sla_status = MET
+    step_sla_overdue            UInt32,          -- sla_status = OVERDUE (completed late, or still outstanding)
+    step_sla_missed             UInt32,          -- sla_status = MISSED
+    step_sla_unjudged           UInt32,          -- sla_status not yet set (no threshold due; optional steps)
+    step_completed_on_time      UInt32,          -- COMPLETED + MET
+    step_completed_late         UInt32           -- COMPLETED + OVERDUE | MISSED
 
 ) ENGINE = ReplacingMergeTree(refreshed_at)
 ORDER BY (snapshot_date, protocol_definition_id);
@@ -175,7 +177,22 @@ enrollment_agg AS (
     FROM live_instances
     GROUP BY protocol_definition_id
 ),
--- 4. Deviation counts per enrollment (all statuses, deviations are append-only).
+-- 4. Deviations keyed to their enrollment. 2.0.0 dropped deviation.protocol_instance_id, so it is
+--    recovered from the step (immutable per step id, hence any() rather than FINAL).
+enrollment_deviations AS (
+    SELECT
+        si.protocol_instance_id AS protocol_instance_id,
+        d.id                    AS id,
+        d.deviation_type        AS deviation_type
+    FROM deviations AS d FINAL
+    INNER JOIN (
+        SELECT id, any(protocol_instance_id) AS protocol_instance_id
+        FROM step_instances
+        GROUP BY id
+    ) AS si ON si.id = d.step_instance_id
+    WHERE d._is_deleted = 0
+),
+-- 4b. Deviation counts per enrollment (all statuses).
 instance_deviations AS (
     SELECT
         li.protocol_definition_id,
@@ -185,7 +202,7 @@ instance_deviations AS (
         countIf(d.deviation_type = 'MISSED')                AS missed_count,
         countIf(d.deviation_type = 'ORDER_VIOLATION')       AS order_violation_count
     FROM live_instances li
-    LEFT JOIN deviations d ON li.protocol_instance_id = d.protocol_instance_id
+    LEFT JOIN enrollment_deviations d ON li.protocol_instance_id = d.protocol_instance_id
     GROUP BY li.protocol_definition_id, li.protocol_instance_id
 ),
 -- 5. Patient compliance and deviation summary per protocol.
@@ -208,22 +225,23 @@ patient_agg AS (
 step_agg AS (
     SELECT
         li.protocol_definition_id,
-        toUInt32(count())                                              AS step_total,
-        toUInt32(countIf(rs.rs_state IN ('COMPLETED', 'SKIPPED')))    AS step_completed,
-        toUInt32(countIf(rs.rs_state = 'OVERDUE'))                    AS step_overdue,
-        toUInt32(countIf(rs.rs_state = 'MISSED'))                     AS step_missed,
-        toUInt32(countIf(rs.rs_state = 'DUE'))                        AS step_due,
-        toUInt32(countIf(rs.rs_state = 'PENDING'))                    AS step_pending,
-        toUInt32(countIf(rs.rs_completion_status = 'ON_TIME'))         AS step_on_time,
-        toUInt32(countIf(rs.rs_completion_status = 'EARLY'))           AS step_early,
-        toUInt32(countIf(rs.rs_completion_status = 'LATE'))            AS step_late
+        toUInt32(count())                                                              AS step_total,
+        toUInt32(countIf(rs.rs_step_status = 'COMPLETED'))                            AS step_completed,
+        toUInt32(countIf(rs.rs_step_status = 'NOT_STARTED'))                          AS step_not_started,
+        toUInt32(countIf(rs.rs_sla_status = 'MET'))                                   AS step_sla_met,
+        toUInt32(countIf(rs.rs_sla_status = 'OVERDUE'))                               AS step_sla_overdue,
+        toUInt32(countIf(rs.rs_sla_status = 'MISSED'))                                AS step_sla_missed,
+        toUInt32(countIf(rs.rs_sla_status = ''))                                      AS step_sla_unjudged,
+        toUInt32(countIf(rs.rs_step_status = 'COMPLETED' AND rs.rs_sla_status = 'MET')) AS step_completed_on_time,
+        toUInt32(countIf(rs.rs_step_status = 'COMPLETED'
+                         AND rs.rs_sla_status IN ('OVERDUE', 'MISSED')))              AS step_completed_late
     FROM (
         -- One resolved row per (protocol_instance_id, step_id)
         SELECT
             protocol_instance_id,
             id,
-            argMaxMerge(state)               AS rs_state,
-            argMaxMerge(completion_status)   AS rs_completion_status,
+            argMaxMerge(step_status)         AS rs_step_status,
+            argMaxMerge(sla_status)          AS rs_sla_status,
             toUInt8(argMaxMerge(is_deleted)) AS rs_is_deleted
         FROM rollup_step_current
         GROUP BY protocol_instance_id, id
@@ -253,15 +271,15 @@ SELECT
     pa.missed_deviations,
     pa.order_violation_deviations,
     -- Step metrics
-    coalesce(sa.step_total,     0)   AS step_total,
-    coalesce(sa.step_completed, 0)   AS step_completed,
-    coalesce(sa.step_overdue,   0)   AS step_overdue,
-    coalesce(sa.step_missed,    0)   AS step_missed,
-    coalesce(sa.step_due,       0)   AS step_due,
-    coalesce(sa.step_pending,   0)   AS step_pending,
-    coalesce(sa.step_on_time,   0)   AS step_on_time,
-    coalesce(sa.step_early,     0)   AS step_early,
-    coalesce(sa.step_late,      0)   AS step_late
+    coalesce(sa.step_total,             0)   AS step_total,
+    coalesce(sa.step_completed,         0)   AS step_completed,
+    coalesce(sa.step_not_started,       0)   AS step_not_started,
+    coalesce(sa.step_sla_met,           0)   AS step_sla_met,
+    coalesce(sa.step_sla_overdue,       0)   AS step_sla_overdue,
+    coalesce(sa.step_sla_missed,        0)   AS step_sla_missed,
+    coalesce(sa.step_sla_unjudged,      0)   AS step_sla_unjudged,
+    coalesce(sa.step_completed_on_time, 0)   AS step_completed_on_time,
+    coalesce(sa.step_completed_late,    0)   AS step_completed_late
 FROM enrollment_agg ea
 LEFT JOIN patient_agg pa ON ea.protocol_definition_id = pa.protocol_definition_id
 LEFT JOIN step_agg    sa ON ea.protocol_definition_id = sa.protocol_definition_id;
@@ -283,9 +301,17 @@ LEFT JOIN step_agg    sa ON ea.protocol_definition_id = sa.protocol_definition_i
 -- ============================================================
 -- Covers: Deviations page — header cards (total/overdue/missed/order-violation) and trend chart.
 -- Keyed on the deviation's CLINICAL OCCURRENCE day (when it happened), NOT detected_at (when our
--- system flagged it). Occurrence = the linked step's clinical date by type: OVERDUE→overdue_date,
--- MISSED→missed_date, ORDER_VIOLATION→completed_at, then due_date, then detected_at (fallback) —
--- the compliance engine already computes those step dates from clinical event_time.
+-- system flagged it). Occurrence = the threshold the deviation breached, by type:
+--   OVERDUE         → process_by of the step's DUE_DATE_REACHED transition
+--   MISSED          → process_by of the step's MISSED_DATE_REACHED transition (due + tolerance-days)
+--   ORDER_VIOLATION → the step's completed_at
+-- then the step's due_date, then detected_at (fallback). 1.x read overdue_date / missed_date off the
+-- step; 2.0.0 moved both thresholds into step_sla_state_transition, and the Step SLA Service records
+-- OVERDUE / MISSED deviations with no metadata, so the transition row is the only place they live.
+-- Matcher computes every threshold from clinical event_time, so these are clinical dates.
+-- protocol_canonical is no longer on protocol_instance (Matcher V2 §8); it is rebuilt as url|version
+-- from protocol_definitions. A join rather than dict_protocol_definitions, so the refresh does not
+-- depend on the dictionary's source credentials.
 --
 -- Dimensions: protocol_definition_id, facility_id, action_id, deviation_type — so the page can
 -- filter by protocol/facility and group by type/day/action. deviation_count is additive over a
@@ -322,22 +348,33 @@ SELECT
     count()                                 AS deviation_count,
     uniqState(patient_id)                   AS affected_patients_state
 FROM (
-    -- Resolve each deviation's CLINICAL occurrence date from the linked step, by type.
+    -- Resolve each deviation's CLINICAL occurrence date from the threshold it breached, by type.
     SELECT
         coalesce(multiIf(
-            d.deviation_type = 'OVERDUE',         si.overdue_date,
-            d.deviation_type = 'MISSED',          si.missed_date,
+            d.deviation_type = 'OVERDUE',         t.due_threshold,
+            d.deviation_type = 'MISSED',          t.missed_threshold,
             d.deviation_type = 'ORDER_VIOLATION', si.completed_at,
             CAST(NULL AS Nullable(DateTime64(6)))), si.due_date, d.detected_at)  AS occurred_at,
         toString(pi.protocol_definition_id)                                     AS protocol_definition_id,
-        pi.protocol_canonical                                                   AS protocol_canonical,
+        concat(pd.url, '|', pd.version)                                         AS protocol_canonical,
         coalesce(pf.facility_id, '')                                            AS facility_id,
         si.action_id                                                            AS action_id,
         d.deviation_type                                                        AS deviation_type,
         pi.patient_id                                                           AS patient_id
     FROM cce_analytics.deviations AS d FINAL
     JOIN cce_analytics.step_instances AS si FINAL ON si.id = d.step_instance_id
-    JOIN cce_analytics.protocol_instances AS pi FINAL ON pi.id = d.protocol_instance_id
+    JOIN cce_analytics.protocol_instances AS pi FINAL ON pi.id = si.protocol_instance_id
+    JOIN cce_analytics.protocol_definitions AS pd FINAL ON pd.id = pi.protocol_definition_id
+    LEFT JOIN (
+        -- One row per step: its SLA thresholds. (step_instance_id, transition_type) is unique in the
+        -- source; process_by is written once, so FINAL only removes CDC re-deliveries.
+        SELECT step_instance_id,
+               minIfOrNull(process_by, transition_type = 'DUE_DATE_REACHED')    AS due_threshold,
+               minIfOrNull(process_by, transition_type = 'MISSED_DATE_REACHED') AS missed_threshold
+        FROM cce_analytics.step_sla_state_transitions FINAL
+        WHERE _is_deleted = 0
+        GROUP BY step_instance_id
+    ) AS t ON t.step_instance_id = d.step_instance_id
     LEFT JOIN cce_analytics.mv_patient_facility_latest AS pf ON pf.patient_id = pi.patient_id
     WHERE d._is_deleted = 0
 )
@@ -353,11 +390,11 @@ GROUP BY snapshot_date, protocol_definition_id, protocol_canonical, facility_id,
 -- Keyed on the inbound event's CLINICAL event_time day (same clock + same event set as the volume
 -- breakdowns in mv_event_volume_hourly), so every date-filtered card reconciles: Matched Rate =
 -- matched/total over the SAME events. The processing OUTCOME per event is joined from
--- compliance_event_logs by cloudevents_id (one outcome per event, latest wins).
+-- matcher_event_logs by cloudevents_id (one outcome per event, latest wins).
 --
 -- total_events        → inbound_event_logs ACCEPTED, event_time = day
--- matched/zero/dup    → of those, the joined compliance processing_status
--- pipeline_loss_count → accepted events with NO compliance row (LEFT-JOIN anti-match) — ALWAYS >= 0
+-- matched/zero/dup    → of those, the joined matcher processing_status
+-- pipeline_loss_count → accepted events with NO matcher row (LEFT-JOIN anti-match) — ALWAYS >= 0
 --                       (total = matched + zero_match + duplicate + pipeline_loss). Rates are
 --                       computed at query time (matched/total), so no rate columns stored here.
 
@@ -370,7 +407,7 @@ CREATE TABLE IF NOT EXISTS mv_daily_event_kpis
     matched_count         UInt64,
     zero_match_count      UInt64,
     duplicate_count       UInt64,
-    pipeline_loss_count   UInt64       -- accepted but never reached compliance (>= 0)
+    pipeline_loss_count   UInt64       -- accepted but never reached the matcher (>= 0)
 ) ENGINE = ReplacingMergeTree(refreshed_at)
 ORDER BY (snapshot_date, facility_id);
 
@@ -391,7 +428,7 @@ FROM cce_analytics.inbound_event_logs AS iel FINAL
 LEFT JOIN (
     -- one processing outcome per event (dedup by cloudevents_id; latest received wins)
     SELECT cloudevents_id, argMax(processing_status, received_at) AS processing_status
-    FROM cce_analytics.compliance_event_logs FINAL
+    FROM cce_analytics.matcher_event_logs FINAL
     GROUP BY cloudevents_id
 ) AS cel ON cel.cloudevents_id = iel.cloudevents_id
 WHERE iel.status = 'ACCEPTED' AND iel.event_time IS NOT NULL
@@ -491,7 +528,7 @@ GROUP BY snapshot_date, fr.facility_id, fr.expected_patients_per_day;
 --
 --   (B) DEV/DEMO (ANC protocol) — the referral there is a ServiceRequest with NO code/category/
 --       marker in its payload; the ONLY reliable referral signal is that it COMPLETED a Referral
---       step. So for environments without TRANSFER_ENCOUNTER we fall back to the compliance-match:
+--       step. So for environments without TRANSFER_ENCOUNTER we fall back to the matcher's match:
 --       accepted events whose cloudevents_id completed a step with action_id ^(.+-referral|referral)$.
 --
 -- WHY BOTH (not just A): A is clean and lag-free for prod but invisible in demo (demo has no
@@ -530,8 +567,8 @@ SELECT
     -- "compliant": the accepted referral event was matched to (completed) a Referral step
     countIf(iel.cloudevents_id IN (
                SELECT cel.cloudevents_id
-               FROM cce_analytics.compliance_event_logs AS cel FINAL
-               JOIN cce_analytics.step_instances AS si FINAL ON si.completed_by_event_id = cel.id
+               FROM cce_analytics.matcher_event_logs AS cel FINAL
+               JOIN cce_analytics.step_instances AS si FINAL ON si.matched_event_id = cel.id
                WHERE match(si.action_id, '^(.+-referral|referral)$'))) AS matched_count
 FROM cce_analytics.inbound_event_logs AS iel FINAL
 WHERE iel.status = 'ACCEPTED' AND iel.event_time IS NOT NULL
@@ -547,8 +584,8 @@ WHERE iel.status = 'ACCEPTED' AND iel.event_time IS NOT NULL
         -- (B) DEV/DEMO fallback: accepted event that completed a Referral step
         OR iel.cloudevents_id IN (
                SELECT cel.cloudevents_id
-               FROM cce_analytics.compliance_event_logs AS cel FINAL
-               JOIN cce_analytics.step_instances AS si FINAL ON si.completed_by_event_id = cel.id
+               FROM cce_analytics.matcher_event_logs AS cel FINAL
+               JOIN cce_analytics.step_instances AS si FINAL ON si.matched_event_id = cel.id
                WHERE match(si.action_id, '^(.+-referral|referral)$'))
       )
 GROUP BY snapshot_date, iel.facility_id;
@@ -605,8 +642,8 @@ GROUP BY snapshot_date, iel.facility_id;
 --   SELECT protocol_definition_id,
 --     total_enrollments, status_active, status_completed, status_withdrawn, status_expired,
 --     tracked_patients, compliant_count, non_compliant_count, compliance_rate_pct,
---     step_total, step_completed, step_on_time, step_late, step_early,
---     step_overdue, step_missed, step_due, step_pending,
+--     step_total, step_completed, step_not_started, step_completed_on_time, step_completed_late,
+--     step_sla_met, step_sla_overdue, step_sla_missed, step_sla_unjudged,
 --     total_deviations, overdue_deviations, missed_deviations, order_violation_deviations
 --   FROM mv_daily_compliance_kpis FINAL
 --   WHERE snapshot_date = today()

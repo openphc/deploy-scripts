@@ -36,15 +36,19 @@ echo "✓ Database 'cce_analytics' exists"
 EXPECTED_TABLES=(
     "protocol_instances"
     "step_instances"
+    "step_sla_state_transitions"
     "deviations"
     "inbound_event_logs"
     "intelligence_deliveries"
     "intelligence_event_logs"
     "action_definitions"
     "protocol_definitions"
-    "compliance_event_logs"
+    "matcher_event_logs"
     "receiver_adaptor"
     "destination_adaptor_mapping"
+    "facility"
+    "protocol_instance_history"
+    "step_instance_history"
 )
 
 echo ""
@@ -63,7 +67,7 @@ done
 # MV backing tables (the actual data stores — named without suffix, queryable directly)
 EXPECTED_MV_TABLES=(
     "mv_event_volume_hourly"
-    "mv_compliance_processing_quality"
+    "mv_matcher_processing_quality"
     "mv_deviation_trends"
     "mv_deviation_by_protocol"
     "mv_deviation_by_patient"
@@ -91,7 +95,7 @@ done
 # MV trigger views (fire on INSERT, write to backing tables above)
 EXPECTED_MV_TRIGGERS=(
     "mv_event_volume_hourly_mv"
-    "mv_compliance_processing_quality_mv"
+    "mv_matcher_processing_quality_mv"
     "mv_deviation_trends_mv"
     "mv_deviation_by_protocol_mv"
     "mv_deviation_by_patient_mv"
@@ -118,8 +122,10 @@ done
 
 # Kafka-engine ingestion: one queue table + one consumer MV per source table (schema/02)
 INGEST=(
-    inbound_event_logs protocol_definitions protocol_instances step_instances deviations
-    compliance_event_logs action_definitions intelligence_event_logs intelligence_deliveries
+    inbound_event_logs protocol_definitions protocol_instances step_instances
+    step_sla_state_transitions deviations matcher_event_logs action_definitions
+    intelligence_event_logs intelligence_deliveries receiver_adaptor destination_adaptor_mapping
+    facility protocol_instance_history step_instance_history
 )
 echo ""
 echo "--- Kafka Ingestion (queue + consumer MV per table, ${#INGEST[@]} tables) ---"

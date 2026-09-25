@@ -1,7 +1,7 @@
 -- CCE Analytics ClickHouse Schema — Kafka Ingestion (Debezium → ClickHouse)
 -- Run: clickhouse-client --database cce_analytics < schema/02-kafka-ingestion.sql
 --
--- For each of the 11 source tables there are TWO objects:
+-- For each of the 15 source tables there are TWO objects:
 --   1. <table>_queue   — Kafka-engine table reading the Debezium topic (cce.public.<src>) as
 --                        ONE raw JSON String per message (kafka_format = 'JSONAsString').
 --   2. <table>_mv      — consumer MV that parses the Debezium envelope and inserts the flat
@@ -99,7 +99,6 @@ WITH
 SELECT
     toUUID(JSONExtractString(payload, 'id'))                                       AS id,
     JSONExtractString(payload, 'patient_id')                                      AS patient_id,
-    JSONExtractString(payload, 'protocol_canonical')                              AS protocol_canonical,
     toUUID(JSONExtractString(payload, 'protocol_definition_id'))                  AS protocol_definition_id,
     JSONExtractString(payload, 'status')                                          AS status,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'enrolled_at'), 6) AS enrolled_at,
@@ -129,20 +128,48 @@ SELECT
     toUUID(JSONExtractString(payload, 'protocol_instance_id'))                    AS protocol_instance_id,
     JSONExtractString(payload, 'action_id')                                       AS action_id,
     JSONExtractInt(payload, 'repeat_index')                                       AS repeat_index,
-    JSONExtractString(payload, 'state')                                           AS state,
+    JSONExtractString(payload, 'step_status')                                     AS step_status,
+    JSONExtractString(payload, 'sla_status')                                      AS sla_status,     -- null → ''
     parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'due_date'), 6)    AS due_date,
-    parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'overdue_date'), 6) AS overdue_date,
-    parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'missed_date'), 6) AS missed_date,
     parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'completed_at'), 6) AS completed_at,
     JSONExtractString(payload, 'completed_by_source')                            AS completed_by_source,
-    JSONExtractString(payload, 'completion_status')                              AS completion_status,
-    toUUIDOrNull(JSONExtractString(payload, 'completed_by_event_id'))             AS completed_by_event_id,
+    toUUIDOrNull(JSONExtractString(payload, 'matched_event_id'))                  AS matched_event_id,
     JSONExtractString(payload, 'required_behavior')                              AS required_behavior,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'created_at'), 6)  AS created_at,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'updated_at'), 6)  AS updated_at,
     JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                         AS _version,
     if(op = 'd', 1, 0)                                                            AS _is_deleted
 FROM step_instances_queue
+WHERE op IN ('c', 'u', 'r', 'd');
+
+-- ============================================================
+-- step_sla_state_transitions  (Matcher inserts, Step SLA marks processed)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS step_sla_state_transitions_queue (raw String)
+ENGINE = Kafka(cce_kafka) SETTINGS
+    kafka_topic_list  = 'cce.public.step_sla_state_transition',
+    kafka_group_name  = 'clickhouse_step_sla_state_transitions',
+    kafka_format      = 'JSONAsString',
+    kafka_num_consumers = 1;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS step_sla_state_transitions_mv TO step_sla_state_transitions AS
+WITH
+    JSONExtractString(raw, 'op') AS op,
+    if(op = 'd', JSONExtractRaw(raw, 'before'), JSONExtractRaw(raw, 'after')) AS payload
+SELECT
+    toUUID(JSONExtractString(payload, 'id'))                                          AS id,
+    toUUID(JSONExtractString(payload, 'step_instance_id'))                            AS step_instance_id,
+    JSONExtractString(payload, 'transition_type')                                     AS transition_type,
+    parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'process_by'), 6)      AS process_by,
+    JSONExtractBool(payload, 'is_processed')                                          AS is_processed,
+    parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'processed_at'), 6)    AS processed_at,
+    JSONExtractString(payload, 'processed_by')                                        AS processed_by,
+    JSONExtractInt(payload, 'attempts')                                               AS attempts,
+    parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'next_attempt_at'), 6) AS next_attempt_at,
+    parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'created_at'), 6)      AS created_at,
+    JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                             AS _version,
+    if(op = 'd', 1, 0)                                                                AS _is_deleted
+FROM step_sla_state_transitions_queue
 WHERE op IN ('c', 'u', 'r', 'd');
 
 -- ============================================================
@@ -184,8 +211,8 @@ WITH
 SELECT
     JSONExtractInt(payload, 'id')                                                  AS id,
     toUUID(JSONExtractString(payload, 'step_instance_id'))                         AS step_instance_id,
-    JSONExtractString(payload, 'state')                                            AS state,
-    JSONExtractString(payload, 'completion_status')                                AS completion_status,
+    JSONExtractString(payload, 'step_status')                                      AS step_status,
+    JSONExtractString(payload, 'sla_status')                                       AS sla_status,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'changed_at'), 6)   AS changed_at,
     JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                          AS _version,
     if(op = 'd', 1, 0)                                                             AS _is_deleted
@@ -208,7 +235,6 @@ WITH
     if(op = 'd', JSONExtractRaw(raw, 'before'), JSONExtractRaw(raw, 'after')) AS payload
 SELECT
     toUUID(JSONExtractString(payload, 'id'))                                       AS id,
-    toUUID(JSONExtractString(payload, 'protocol_instance_id'))                    AS protocol_instance_id,
     toUUID(JSONExtractString(payload, 'step_instance_id'))                       AS step_instance_id,
     JSONExtractString(payload, 'deviation_type')                                 AS deviation_type,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'detected_at'), 6) AS detected_at,
@@ -221,16 +247,16 @@ FROM deviations_queue
 WHERE op IN ('c', 'u', 'r', 'd');
 
 -- ============================================================
--- compliance_event_logs
+-- matcher_event_logs  (1.x compliance_event_log)
 -- ============================================================
-CREATE TABLE IF NOT EXISTS compliance_event_logs_queue (raw String)
+CREATE TABLE IF NOT EXISTS matcher_event_logs_queue (raw String)
 ENGINE = Kafka(cce_kafka) SETTINGS
-    kafka_topic_list  = 'cce.public.compliance_event_log',
-    kafka_group_name  = 'clickhouse_compliance_event_logs',
+    kafka_topic_list  = 'cce.public.matcher_event_log',
+    kafka_group_name  = 'clickhouse_matcher_event_logs',
     kafka_format      = 'JSONAsString',
     kafka_num_consumers = 1;
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS compliance_event_logs_mv TO compliance_event_logs AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS matcher_event_logs_mv TO matcher_event_logs AS
 WITH
     JSONExtractString(raw, 'op') AS op,
     if(op = 'd', JSONExtractRaw(raw, 'before'), JSONExtractRaw(raw, 'after')) AS payload
@@ -245,7 +271,7 @@ SELECT
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'updated_at'), 6)  AS updated_at,
     JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                         AS _version,
     if(op = 'd', 1, 0)                                                            AS _is_deleted
-FROM compliance_event_logs_queue
+FROM matcher_event_logs_queue
 WHERE op IN ('c', 'u', 'r', 'd');
 
 -- ============================================================
@@ -301,7 +327,8 @@ SELECT
     JSONExtractString(payload, 'subject')                                         AS subject,
     JSONExtractString(payload, 'action_type')                                     AS action_type,
     JSONExtractString(payload, 'intelligence_destination')                       AS intelligence_destination,
-    JSONExtractString(payload, 'step_state')                                      AS step_state,
+    JSONExtractString(payload, 'step_status')                                     AS step_status,
+    JSONExtractString(payload, 'sla_status')                                      AS sla_status,     -- null → ''
     JSONExtractString(payload, 'trigger_reason')                                 AS trigger_reason,
     JSONExtractString(payload, 'step_action_id')                                 AS step_action_id,
     JSONExtractString(payload, 'evaluation_expression')                          AS evaluation_expression,
@@ -404,9 +431,9 @@ FROM destination_adaptor_mapping_queue
 WHERE op IN ('c', 'u', 'r', 'd');
 
 -- ============================================================
--- facility  (compliance service reference data)
+-- facility  (matcher service reference data)
 -- ============================================================
--- Auto-populated by FacilityService when facilities appear in inbound FHIR events.
+-- Auto-populated by the matcher service when facilities appear in inbound FHIR events.
 -- expected_patients_per_day is INTEGER (nullable) in source → JSONExtractUInt returns 0 for null.
 CREATE TABLE IF NOT EXISTS facility_queue (raw String)
 ENGINE = Kafka(cce_kafka) SETTINGS

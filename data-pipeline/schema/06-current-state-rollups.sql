@@ -38,7 +38,6 @@ CREATE TABLE IF NOT EXISTS rollup_protocol_instance_current
     protocol_definition_id UUID,                                       -- stable dim (sort key)
     id                     UUID,                                       -- enrollment id (sort key)
     patient_id             AggregateFunction(argMax, String, UInt64),
-    protocol_canonical     AggregateFunction(argMax, String, UInt64),
     status                 AggregateFunction(argMax, String, UInt64),
     enrolled_at            AggregateFunction(argMax, DateTime64(6), UInt64),
     is_deleted             AggregateFunction(argMax, UInt8, UInt64)
@@ -51,7 +50,6 @@ AS SELECT
     protocol_definition_id,
     id,
     argMaxState(patient_id,         _version) AS patient_id,
-    argMaxState(protocol_canonical, _version) AS protocol_canonical,
     argMaxState(status,             _version) AS status,
     argMaxState(enrolled_at,        _version) AS enrolled_at,
     argMaxState(_is_deleted, _version) AS is_deleted
@@ -59,16 +57,19 @@ FROM protocol_instances
 GROUP BY protocol_definition_id, id;
 
 -- ============================================================
--- step_instances → current state per step (keyed for per-enrollment rollup)
--- (compliance rate completed/total, step-analytics, step-state distribution)
+-- step_instances → current status pair per step (keyed for per-enrollment rollup)
+-- (compliance rate completed/total, step-analytics, step_status × sla_status distribution)
 -- ============================================================
+-- Two writers update step_instance on disjoint columns (Matcher: step_status, Step SLA:
+-- sla_status), but every CDC event carries the whole row, so argMax by LSN always yields the
+-- latest value of both. sla_status '' = not yet judged (NULL in PostgreSQL).
 CREATE TABLE IF NOT EXISTS rollup_step_current
 (
     protocol_instance_id UUID,                                         -- stable dim (sort key)
     id                   UUID,                                         -- step id (sort key)
     action_id            AggregateFunction(argMax, String, UInt64),    -- PlanDefinition action.id (VARCHAR in source)
-    state                AggregateFunction(argMax, String, UInt64),
-    completion_status    AggregateFunction(argMax, String, UInt64),
+    step_status          AggregateFunction(argMax, String, UInt64),    -- NOT_STARTED | COMPLETED
+    sla_status           AggregateFunction(argMax, String, UInt64),    -- '' | OVERDUE | MISSED | MET
     is_deleted           AggregateFunction(argMax, UInt8, UInt64)
 ) ENGINE = AggregatingMergeTree
 ORDER BY (protocol_instance_id, id);
@@ -79,8 +80,8 @@ AS SELECT
     protocol_instance_id,
     id,
     argMaxState(action_id,          _version) AS action_id,
-    argMaxState(state,              _version) AS state,
-    argMaxState(completion_status,  _version) AS completion_status,
+    argMaxState(step_status,        _version) AS step_status,
+    argMaxState(sla_status,         _version) AS sla_status,
     argMaxState(_is_deleted, _version) AS is_deleted
 FROM step_instances
 GROUP BY protocol_instance_id, id;
@@ -136,15 +137,17 @@ GROUP BY id;
 --   ) WHERE is_deleted = 0
 --   GROUP BY protocol_definition_id, status;
 --
--- Per-enrollment compliance rate (completed/total steps):
+-- Per-enrollment compliance rate (completed/total steps, and on-time share):
 --   SELECT protocol_instance_id,
---          count()                                   AS total_steps,
---          countIf(state IN ('COMPLETED','SKIPPED')) AS completed_steps,
---          round(countIf(state IN ('COMPLETED','SKIPPED')) / nullIf(count(),0) * 100, 1) AS compliance_rate
+--          count()                                                  AS total_steps,
+--          countIf(step_status = 'COMPLETED')                       AS completed_steps,
+--          countIf(step_status = 'COMPLETED' AND sla_status = 'MET') AS on_time_steps,
+--          round(countIf(step_status = 'COMPLETED') / nullIf(count(),0) * 100, 1) AS compliance_rate
 --   FROM (
 --       SELECT protocol_instance_id, id,
---              argMaxMerge(state)      AS state,
---              argMaxMerge(is_deleted) AS is_deleted
+--              argMaxMerge(step_status) AS step_status,
+--              argMaxMerge(sla_status)  AS sla_status,
+--              argMaxMerge(is_deleted)  AS is_deleted
 --       FROM rollup_step_current
 --       GROUP BY protocol_instance_id, id
 --   ) WHERE is_deleted = 0

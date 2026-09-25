@@ -228,86 +228,113 @@ groups:
           summary: "Rejected event backlog growing"
           description: "More than 100 rejected events in the backlog for >10 minutes."
 
-  - name: cce-compliance-service-critical
+  # CCE 2.0.0 — the 1.x cce-compliance-service alerts now watch cce-matcher-service, which took over
+  # event matching (same metric names, except zero-match: cce_events_matched_total{status="zero_match"}).
+  # The 1.x scheduler-trigger consumer alert is gone with the retired cce-scheduler-service.
+  - name: cce-matcher-service-critical
     rules:
-      - alert: CceComplianceDown
-        expr: up{job="cce-compliance-service"} == 0
+      - alert: CceMatcherDown
+        expr: up{job="cce-matcher-service"} == 0
         for: 1m
         labels:
           severity: critical
-          service: cce-compliance-service
+          service: cce-matcher-service
         annotations:
-          summary: "CCE Compliance Service is down"
-          description: "Prometheus cannot scrape the compliance service for >1 minute."
+          summary: "CCE Matcher Service is down"
+          description: "Prometheus cannot scrape the matcher service for >1 minute."
 
-      - alert: CceComplianceConsumerErrors
-        expr: rate(cce_consumer_inbound_errors_total{job="cce-compliance-service"}[5m]) > 0
+      - alert: CceMatcherConsumerErrors
+        expr: rate(cce_consumer_inbound_errors_total{job="cce-matcher-service"}[5m]) > 0
         for: 2m
         labels:
           severity: critical
-          service: cce-compliance-service
+          service: cce-matcher-service
         annotations:
           summary: "Inbound event consumer errors detected"
           description: "Kafka inbound consumer is failing to process events. Messages may be going to DLQ."
 
-      - alert: CceComplianceSchedulerConsumerErrors
-        expr: rate(cce_consumer_scheduler_errors_total{job="cce-compliance-service"}[5m]) > 0
-        for: 2m
-        labels:
-          severity: critical
-          service: cce-compliance-service
-        annotations:
-          summary: "Scheduler trigger consumer errors detected"
-          description: "Kafka scheduler trigger consumer is failing. Time-based step transitions may be stalled."
-
-      - alert: CceComplianceDBConnectionPoolExhausted
-        expr: hikaricp_connections_pending{job="cce-compliance-service"} > 0
+      - alert: CceMatcherDBConnectionPoolExhausted
+        expr: hikaricp_connections_pending{job="cce-matcher-service"} > 0
         for: 1m
         labels:
           severity: critical
-          service: cce-compliance-service
+          service: cce-matcher-service
         annotations:
           summary: "Database connection pool exhausted"
-          description: "HikariCP has pending connection requests on the compliance service."
+          description: "HikariCP has pending connection requests on the matcher service."
 
-  - name: cce-compliance-service-warning
+  - name: cce-matcher-service-warning
     rules:
-      - alert: CceComplianceHighZeroMatchRate
-        expr: rate(cce_events_zero_match_total{job="cce-compliance-service"}[5m]) / rate(cce_events_processed_total{job="cce-compliance-service"}[5m]) > 0.5
+      - alert: CceMatcherHighZeroMatchRate
+        expr: rate(cce_events_matched_total{job="cce-matcher-service",status="zero_match"}[5m]) / rate(cce_events_processed_total{job="cce-matcher-service"}[5m]) > 0.5
         for: 10m
         labels:
           severity: warning
-          service: cce-compliance-service
+          service: cce-matcher-service
         annotations:
           summary: "More than 50% of events have zero trigger matches"
           description: "High zero-match rate may indicate missing protocol definitions or misconfigured triggers."
 
-      - alert: CceComplianceSlowMatching
-        expr: histogram_quantile(0.99, rate(cce_step_matching_duration_seconds_bucket{job="cce-compliance-service"}[5m])) > 0.2
+      - alert: CceMatcherSlowMatching
+        expr: histogram_quantile(0.99, rate(cce_step_matching_duration_seconds_bucket{job="cce-matcher-service"}[5m])) > 0.2
         for: 5m
         labels:
           severity: warning
-          service: cce-compliance-service
+          service: cce-matcher-service
         annotations:
           summary: "Step matching p99 latency > 200ms"
           description: "Tier 1 + Tier 2 matching is slow. Check trigger_index size and DB performance."
 
-      - alert: CceComplianceSlowProcessing
-        expr: histogram_quantile(0.99, rate(cce_events_processing_duration_seconds_bucket{job="cce-compliance-service"}[5m])) > 0.5
+      - alert: CceMatcherSlowProcessing
+        expr: histogram_quantile(0.99, rate(cce_events_processing_duration_seconds_bucket{job="cce-matcher-service"}[5m])) > 0.5
         for: 5m
         labels:
           severity: warning
-          service: cce-compliance-service
+          service: cce-matcher-service
         annotations:
           summary: "Event processing p99 latency > 500ms"
           description: "End-to-end event processing is slow. Check DB, Kafka, and matching performance."
 
-      - alert: CceComplianceHighDuplicateRate
-        expr: rate(cce_events_duplicate_total{job="cce-compliance-service"}[5m]) / rate(cce_events_processed_total{job="cce-compliance-service"}[5m]) > 0.2
+      - alert: CceMatcherHighDuplicateRate
+        expr: rate(cce_events_duplicate_total{job="cce-matcher-service"}[5m]) / rate(cce_events_processed_total{job="cce-matcher-service"}[5m]) > 0.2
         for: 10m
         labels:
           severity: warning
-          service: cce-compliance-service
+          service: cce-matcher-service
         annotations:
           summary: "More than 20% duplicate events"
           description: "High duplicate rate detected. May indicate upstream event replay or Kafka rebalancing."
+
+  - name: cce-protocol-service-critical
+    rules:
+      - alert: CceProtocolDown
+        expr: up{job="cce-protocol-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: cce-protocol-service
+        annotations:
+          summary: "CCE Protocol Service is down"
+          description: "Prometheus cannot scrape the protocol service for >1 minute. PlanDefinition loading is unavailable."
+
+  - name: cce-step-sla-service-critical
+    rules:
+      - alert: CceStepSlaDown
+        expr: up{job="cce-step-sla-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: cce-step-sla-service
+        annotations:
+          summary: "CCE Step SLA Service is down"
+          description: "Prometheus cannot scrape the step SLA service for >1 minute. OVERDUE / MISSED transitions are not being applied."
+
+      - alert: CceStepSlaBatchesFailing
+        expr: rate(cce_sla_evaluator_batches_failed_total{job="cce-step-sla-service"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          service: cce-step-sla-service
+        annotations:
+          summary: "Step SLA evaluator batches are failing"
+          description: "SLA sweep batches are failing; due transitions will pile up (cce_sla_transitions_due)."

@@ -87,6 +87,16 @@ check_eq_zero "deviations: orphaned step_instance_id" \
     "SELECT count() FROM deviations d FINAL LEFT JOIN step_instances si FINAL ON d.step_instance_id = si.id WHERE si.id = toUUID('00000000-0000-0000-0000-000000000000') OR isNull(si.id)"
 
 echo ""
+echo "--- 2.0.0 Status Model ---"
+# A source still on the 1.x shape (state / completion_status) lands step_status = '' here, since
+# the consumer MV reads columns the 1.x row does not have. Non-zero means the PostgreSQL upgrade
+# (cce-matcher-service/migration) has not run, or the connector is pointed at the wrong database.
+check_eq_zero "step_instances: step_status is NOT_STARTED | COMPLETED" \
+    "SELECT count() FROM step_instances FINAL WHERE step_status NOT IN ('NOT_STARTED', 'COMPLETED')"
+check_eq_zero "step_instances: sla_status is '' | OVERDUE | MISSED | MET" \
+    "SELECT count() FROM step_instances FINAL WHERE sla_status NOT IN ('', 'OVERDUE', 'MISSED', 'MET')"
+
+echo ""
 echo "--- Freshness ---"
 check "inbound_event_logs fresh (last 10min)" \
     "SELECT if(max(received_at) >= now() - INTERVAL 10 MINUTE, 'ok', 'stale') FROM inbound_event_logs" \

@@ -4,6 +4,9 @@
 -- Prerequisites:
 --   1. PostgreSQL must have wal_level = 'logical' (requires restart if changing)
 --   2. Run this script as a superuser or user with CREATEROLE + REPLICATION privileges
+--   3. The CCE 2.0.0 schema must be in place (Protocol → Matcher → Collector migrations applied, or
+--      cce-matcher-service/migration/run-upgrade.sh run on a 1.x database). The GRANT and
+--      PUBLICATION statements name 2.0.0 tables and fail on a 1.x schema.
 --
 -- Usage: psql -h <host> -U postgres -d ccedb -f cdc/01-configure-replication.sql
 
@@ -30,18 +33,19 @@ BEGIN
     END IF;
 END $$;
 
--- Step 4: Grant SELECT on all CDC source tables
+-- Step 4: Grant SELECT on all 15 CDC source tables
 GRANT USAGE ON SCHEMA public TO cce_cdc_user;
 GRANT SELECT ON TABLE
     protocol_definition,
     protocol_instance,
     step_instance,
+    step_sla_state_transition,
     deviation,
     inbound_event_log,
     intelligence_delivery,
     intelligence_event_log,
     action_definition,
-    compliance_event_log,
+    matcher_event_log,
     receiver_adaptor,
     destination_adaptor_mapping,
     facility,
@@ -49,40 +53,51 @@ GRANT SELECT ON TABLE
     step_instance_history
 TO cce_cdc_user;
 
--- Step 5: REPLICA IDENTITY FULL on all 14 CDC tables (uniform)
--- Required by Debezium so UPDATE/DELETE events include the full old-row image.
--- facility sets this in its Flyway migration (V3__facility.sql) but
--- listed here for completeness — ALTER is idempotent.
+-- Step 5: REPLICA IDENTITY FULL on all 15 CDC tables (uniform)
+-- Required by Debezium so UPDATE/DELETE events include the full old-row image
+-- (and so ReselectColumns / TOAST reconstruction can recover unchanged large values).
+-- Without this, only the primary key is available in the WAL for changed rows.
+-- The 2.0.0 service migrations already set it on every table they own (Protocol V1, Matcher V1/V2,
+-- Collector V1); it is repeated here so this script is self-sufficient (ALTER is idempotent).
 -- NOTE: the two *_history tables are append-only (INSERT only), so FULL is a harmless no-op for
--- them (default PK identity would also suffice) — applied for uniformity so every CDC table
--- follows the same rule. Their V4 migration does not set it; it is set here only.
+-- them (the default PK identity would also suffice) — applied here for uniformity so every CDC
+-- table follows the same rule. Matcher's migrations leave them on the default identity.
+--
+-- 2.0.0 changes against the 1.x list:
+--   * compliance_event_log was renamed matcher_event_log (Matcher V2 §1) — same columns.
+--   * step_sla_state_transition is new (Matcher V1/V2 §3). It carries each step's SLA thresholds
+--     (process_by), which 1.x kept on step_instance as overdue_date / missed_date.
+--   * trigger_index (Protocol V1) is deliberately NOT captured: it is a derived matching index,
+--     rebuilt from protocol_definition on every load, and no analytics reads it.
 ALTER TABLE protocol_definition          REPLICA IDENTITY FULL;
 ALTER TABLE protocol_instance            REPLICA IDENTITY FULL;
 ALTER TABLE step_instance                REPLICA IDENTITY FULL;
+ALTER TABLE step_sla_state_transition    REPLICA IDENTITY FULL;
 ALTER TABLE deviation                    REPLICA IDENTITY FULL;
 ALTER TABLE inbound_event_log            REPLICA IDENTITY FULL;
 ALTER TABLE intelligence_delivery        REPLICA IDENTITY FULL;
 ALTER TABLE intelligence_event_log       REPLICA IDENTITY FULL;
 ALTER TABLE action_definition            REPLICA IDENTITY FULL;
-ALTER TABLE compliance_event_log         REPLICA IDENTITY FULL;
+ALTER TABLE matcher_event_log            REPLICA IDENTITY FULL;
 ALTER TABLE receiver_adaptor             REPLICA IDENTITY FULL;
 ALTER TABLE destination_adaptor_mapping  REPLICA IDENTITY FULL;
 ALTER TABLE facility           REPLICA IDENTITY FULL;
 ALTER TABLE protocol_instance_history    REPLICA IDENTITY FULL;
 ALTER TABLE step_instance_history        REPLICA IDENTITY FULL;
 
--- Step 6: Create publication for all CDC tables
+-- Step 6: Create publication for all 15 CDC tables
 DROP PUBLICATION IF EXISTS cce_analytics_pub;
 CREATE PUBLICATION cce_analytics_pub FOR TABLE
     protocol_definition,
     protocol_instance,
     step_instance,
+    step_sla_state_transition,
     deviation,
     inbound_event_log,
     intelligence_delivery,
     intelligence_event_log,
     action_definition,
-    compliance_event_log,
+    matcher_event_log,
     receiver_adaptor,
     destination_adaptor_mapping,
     facility,

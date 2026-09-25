@@ -320,10 +320,11 @@ services:
       SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_URI: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_URI:-http://cce-collector-service:8080}
       SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_PREDICATES_0: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_PREDICATES_0:-Path=/v1/events/**}
       SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_FILTERS_0_NAME: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_FILTERS_0_NAME:-JwtValidationFilter}
-      # Compliance service routes
-      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_ID: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_ID:-cce-compliance-service}
-      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_URI: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_URI:-http://cce-compliance-service:8080}
-      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_PREDICATES_0: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_PREDICATES_0:-Path=/v1/compliance/**}
+      # Protocol service routes (PlanDefinition / ActionDefinition management — moved here from the
+      # retired 1.x compliance service's /v1/compliance/** in CCE 2.0.0)
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_ID: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_ID:-cce-protocol-service}
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_URI: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_URI:-http://cce-protocol-service:8080}
+      SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_PREDICATES_0: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_PREDICATES_0:-Path=/v1/protocol/**}
       # Insights service routes (JWT-validated, proxied from UI via Caddy → gateway → insights-service)
       SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_ID: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_ID:-cce-insights-service}
       SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_URI: ${SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_3_URI:-http://cce-insights-service:8084}
@@ -473,7 +474,8 @@ services:
       CCE_COLLECTOR_DEDUP_LOOKBACK_DAYS: ${CCE_COLLECTOR_DEDUP_LOOKBACK_DAYS:-30}
       CCE_COLLECTOR_MAX_PAYLOAD_SIZE: ${CCE_COLLECTOR_MAX_PAYLOAD_SIZE:-1048576}
       CCE_COLLECTOR_FHIR_STRICT_VALIDATION: ${CCE_COLLECTOR_FHIR_STRICT_VALIDATION:-false}
-      CCE_COLLECTOR_KAFKA_TOPICS_INBOUND: ${CCE_COLLECTOR_KAFKA_TOPICS_INBOUND:-cce.events.inbound}
+      # 2.0.0 collector reads CCE_KAFKA_TOPICS_INBOUND_EVENTS (1.x read CCE_COLLECTOR_KAFKA_TOPICS_INBOUND)
+      CCE_KAFKA_TOPICS_INBOUND_EVENTS: ${CCE_KAFKA_TOPICS_INBOUND_EVENTS:-cce.events.inbound}
       CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER: ${CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER:-cce.deadletter}
       CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS: ${CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS:-30}
       # Actuator / Prometheus metrics
@@ -486,9 +488,13 @@ services:
     networks:
       - cce-net
 
-  cce-compliance-service:
-    image: ${CCE_COMPLIANCE_SERVICE_IMAGE:-cce-compliance-service:latest}
-    container_name: cce-compliance-service
+  # ── CCE 2.0.0: the 1.x cce-compliance-service is split into Protocol + Matcher (+ Step SLA below).
+  # Start order Protocol → Matcher → Step SLA: each waits for the previous one to be healthy, so on
+  # the one-time upgrade of a 1.x ccedb (CCE_FLYWAY_BASELINE_VERSION=1) Protocol's V2 lands before
+  # Matcher's, and Step SLA (ddl-auto: validate) only starts once Matcher has reshaped step_instance.
+  cce-protocol-service:
+    image: ${CCE_PROTOCOL_SERVICE_IMAGE:-cce-protocol-service:latest}
+    container_name: cce-protocol-service
     restart: unless-stopped
     logging:
       driver: json-file
@@ -497,13 +503,57 @@ services:
         max-file: "3"
     depends_on:
       - postgres
-      - kafka
     ports:
       - "8094:8080"
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       SERVER_PORT: 8080
-      # Database
+      # Database — owns protocol_definition, action_definition, trigger_index
+      # (Flyway ledger: flyway_schema_history_protocol, set in the service's application.yml)
+      DB_HOST: ${POSTGRES_DB_HOST:-cce-postgres}
+      DB_PORT: ${POSTGRES_DB_PORT:-5432}
+      DB_NAME: ${POSTGRES_DB:-ccedb}
+      DB_USERNAME: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_POOL_SIZE: ${CCE_PROTOCOL_DB_POOL_SIZE:-10}
+      # 0 = normal. Set to 1 in .env ONLY for the one-time upgrade of a 1.x (pre-split) ccedb, then
+      # set back to 0 — see UPGRADE-2.0.0.md.
+      CCE_FLYWAY_BASELINE_VERSION: ${CCE_FLYWAY_BASELINE_VERSION:-0}
+      # Observability
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
+      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-protocol-service
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - cce-net
+
+  cce-matcher-service:
+    image: ${CCE_MATCHER_SERVICE_IMAGE:-cce-matcher-service:latest}
+    container_name: cce-matcher-service
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      postgres:
+        condition: service_started
+      kafka:
+        condition: service_started
+      cce-protocol-service:
+        condition: service_healthy
+    ports:
+      - "8101:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SERVER_PORT: 8080
+      # Database — owns protocol_instance, step_instance, step_sla_state_transition, matcher_event_log,
+      # deviation, … (Flyway ledger: flyway_schema_history_matcher, set in the service's application.yml)
       DB_HOST: ${POSTGRES_DB_HOST:-cce-postgres}
       DB_PORT: ${POSTGRES_DB_PORT:-5432}
       DB_NAME: ${POSTGRES_DB:-ccedb}
@@ -514,25 +564,26 @@ services:
       DB_CONNECTION_TIMEOUT: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT:-30000}
       DB_IDLE_TIMEOUT: ${SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT:-600000}
       DB_MAX_LIFETIME: ${SPRING_DATASOURCE_HIKARI_MAX_LIFETIME:-1800000}
-      # Flyway (separate migration history from collector service)
-      SPRING_FLYWAY_TABLE: flyway_schema_history_compliance
+      # Same one-time override as Protocol — see UPGRADE-2.0.0.md.
+      CCE_FLYWAY_BASELINE_VERSION: ${CCE_FLYWAY_BASELINE_VERSION:-0}
+      # The prod profile turns baseline-on-migrate off, which would make the one-time upgrade fail on
+      # the 1.x schema ("non-empty schema without schema history table") instead of baselining at 1.
+      # Flyway only consults it when flyway_schema_history_matcher is absent, so it is inert afterwards.
       SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
-      SPRING_FLYWAY_BASELINE_VERSION: "0"
-      # Kafka
+      # V5 runs CREATE INDEX CONCURRENTLY, which waits for every open transaction — including the one
+      # Flyway's own PostgreSQL lock holds, so Matcher hangs at V5 and never becomes healthy (reproduced
+      # with the service jar). A session-level lock avoids that. Harmless once migrated.
+      SPRING_FLYWAY_POSTGRESQL_TRANSACTIONAL_LOCK: "false"
+      # Kafka — consumes cce.events.inbound (group cce-matcher-service), produces cce.intelligence.triggers
       KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      KAFKA_CONCURRENCY: ${CCE_COMPLIANCE_KAFKA_CONCURRENCY:-5}
-      KAFKA_PARTITIONS: ${CCE_COMPLIANCE_KAFKA_PARTITIONS:-25}
-      KAFKA_RETRY_MAX_ATTEMPTS: ${CCE_COMPLIANCE_KAFKA_RETRY_MAX_ATTEMPTS:-5}
-      KAFKA_RETRY_BACKOFF_MS: ${CCE_COMPLIANCE_KAFKA_RETRY_BACKOFF_MS:-2000}
       # Observability
-      TRACING_SAMPLE_RATE: ${CCE_COMPLIANCE_TRACING_SAMPLE_RATE:-0.1}
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
-      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-compliance-service
+      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-matcher-service
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 5s
-      start_period: 30s
+      start_period: 60s
       retries: 3
     networks:
       - cce-net
@@ -634,9 +685,13 @@ services:
       - cce-net
 
   # ==================== Scheduler Service ====================
-  cce-scheduler-service:
-    image: ${CCE_SCHEDULER_SERVICE_IMAGE:-cce-scheduler-service:latest}
-    container_name: cce-scheduler-service
+  # CCE 2.0.0 Step SLA Service — replaces the retired cce-scheduler-service: sweeps
+  # step_sla_state_transition and records OVERDUE / MISSED. No Kafka (neither consumes nor produces).
+  # Must NOT run while Matcher works through an event backlog (e.g. its first start after the
+  # 2.0.0 upgrade) — see UPGRADE-2.0.0.md "Event replay".
+  cce-step-sla-service:
+    image: ${CCE_STEP_SLA_SERVICE_IMAGE:-cce-step-sla-service:latest}
+    container_name: cce-step-sla-service
     restart: unless-stopped
     logging:
       driver: json-file
@@ -644,43 +699,32 @@ services:
         max-size: "50m"
         max-file: "3"
     depends_on:
-      - postgres
-      - kafka
+      postgres:
+        condition: service_started
+      cce-matcher-service:
+        condition: service_healthy
     ports:
-      - "8098:8083"
+      - "8098:8092"
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
-      SERVER_PORT: 8083
-      # Database
-      DB_URL: ${POSTGRES_DB_URL_JDBC:-jdbc:postgresql://cce-postgres:5432/ccedb}
+      SERVER_PORT: 8092
+      # Database — no DDL of its own (ddl-auto: validate against Matcher's schema)
+      DB_HOST: ${POSTGRES_DB_HOST:-cce-postgres}
+      DB_PORT: ${POSTGRES_DB_PORT:-5432}
+      DB_NAME: ${POSTGRES_DB:-ccedb}
       DB_USERNAME: ${POSTGRES_USER:-admin}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
-      # Kafka
-      KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
-      KAFKA_TOPIC_SCHEDULER_TRIGGERS: ${KAFKA_TOPIC_SCHEDULER_TRIGGERS:-cce.scheduler.triggers}
-      # Scheduler config
-      SCHEDULER_SCAN_INTERVAL: ${SCHEDULER_SCAN_INTERVAL:-5000}
-      SCHEDULER_BATCH_SIZE: ${SCHEDULER_BATCH_SIZE:-100}
-      SCHEDULER_LEASE_DURATION: ${SCHEDULER_LEASE_DURATION:-30}
-      SCHEDULER_LEADER_RETRY: ${SCHEDULER_LEADER_RETRY:-5000}
-      SCHEDULER_LOCK_KEY: ${SCHEDULER_LOCK_KEY:-100001}
-      SCHEDULER_TOTAL_PARTITIONS: ${SCHEDULER_TOTAL_PARTITIONS:-1}
-      SCHEDULER_LOCK_ACQUIRE_DELAY: ${SCHEDULER_LOCK_ACQUIRE_DELAY:-50}
-      # Flyway
-      SPRING_FLYWAY_TABLE: flyway_schema_history_scheduler
-      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
-      SPRING_FLYWAY_BASELINE_VERSION: "0"
+      DB_POOL_SIZE: ${CCE_SLA_DB_POOL_SIZE:-3}
+      # Sweep — prod profile polls every 15s
+      CCE_SLA_INSTANCE_ID: ${CCE_SLA_INSTANCE_ID:-cce-step-sla-service-dev}
+      CCE_SLA_BATCH_SIZE: ${CCE_SLA_BATCH_SIZE:-100}
       # Observability
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
-      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-scheduler-service
+      MANAGEMENT_METRICS_TAGS_APPLICATION: cce-step-sla-service
       # JVM memory tuning (Paketo buildpack)
       BPL_JVM_THREAD_COUNT: 50
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8083/actuator/health"]
-      interval: 30s
-      timeout: 5s
-      start_period: 30s
-      retries: 3
+    # No healthcheck: the image is a Paketo buildpack (bootBuildImage) with no wget/curl, so a
+    # wget probe would always report unhealthy. Probe /actuator/health (port 8098) externally.
     networks:
       - cce-net
 

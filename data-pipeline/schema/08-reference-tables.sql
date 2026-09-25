@@ -1,12 +1,13 @@
 -- CCE Analytics ClickHouse Schema — Reference Table CDC Setup
 -- Run: clickhouse-client --database cce_analytics < schema/08-reference-tables.sql
 --
--- facility is now owned by the compliance service (cce-compliance-service).
+-- facility is owned by the matcher service (cce-matcher-service) in 2.0.0.
 -- The table is defined in schema/01 and populated automatically via Debezium CDC:
 --
---   PostgreSQL (compliance service)
---       V3__facility.sql creates the table with REPLICA IDENTITY FULL
---       FacilityReferenceService.registerFacilityIfAbsent() inserts/updates rows
+--   PostgreSQL (matcher service)
+--       V1__initial_schema.sql creates the table with REPLICA IDENTITY FULL
+--       InboundEventConsumer inserts rows; programme staff set district_name /
+--       expected_patients_per_day directly in SQL
 --       ↓  Debezium CDC (WAL → Kafka)
 --   Kafka topic: cce.public.facility
 --       ↓  facility_queue + facility_mv (schema/02)
