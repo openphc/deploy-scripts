@@ -57,13 +57,15 @@ psql -h "$POSTGRES_HOST" -U postgres -d "$POSTGRES_DATABASE" -f cdc/01-configure
 
 ## CDC Tables
 
-Change Data Capture from committed PostgreSQL records (shared `ccedb`). **11 tables** captured from 3 services (Collector, Compliance, Intelligence) → ClickHouse `cce_analytics`. Columns are reconciled against the live `ccedb` schema. Two large unused JSONB columns (`intelligence_event_log.event_payload`, `intelligence_delivery.fhir_payload`) are excluded at the connector.
+Change Data Capture from committed PostgreSQL records (shared `ccedb`, **CCE 2.0.0 schema**). **15 tables** captured from 5 services (Collector, Protocol, Matcher, Step SLA, Intelligence) → ClickHouse `cce_analytics`. This includes `facility` (owned by the matcher service and CDC'd, not a static list), `step_sla_state_transition` (each step's SLA thresholds) and the two append-only transition logs `protocol_instance_history` / `step_instance_history`. Columns follow the canonical data dictionary in `cce-common-util/docs/data-dictionary.md`. Two large unused JSONB columns (`intelligence_event_log.event_payload`, `intelligence_delivery.fhir_payload`) are excluded at the connector.
+
+Steps carry two independent statuses — `step_status` (`NOT_STARTED` / `COMPLETED`: did the work happen?) and `sla_status` (`OVERDUE` / `MISSED` / `MET`, empty until judged: was it on time?) — replacing the 1.x single `state` + `completion_status`. Moving from 1.x means rebuilding ClickHouse from a fresh snapshot, not migrating it; see the [Deployment Guide](docs/deployment-guide.md#1-prerequisites).
 
 For the full table listing and the Kafka-ingestion design, see [Data Flow & Schema Design](docs/data-flow.md).
 
 ## Materialized Views
 
-**12 aggregation MVs** computed at insert time (event volume, deviations, intelligence, processing quality) across patient, facility, practitioner, and protocol dimensions. **Current-state** queries (compliance status, step rates, delivery outcomes) on the mutable entities use the always-fresh **`argMaxState` current-state rollups** in `schema/06` — incremental, no `FINAL`, no double-counting — or query the base tables with `FINAL`.
+**12 aggregation MVs** (event volume, deviations, intelligence, processing quality) — 10 computed at insert time, and the two deviation-by-protocol/patient MVs refreshed every 30 s because they join `step_instances`, across patient, facility, practitioner, and protocol dimensions. **Current-state** queries (compliance status, step rates, delivery outcomes) on the mutable entities use the always-fresh **`argMaxState` current-state rollups** in `schema/06` — incremental, no `FINAL`, no double-counting — or query the base tables with `FINAL`.
 
 For the complete MV catalog and coverage matrix, see [Data Flow & Schema Design § 4](docs/data-flow.md).
 
