@@ -3,7 +3,7 @@ version: "3.9"
 services:
   # 1) Database
   postgres:
-    image: postgres:16
+    image: postgres:16.15   # pinned: a floating 16 tag made every deploy able to restart Postgres
     container_name: cce-postgres
     restart: unless-stopped
     logging:
@@ -371,12 +371,11 @@ services:
       SPRING_FLYWAY_TABLE: flyway_schema_history_gateway
       SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
       SPRING_FLYWAY_BASELINE_VERSION: "0"
+    # The image (Spring Boot buildpack) has no shell, wget or curl, so any exec health check can only fail
+    # and the container reads "unhealthy" forever. Nothing depends on this service being healthy; check
+    # its /actuator/health endpoint directly instead.
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/actuator/health"]
-      interval: 30s
-      timeout: 5s
-      start_period: 15s
-      retries: 3
+      disable: true
     networks:
       - cce-net
   
@@ -545,8 +544,13 @@ services:
         condition: service_started
       kafka:
         condition: service_started
+      # service_started, not service_healthy: on a database upgraded from 1.x, Protocol cannot become
+      # healthy until Matcher's own V6 has run (Protocol's Hibernate expects the history-id sequence to
+      # step by 50, which V6 sets), so waiting for healthy deadlocks start-up. Protocol's migrations run
+      # first thing at start-up; if Matcher's ever get there first on a new database they fail, and the
+      # restart policy retries once Protocol's tables exist.
       cce-protocol-service:
-        condition: service_healthy
+        condition: service_started
     ports:
       - "8101:8080"
     environment:
@@ -675,12 +679,11 @@ services:
       # Observability
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
       MANAGEMENT_METRICS_TAGS_APPLICATION: cce-intelligence-service
+    # The image (Spring Boot buildpack) has no shell, wget or curl, so any exec health check can only fail
+    # and the container reads "unhealthy" forever. Nothing depends on this service being healthy; check
+    # its /actuator/health endpoint directly instead.
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8085/actuator/health"]
-      interval: 30s
-      timeout: 5s
-      start_period: 30s
-      retries: 3
+      disable: true
     networks:
       - cce-net
 
@@ -883,12 +886,11 @@ services:
       LOG_LEVEL: INFO
       JAVA_OPTS: "-Xms256m -Xmx512m"
     restart: unless-stopped
+    # The image (Spring Boot buildpack) has no shell, wget or curl, so any exec health check can only fail
+    # and the container reads "unhealthy" forever. Nothing depends on this service being healthy; check
+    # its /actuator/health endpoint directly instead.
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      disable: true
     networks:
       - cce-net
 
@@ -975,12 +977,11 @@ services:
       CACHE_TTL_METRICS: ${CACHE_TTL_METRICS:-15}
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
       MANAGEMENT_METRICS_TAGS_APPLICATION: cce-insights-service
+    # The image (Spring Boot buildpack) has no shell, wget or curl, so any exec health check can only fail
+    # and the container reads "unhealthy" forever. Nothing depends on this service being healthy; check
+    # its /actuator/health endpoint directly instead.
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/actuator/health"]
-      interval: 30s
-      timeout: 5s
-      start_period: 30s
-      retries: 3
+      disable: true
     networks:
       - cce-net
 

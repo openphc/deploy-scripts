@@ -24,7 +24,18 @@ command -v envsubst >/dev/null || { echo "✗ envsubst (gettext) is required"; e
 
 echo "=== Registering Debezium connector '${NAME}' @ ${CONNECT_URL} ==="
 
-# Interpolate ${CDC_*} into the connector JSON.
+# The connector JSON's placeholders are POSTGRES_*; a data-pipeline .env names the same values CDC_*.
+# Fall back to those so either naming works, and stop rather than send blank credentials.
+export POSTGRES_HOST="${POSTGRES_HOST:-${CDC_PG_HOST:-}}"
+export POSTGRES_PORT="${POSTGRES_PORT:-${CDC_PG_PORT:-}}"
+export POSTGRES_DATABASE="${POSTGRES_DATABASE:-${CDC_PG_DATABASE:-}}"
+export POSTGRES_READ_ONLY_USER="${POSTGRES_READ_ONLY_USER:-${CDC_USER:-}}"
+export POSTGRES_READ_ONLY_PASSWORD="${POSTGRES_READ_ONLY_PASSWORD:-${CDC_PASSWORD:-}}"
+for required_var in POSTGRES_HOST POSTGRES_PORT POSTGRES_DATABASE POSTGRES_READ_ONLY_USER POSTGRES_READ_ONLY_PASSWORD; do
+    [[ -n "${!required_var}" ]] || { echo "✗ ${required_var} (or its CDC_* equivalent) is not set — source your .env first"; exit 1; }
+done
+
+# Interpolate ${POSTGRES_*} into the connector JSON.
 PAYLOAD="$(envsubst < "$CONNECTOR_FILE")"
 
 # Wait for Kafka Connect REST.
