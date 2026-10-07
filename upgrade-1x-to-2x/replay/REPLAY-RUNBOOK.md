@@ -246,8 +246,9 @@ upgrade block of `replay.env`.
   log, or the platform's own health signal where the service has one (a Docker healthcheck, a
   Kubernetes readiness probe). A readiness probe must go through the application (e.g.
   `/actuator/health`), not just a TCP port.
-- **The replay starts containers as they are.** On Docker Compose it uses `docker compose start`,
-  not `up`, so the service that processes the replay is the same build that built its tables. A
+- **The replay starts containers as they are.** On Docker Compose it starts the service's existing
+  container (`docker start`), not `docker compose up` (and not `docker compose start`, which would
+  also start its `depends_on` services), so the service that processes the replay is the same build that built its tables. A
   change to the compose file or `.env` is therefore **not** applied by the replay: apply it first
   (`docker compose up -d <service>`), then run `check`.
 - **No open alert incidents** when `notification_tracker` is dropped. The `demo-rw` intelligence
@@ -349,6 +350,171 @@ Do this once per deployment (`nano upgrade-1x-to-2x/replay/replay.env`). It has 
 3. **What the replay does**: `SERVICES`, `DROP_TABLES`, `RESTORE_TABLES` (and `SCHEMA_ORDER`,
    `CONSUMER_GROUP` when needed). The values are for 2.0; for 1.x, or for the 1.x → 2.0 upgrade, use
    the matching commented block. `INSIGHTS_SERVICES=""` for a deployment without Insights.
+
+#### How each connection setting is used, and when to set it
+
+**`PLATFORM` decides only how the CCE services are stopped and started.** Postgres, Kafka, Kafka
+Connect and ClickHouse are reached through their own settings, whatever `PLATFORM` is: UAT is
+`PLATFORM=kubernetes` with its Postgres and Kafka in Docker, prod is `kubernetes` with them installed
+on the server. Each `*_EXEC` says **where** a tool runs; the settings next to it say how that tool
+finds the component **from there**.
+
+**The services (`PLATFORM`)**
+
+| | `compose` | `docker` | `kubernetes` |
+|---|---|---|---|
+| Also set | `COMPOSE_DIR`; `COMPOSE_OPTS` only if needed (below) | — | `KUBECTL`, `K8S_NAMESPACE` |
+| A name in `SERVICES` is | a Compose service | a container | a Deployment (an autoscaler, if any, has the same name) |
+| Stop | `docker compose stop` | `docker stop` | saves the replica count and the autoscaler (`STATE_DIR/replicas-*`, `hpa-*.yaml`), deletes the autoscaler, scales to 0 |
+| Start | `docker start` on the existing container | `docker start` | scales back, re-applies the autoscaler, `rollout status` |
+
+Every step then waits until the process has exited (Kubernetes: no pod left, terminating ones included).
+
+- **`COMPOSE_OPTS`.** The script runs `cd $COMPOSE_DIR && docker compose $COMPOSE_OPTS …`. Compose
+  finds a service's containers by the **project name** (the label `com.docker.compose.project` on
+  each container) and its compose file(s). The project name is `-p`, else `COMPOSE_PROJECT_NAME` (in
+  the shell or the folder's `.env`), else a top-level `name:` in the compose file, else the folder's
+  name. Set `COMPOSE_OPTS` when the stack was brought up in a way a plain `docker compose` in
+  `COMPOSE_DIR` doesn't repeat:
+
+  | The stack was started with | `COMPOSE_OPTS` |
+  |---|---|
+  | a file not named `compose.yaml` / `docker-compose.yml` (`-f docker-compose.prod.yml`) | `"-f docker-compose.prod.yml"` |
+  | several files (`-f docker-compose.yml -f docker-compose.2x.yml`) | the same `-f` list, in the same order |
+  | `-p cce` from a folder with another name, or from another folder | `"-p cce"` |
+
+  To see what is needed: `docker compose ls` shows each project's NAME and CONFIG FILES; `cd
+  $COMPOSE_DIR && docker compose ps` must list the CCE services. With the wrong project, the services
+  look `absent` (or stopped) to the script although they run. A container's project cannot be changed
+  in place: renaming a project means `down` and `up` again, and new named volumes (empty) unless they
+  are declared `external`. So point the script at the name the stack has.
+- **`KUBECTL`** is the command the script runs for every Kubernetes call, as
+  `$KUBECTL -n $K8S_NAMESPACE …` (default `kubectl`). On k3s (UAT, prod) it is `"k3s kubectl"`: k3s
+  bundles kubectl, and its credentials (`/etc/rancher/k3s/k3s.yaml`) are readable by root only, hence
+  `sudo` in `R`. Use whichever of `sudo k3s kubectl -n <ns> get deploy` or `kubectl -n <ns> get deploy`
+  works on the server. `KUBECTL` is for the services only: a component running in a pod is reached
+  through its own `*_EXEC`, with the kubectl command written into it.
+
+**Postgres (`PG_EXEC`, `PG_DB`, `PG_USER`, `PG_HOST`, `PG_PORT`)**
+
+The script runs `$PG_EXEC sh -c 'psql -U … -h … -p … -d $PG_DB …'` (also `pg_dump`, `pg_restore`);
+each optional setting adds its flag only when set. Inside wherever `PG_EXEC` runs:
+
+| | If unset |
+|---|---|
+| `PG_DB` | `ccedb` |
+| `PG_USER` | `$POSTGRES_USER` there (the official image sets it), else the OS user psql runs as |
+| `PG_HOST` | the local Unix socket |
+| `PG_PORT` | 5432 (the socket's name depends on the port too) |
+| password (no setting) | `$PGPASSWORD` there, else `$POSTGRES_PASSWORD` there, else `~/.pgpass`; none for trust or peer authentication |
+
+| Where Postgres runs | Set | Example |
+|---|---|---|
+| a container of the official image | `PG_EXEC` only | dev, UAT: `"docker exec -i postgres-uat"`. Inside the container it is always 5432, whatever port the host publishes (UAT's 5433 doesn't matter) |
+| a container or pod without `POSTGRES_USER` in its environment (Bitnami, many StatefulSets) | `PG_EXEC` + `PG_USER` | `"kubectl -n data exec -i statefulset/postgres --"`, `PG_USER=postgres`. Without it psql logs in as `root` and fails |
+| installed on this server | `PG_EXEC="sudo -u postgres"` (peer authentication as role `postgres`) + `PG_PORT` if not 5432 | prod: `PG_PORT=5432` |
+| reached over the network (psql on this host, Postgres elsewhere or in a container with a published port, a managed database) | `PG_EXEC=""` + `PG_HOST` + `PG_PORT` + `PG_USER`, and the password in this host's environment | `PG_HOST=localhost PG_PORT=5433 PG_USER=postgres`; `export PGPASSWORD=…` before running, or `~/.pgpass` of the user the script runs as (`sudo` drops `PGPASSWORD` unless `sudo -E`) |
+
+Any of them: `PG_DB` when the database isn't `ccedb`. The user must be allowed to drop and create
+tables and `pg_dump` the database; **Revert** also drops and creates the database and drops
+replication slots. In practice: the superuser (`postgres`), not the services' own user.
+
+**Kafka (`KAFKA_EXEC`, `KAFKA_BOOTSTRAP`, `KAFKA_TOOLS_DIR`, `KAFKA_TOOL_SUFFIX`, `KAFKA_CLIENT_CONFIG`)**
+
+The script runs `$KAFKA_EXEC $KAFKA_TOOLS_DIR/<tool>$KAFKA_TOOL_SUFFIX --bootstrap-server
+$KAFKA_BOOTSTRAP …` for `kafka-topics`, `kafka-get-offsets`, `kafka-consumer-groups`,
+`kafka-delete-records` (its JSON file is written with `mktemp` where the tools run, then removed),
+`kafka-console-producer` (the replayed events, through stdin) and `kafka-console-consumer`.
+
+| Kafka | `KAFKA_EXEC` | `KAFKA_TOOLS_DIR` | `KAFKA_TOOL_SUFFIX` |
+|---|---|---|---|
+| Confluent image (`confluentinc/cp-kafka`) | `"docker exec -i <container>"` | — | — |
+| Apache image (`apache/kafka`) | `"docker exec -i <container>"` | `/opt/kafka/bin` | `.sh` |
+| Bitnami image | `"docker exec -i <container>"` | — | `.sh` |
+| a pod | `"kubectl -n <ns> exec -i <pod> --"` | as for its image | as for its image |
+| installed on this server (prod) | `""` | `/opt/kafka/bin` | `.sh` |
+
+`check` reporting the tools as not found means these two are wrong. To see which a container has:
+`docker exec <container> sh -c 'command -v kafka-topics kafka-topics.sh; ls /opt/kafka/bin'`.
+
+- **`KAFKA_BOOTSTRAP` is the broker as seen from where the tools run.** A client is redirected to the
+  broker's *advertised* listener, so take the listener that resolves there
+  (`docker exec <container> env | grep -i LISTENERS`): `kafka:9092` inside the dev Compose network,
+  `localhost:9092` in UAT's container and on prod, `kafka-0.kafka-headless:9092` in a pod. A port the
+  container publishes to the host (e.g. `localhost:29092`) doesn't exist inside the container.
+- **`KAFKA_CLIENT_CONFIG`:** only when the broker needs SASL or TLS. A client properties file **where
+  the tools run** (inside the container or pod); it is passed to every tool.
+
+**Kafka Connect (`CONNECT_EXEC`, `CONNECT_URL`, `CONNECT_HOST_URL`)**
+
+The script calls Connect's REST API as `$CONNECT_EXEC curl $CONNECT_URL/connectors/…`: the CDC
+connector's status (`check`, `status`), pause and resume during the replay, and in A8 saving its
+configuration, removing it and registering it again.
+
+| Connect | `CONNECT_EXEC` | `CONNECT_URL` |
+|---|---|---|
+| a container (dev, UAT) | `"docker exec -i cce-kafka-connect"` | `http://localhost:8083`: inside the container, whatever port the host publishes |
+| a pod | `"kubectl -n <ns> exec -i deploy/kafka-connect --"` | `http://localhost:8083` |
+| installed on this server (prod) | `""` | its port: `http://localhost:8086` |
+| an image without `curl`, or reached from this host | `""` | the port as published to this host |
+
+**`CONNECT_HOST_URL`** (rarely): A8 registers the connector again from the configuration it saved
+before removing it, through `CONNECT_EXEC` / `CONNECT_URL`. Only when there was no connector to save
+(a fresh setup, or one removed before the first run) does it run
+`data-pipeline/scripts/register-connectors.sh` **on this host**, which then needs Connect's address
+as seen from here, and the `CDC_*` credentials. Set it only when that can happen **and** the host
+port differs from the container's (the laptop: `8084` on the host for the container's `8083`).
+
+**ClickHouse (`CH_HTTP`, and its credentials)**
+
+ClickHouse has **no `*_EXEC`**: `curl` and `python3` (`apply-schema.py`, the schema/09 backfill) run
+**on this host**, against ClickHouse's HTTP interface. So `CH_HTTP` is ClickHouse as seen from this
+host, and `python3` must be installed here (`check` says so).
+
+| | Taken from |
+|---|---|
+| address | `CH_HTTP`, else `http://$CLICKHOUSE_HOST:$CLICKHOUSE_PORT`, else `http://localhost:8123` |
+| user | `CH_USER`, else `CLICKHOUSE_USER`, else `cce_pipeline` |
+| password | `CH_PASSWORD`, else `CLICKHOUSE_PASSWORD` (A8 stops without one) |
+| database | `CH_DB`, else `CLICKHOUSE_DB`, else `cce_analytics` |
+
+| ClickHouse | `CH_HTTP` |
+|---|---|
+| a container publishing its HTTP port (dev) | `http://localhost:8123` |
+| UAT | unset: `CLICKHOUSE_HOST` / `CLICKHOUSE_PORT` come from Infisical |
+| installed on this server (prod) | `http://localhost:8124` |
+| in a cluster | `http://localhost:8123`, with `kubectl -n <ns> port-forward svc/clickhouse 8123:8123 &` started first and kept running through A8 |
+| elsewhere | any URL `curl` reaches from here (`https://…:8443` with TLS) |
+
+The HTTP port, not the native one (9000). A Compose service name (`http://clickhouse:8123`) does not
+resolve on the host. The user and password come from the environment (Infisical on UAT and prod) or
+from `SECRETS_FILE`, of which only the credentials are read (its URLs and ports never override this
+file). ClickHouse's own connection to Kafka (its Kafka tables) is not set here: it is the server-side
+named collection `cce_kafka`, which A8 checks exists before it drops anything.
+
+**`DATA_PIPELINE_DIR`** is not a connection but the folder A8 rebuilds ClickHouse from. It reads
+`connectors/debezium-postgres-source.json` (the tables captured, and the connector's definition),
+`cdc/01-configure-replication.sql` (applied to Postgres again), `schema/01…08` (ClickHouse),
+`schema/09-historical-backfill.sql` and `scripts/apply-schema.py` (and `scripts/register-connectors.sh`
+as above). It must be the **deployed** release's: `check` warns, and A8 refuses, when it captures
+tables the database doesn't have (a 1.x pipeline against 2.0).
+
+| Situation | `DATA_PIPELINE_DIR` |
+|---|---|
+| `data-pipeline/` sits beside `upgrade-1x-to-2x/` at the deployed version | unset (the default) |
+| only `upgrade-1x-to-2x/` was copied to the server | **must** be set: the default doesn't exist |
+| the deployed pipeline is elsewhere | its path, e.g. `/opt/deployment/data-pipeline` |
+| upgrade 1.x → 2.0 (part U) | the 2.0 pipeline (U1) |
+| going back to 1.x | the 1.x pipeline (U1) |
+
+**Checking:** `$R check` (A0) uses exactly these commands and prints, on failure, the prefix and
+address it used. The same commands by hand:
+```bash
+docker exec -i cce-postgres psql -U postgres -d ccedb -c 'select 1'
+docker exec -i kafka kafka-topics --bootstrap-server kafka:9092 --list | grep cce.events.inbound
+docker exec -i cce-kafka-connect curl -s http://localhost:8083/connectors
+curl -s http://localhost:8123/ -H "X-ClickHouse-User: cce_pipeline" -H "X-ClickHouse-Key: $PW" --data-binary 'SELECT 1'
+```
 
 #### Examples: the current setups side by side
 
@@ -468,7 +634,8 @@ DROP_TABLES="matcher_event_log protocol_instance protocol_instance_history step_
   step_instance_history step_sla_state_transition deviation intelligence_event_log facility
   receiver_adaptor destination_adaptor_mapping intelligence_delivery intelligence_delivery_audit_log
   notification_tracker"
-RESTORE_TABLES="facility receiver_adaptor destination_adaptor_mapping notification_tracker"
+RESTORE_TABLES="facility receiver_adaptor destination_adaptor_mapping intelligence_delivery
+  intelligence_delivery_audit_log notification_tracker"
 ```
 Without the intelligence service (see "The settings for each release"):
 ```bash
@@ -504,7 +671,7 @@ DROP_TABLES="protocol_definition action_definition trigger_index
   destination_adaptor_mapping intelligence_delivery intelligence_delivery_audit_log notification_tracker
   compliance_event_log audit_log scheduler_lease scheduler_scan_cursor"
 RESTORE_TABLES="protocol_definition action_definition trigger_index facility receiver_adaptor
-  destination_adaptor_mapping notification_tracker"
+  destination_adaptor_mapping intelligence_delivery intelligence_delivery_audit_log notification_tracker"
 ```
 `R="sudo -A bash rw/lib/infisical-run.sh uat bash upgrade-1x-to-2x/replay/replay-inbound-events.sh --config upgrade-1x-to-2x/replay/replay-uat-upgrade.env"`
 
@@ -548,7 +715,8 @@ DROP_TABLES="matcher_event_log protocol_instance protocol_instance_history step_
   step_instance_history step_sla_state_transition deviation intelligence_event_log facility
   receiver_adaptor destination_adaptor_mapping intelligence_delivery intelligence_delivery_audit_log
   notification_tracker"
-RESTORE_TABLES="facility receiver_adaptor destination_adaptor_mapping notification_tracker"
+RESTORE_TABLES="facility receiver_adaptor destination_adaptor_mapping intelligence_delivery
+  intelligence_delivery_audit_log notification_tracker"
 ```
 `R="bash upgrade-1x-to-2x/replay/replay-inbound-events.sh --config upgrade-1x-to-2x/replay/replay-local.env"`
 
@@ -973,12 +1141,13 @@ To catch those up too, run C3–C9 again 10 minutes later.
 Moves a 1.x deployment to 2.0 by **deploying 2.0 first, then replaying**: every stored event is
 processed again by the 2.0 services, on a fresh 2.0 schema.
 
-- **Kept:** protocol definitions, action definitions, trigger index, facilities, alert receivers and
-  incidents (`RESTORE_TABLES`).
+- **Kept:** protocol definitions, action definitions, trigger index, facilities, alert receivers,
+  incidents and the history of the alerts already sent (`RESTORE_TABLES`).
 - **Rebuilt by 2.0:** enrolments, steps, deadlines, deviations. Counts differ from 1.x (see "Good to
   know").
-- **Not carried over:** 1.x-only data (`compliance_event_log`, `audit_log`, scheduler state, past
-  deliveries) and events that never went through the collector. They stay in the A3 backup.
+- **Not carried over:** 1.x-only data (`compliance_event_log`, `audit_log`, scheduler state), the
+  alerts' links to the steps that raised them (`intelligence_event_log`: the steps get new ids) and
+  events that never went through the collector. They stay in the A3 backup.
 - **New ids:** every protocol instance and step gets a new id. A system that kept a 1.x id (e.g. from
   an alert payload) and sends it back later in `protocolinstanceid` will not find it.
 
@@ -1218,7 +1387,9 @@ Other commands that help:
   since June against today's protocol and enrols more patients.
 - **Only `inbound_event_log` is replayed.** Anything that reached the services without going through
   the collector (e.g. test events sent straight to Kafka) is not rebuilt.
-- **Past deliveries are not sent again,** and a rebuild deletes their old records.
+- **Past deliveries are not sent again.** Their records (`intelligence_delivery` and its audit log) are
+  put back as history when they are in `RESTORE_TABLES`, as in the examples; `intelligence_event_log`
+  is rebuilt empty, because it points at enrolments and steps that get new ids.
 - **Replay progress** (mode, cutoff, published count), backups, the DLQ copies and the list of
   patients to check are kept in `STATE_DIR` (default `~/cce-replay/<DEPLOYMENT_NAME>`, e.g.
   `~/cce-replay/dev/`). `status` shows it.
@@ -1226,7 +1397,8 @@ Other commands that help:
   `SERVICES`, and an autoscaler, if any, must have the same name as its Deployment. `check` lists
   each one as `running`, `stopped` or `absent`. Don't re-apply manifests while a replay runs.
 - **Docker Compose:** a name in `SERVICES` is the Compose service's name; its container may be named
-  otherwise. The replay starts existing containers as they are (`docker compose start`).
+  otherwise. The replay starts existing containers as they are (`docker start` on the service's
+  container; `docker compose up -d --no-deps` only for a service that has no container yet).
 - **Only CCE's topics and consumer groups are touched:** topics matching `TOPIC_PATTERN` (`^cce\.`)
   and groups matching `GROUP_PATTERN` (`^cce-`). On a server whose Kafka broker other applications
   share, their topics and groups are left alone.

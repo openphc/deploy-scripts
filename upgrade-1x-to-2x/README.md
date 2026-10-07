@@ -16,6 +16,9 @@ There are two ways to upgrade a 1.x deployment's data to 2.0. Use the **replay**
 | `replay.env` | settings template, every setting explained |
 | `replay-local.env` | example: a plain replay on a laptop copy of UAT (1.x) |
 | `replay-local-upgrade.env` | example: the 1.x → 2.0 upgrade on a laptop copy of UAT |
+| `replay-uat-upgrade.env` | settings: the 1.x → 2.0 upgrade of Rwanda UAT (Kubernetes, infra in Docker) |
+| `replay-prod-upgrade.env` | settings: the 1.x → 2.0 upgrade of Rwanda prod (Kubernetes, infra installed on the server) |
+| `performance-test/` | performance test: times a full rebuild at increasing sizes on a local copy (see `performance-test/README.md`); `suite-combined-20260930-report.md` is the 30 Sep run, 18k–1M events |
 
 ## `data-migration/`
 
