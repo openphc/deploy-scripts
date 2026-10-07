@@ -377,8 +377,12 @@ services_start() {   # start services; --no-wait: return without waiting for the
       # 'start', not 'up': up recreates a container whose image or configuration changed since it was
       # created, so the service processing the replay could be another build than the one that built
       # its tables. Only a service with no container yet is created, with 'up'.
+      # 'docker start' on the container, not 'compose start': compose start also starts the service's
+      # depends_on services (Step SLA depends on Matcher), which must stay stopped while the replay
+      # starts one service at a time.
       for s in "$@"; do
-        if [ "$(service_state "$s")" = absent ]; then compose up -d --no-deps "$s"; else compose start "$s"; fi
+        if [ "$(service_state "$s")" = absent ]; then compose up -d --no-deps "$s"
+        else docker start "$(service_container "$s")" >/dev/null; fi
       done;;
     docker)
       for s in "$@"; do

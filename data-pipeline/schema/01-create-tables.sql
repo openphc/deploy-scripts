@@ -84,6 +84,9 @@ CREATE TABLE IF NOT EXISTS inbound_event_logs
                                        if(JSONExtractString(raw_payload, 'data', 'location', 'identifier', 'value') != '',
                                           JSONExtractString(raw_payload, 'data', 'location', 'identifier', 'value'),
                                           JSONExtractString(raw_payload, 'facilityid'))))))),
+    -- Facility display name: envelope-only (the adaptors' 'facilityname' extension attribute); no
+    -- FHIR body carries an equivalent name. Read by cce-insights-service (patient journey).
+    facility_name        String    MATERIALIZED JSONExtractString(raw_payload, 'facilityname'),
     resource_type        String    MATERIALIZED JSONExtractString(
                                        JSONExtractRaw(raw_payload, 'data'), 'resourceType'),
     practitioner_ref     String    MATERIALIZED JSONExtractString(
