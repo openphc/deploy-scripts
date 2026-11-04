@@ -7,10 +7,13 @@
 CCE_CONFIG_KEYS=" ENVCODE OVERLAY_NAME OVERLAY_TEMPLATE INGRESS_HOST ACME_EMAIL IS_CLOUD_DEPLOYMENT SSH_ALLOWED_CIDR UFW_EXTRA_ALLOW
  K3S_CLUSTER_CIDR K3S_SERVICE_CIDR USE_LOCAL_INFISICAL INFISICAL_DOMAIN SEED_ENV_FILE CCE_INFISICAL_CREDS_DIR
  K3S_VERSION INFISICAL_CLI_VERSION CLICKHOUSE_VERSION POSTGRES_VERSION KAFKA_VERSION DEBEZIUM_VERSION KAFKA_PORT
- ENABLE_PG_STAT_STATEMENTS KEYCLOAK_THEME_DIR DATA_PIPELINE_REF DATA_PIPELINE_REPO IMAGE_REGISTRY IMAGE_TAG_DEFAULT PROTOCOL_FILE PROTOCOL_LOAD_URL ASSUME_YES SKIP_PREREQS "
+ ENABLE_PG_STAT_STATEMENTS EXPORTER_RUNTIME POSTGRES_EXPORTER_VERSION POSTGRES_EXPORTER_SHA256 KAFKA_EXPORTER_VERSION KAFKA_EXPORTER_SHA256 KEYCLOAK_THEME_DIR DATA_PIPELINE_REF DATA_PIPELINE_REPO IMAGE_REGISTRY IMAGE_TAG_DEFAULT PROTOCOL_FILE PROTOCOL_LOAD_URL ASSUME_YES SKIP_PREREQS "
 
 cce_load_config() {
   local file="$1" line key val unknown=()
+  # The list spans lines: without this, the last key on each line (UFW_EXTRA_ALLOW, …) is followed by a newline, not the space the
+  # match below needs, and is reported as unknown.
+  local known=" $(printf '%s' "$CCE_CONFIG_KEYS" | tr -s '[:space:]' ' ') "
   [ -r "$file" ] || { echo "ERROR: cannot read config file: $file" >&2; return 1; }
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%%#*}"                                          # strip comments
@@ -21,7 +24,7 @@ cce_load_config() {
     key="$(printf '%s' "$key" | tr -d '[:space:]')"
     val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
     [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || { echo "WARNING: ignoring invalid key '$key'" >&2; continue; }
-    case "$CCE_CONFIG_KEYS" in *" $key "*) ;; *) [[ "$key" == IMAGE_* ]] || unknown+=("$key");; esac
+    case "$known" in *" $key "*) ;; *) [[ "$key" == IMAGE_* ]] || unknown+=("$key");; esac
     if [ -z "${!key+x}" ]; then export "$key=$val"; else export "$key"; fi   # environment wins
   done < "$file"
   [ "${#unknown[@]}" -gt 0 ] && echo "WARNING: unknown config key(s) — typo? ${unknown[*]}" >&2
