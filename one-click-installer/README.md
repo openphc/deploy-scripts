@@ -53,7 +53,7 @@ Every key is documented in [`config/example.env`](config/example.env). The essen
 | `IS_CLOUD_DEPLOYMENT` | `true` = behind a cloud security group (no host firewall); `false` = on-prem/direct → UFW is configured |
 | `INGRESS_HOST` / `ACME_EMAIL` | DNS name + Let's Encrypt contact for TLS; empty = plain HTTP |
 | `USE_LOCAL_INFISICAL` | run a self-contained Infisical on the machine, or use an existing one |
-| `IMAGE_<SERVICE>` | per-service image **tag** or **`sha256:` digest**; `IMAGE_TAG_DEFAULT`, `IMAGE_REGISTRY` for all |
+| `IMAGE_<SERVICE>` | per-service image **tag** or **`sha256:` digest**; `IMAGE_CCE_EMITTER_ADAPTOR` for whichever emitter adaptor the overlay uses; `IMAGE_TAG_DEFAULT`, `IMAGE_REGISTRY` for all |
 | `*_VERSION` | k3s, Infisical CLI, ClickHouse, Postgres, Kafka, Debezium |
 | `DATA_PIPELINE_REF` | `cce-data-pipeline` branch/tag/commit to deploy (schema, CDC, connector, dashboards); empty = the vendored `data-pipeline/` |
 | `KEYCLOAK_THEME_DIR` | login page theme; default = unbranded `keycloak-themes/cce-insights-theme/dev`; point at a branded copy to brand it |
