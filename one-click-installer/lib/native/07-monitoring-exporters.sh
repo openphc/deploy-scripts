@@ -9,7 +9,7 @@
 #   - kafka_exporter (danielqsj): consumer-group lag / topic-partition metrics against the native,
 #     unauthenticated Kafka broker on localhost:9092, exposes :9308/metrics.
 #
-# Both run as `docker run --network host` (not k3s pods — they need to reach native localhost
+# They run as systemd services by default (EXPORTER_RUNTIME, below), or as `docker run --network host` (not k3s pods — they need to reach native localhost
 # services, matching how ClickHouse/Postgres/Kafka themselves are host-resident). --restart
 # unless-stopped survives reboots. --log-opt max-size=10m/max-file=3 (30MB cap) — there's no
 # /etc/docker/daemon.json default, so an unbounded json-file driver is the alternative. Idempotent:
@@ -62,10 +62,10 @@ END
 GRANT pg_monitor TO postgres_exporter;
 SQL
 
-# EXPORTER_RUNTIME: docker (default — the reference deployment's `docker run --network host`) or systemd (release binaries as
-# host services: no container at all). Same exporters, versions, ports, credentials and flags either way, so Prometheus scrape jobs
+# EXPORTER_RUNTIME: systemd (default — release binaries as host services, no container at all) or docker (the reference
+# deployment's `docker run --network host`). Same exporters, versions, ports, credentials and flags either way, so Prometheus scrape jobs
 # and Grafana dashboards are identical. Switching runtime removes the other one's exporters (they would fight over 9187/9308).
-RUNTIME="${EXPORTER_RUNTIME:-docker}"
+RUNTIME="${EXPORTER_RUNTIME:-systemd}"
 case "$RUNTIME" in docker|systemd) ;; *) log "!! EXPORTER_RUNTIME must be docker or systemd (got '$RUNTIME')"; exit 1;; esac
 # Pinned releases (versions = what the docker images ran when this was written). kafka_exporter publishes no checksum file: its
 # SHA-256 is pinned here. Overriding a version needs the matching *_SHA256.
@@ -152,7 +152,7 @@ fi
 # (A 90s budget made the one-click installer die here on a fresh AWS VM although the exporter went healthy moments later.)
 wait_for_metric http://localhost:9308/metrics '^kafka_brokers ' 90 \
   && log "  OK: kafka_brokers metric present" \
-  || log "  WARNING: kafka_exporter not yet reporting kafka_brokers — continuing (monitoring only). Check: docker logs kafka-exporter; curl -s localhost:9308/metrics | grep ^kafka_brokers"
+  || log "  WARNING: kafka_exporter not yet reporting kafka_brokers — continuing (monitoring only). Check: $( [ "$RUNTIME" = docker ] && echo 'docker logs kafka-exporter' || echo 'journalctl -u cce-kafka-exporter' ); curl -s localhost:9308/metrics | grep ^kafka_brokers"
 
 log "DONE. Next: apply the prometheus-config ConfigMap (one-click-installer/lib/native/05-k8s-deploy.sh, or extract+apply"
 log "      just that ConfigMap) and run one-click-installer/lib/grafana-redeploy.sh $ENVCODE to wire scrape targets + dashboards."

@@ -22,9 +22,10 @@ Deploys **CCE 2.0** (protocol / matcher / step-sla). Verified end to end on a fr
 | Platform | k3s with its bundled Traefik ingress | k3s version pinned in the config (pins Traefik too); with `INGRESS_HOST`, Traefik gets Let's Encrypt + HTTP→HTTPS ([`k8s/base/traefik/`](../k8s/base/traefik/traefik-helmchartconfig.yaml)) |
 | CCE services | namespace `cce-<envcode>`: gateway, collector, protocol, matcher, step-sla, intelligence, insights service + UI, OpenHIM emitter, Keycloak, Grafana, Prometheus, kafka-ui | sizing / HPAs / rate limits cloned from the reference production overlay |
 | Pipeline | Postgres → Debezium → Kafka → ClickHouse analytics schema | version: vendored `data-pipeline/` or `DATA_PIPELINE_REF`; CDC connector points at `localhost` (survives IP changes) |
-| Monitoring | Prometheus + Grafana (`/grafana`) in the namespace; node-exporter; postgres_exporter + kafka_exporter on the host; ClickHouse's built-in metrics | every CCE service, the host, Postgres, Kafka and ClickHouse scraped; Grafana gets Prometheus/ClickHouse/PostgreSQL datasources + the `data-pipeline/infra/grafana` dashboards |
+| Monitoring | Prometheus + Grafana (`/grafana`) in the namespace; node-exporter; postgres_exporter + kafka_exporter on the host (systemd services `cce-postgres-exporter` / `cce-kafka-exporter`); ClickHouse's built-in metrics | every CCE service, the host, Postgres, Kafka and ClickHouse scraped; Grafana gets Prometheus/ClickHouse/PostgreSQL datasources + the `data-pipeline/infra/grafana` dashboards |
 | Seed | Keycloak realm `cce` + its login theme, gateway `api_permissions`, optional clinical protocol | |
-| Secrets | Infisical project `cce-<envcode>` | generated unless supplied; the host IP is **detected**, never stored |
+| Secrets | Infisical project `cce-<envcode>`; with `USE_LOCAL_INFISICAL=true`, Infisical itself runs natively on 127.0.0.1:8080 (`infisical-core` + Redis + a database in the native PostgreSQL) | generated unless supplied; the host IP is **detected**, never stored |
+| Management | Portainer (`PORTAINER_ENABLED`, default on): native server `cce-portainer` on 9443, reachable only from the host and the k3s networks (SSH tunnel), plus an agent in k3s | admin password in Infisical `/portainer` |
 | Hardening | docker-published ports blocked from the public NIC; UFW default-deny when `IS_CLOUD_DEPLOYMENT=false`; `pg_stat_statements` | |
 
 ## Requirements
@@ -35,7 +36,13 @@ Deploys **CCE 2.0** (protocol / matcher / step-sla). Verified end to end on a fr
   packages.clickhouse.com, artifacts-cli.infisical.com, the Ubuntu mirror. `lib/prereqs.sh` checks all of them first.
 * An Infisical instance — or let the installer run its own (`USE_LOCAL_INFISICAL=true`, the default).
 
-Everything else (k3s, Infisical CLI, docker, ClickHouse, Kafka, …) is installed for you.
+Everything else (k3s, Infisical CLI, ClickHouse, Kafka, …) is installed for you.
+
+**No containers.** With the defaults nothing runs in docker. Every service is a systemd service or runs in k3s, and docker is not
+even installed. The data stores, Infisical, the exporters and Portainer are native; the CCE services are in k3s. The installer
+reports any container it finds at the end. `EXPORTER_RUNTIME=docker` / `LOCAL_INFISICAL_RUNTIME=docker` bring back the older
+container-based variants. An existing docker Infisical, docker exporters or docker Portainer are moved to native on the next run:
+same keys and data, and the containers are removed. The docker volumes and an Infisical dump are kept as a rollback copy.
 
 ## Getting the code onto the machine
 
@@ -67,13 +74,14 @@ Environment variables also override any config key: `sudo env IS_CLOUD_DEPLOYMEN
 
 | # | Phase | Script |
 |---|---|---|
-| 1 | prerequisites: machine + outbound checks, k3s, Infisical CLI, docker | `lib/prereqs.sh` |
-| 2 | Infisical project + machine identity (local instance if configured) | `lib/infisical-local.sh`, `lib/infisical-bootstrap.sh` |
+| 1 | prerequisites: machine + outbound checks, k3s, Infisical CLI (docker only if a docker runtime is chosen) | `lib/prereqs.sh` |
+| 2 | Infisical project + machine identity (local instance if configured: native, or migrated from docker) | `lib/infisical-native.sh` (`lib/infisical-local.sh` for `LOCAL_INFISICAL_RUNTIME=docker`), `lib/infisical-bootstrap.sh` |
 | 3 | seed configuration into Infisical | `lib/infisical-seed.sh` |
 | 4 | generate `k8s/overlays/<OVERLAY_NAME>` from the template, apply image versions, choose the data-pipeline version | `lib/generate-overlay.sh`, `lib/apply-image-pins.sh`, `lib/sync-data-pipeline.sh` |
 | 5 | pre-flight: every overlay variable has a value; dry render (nothing applied) | `lib/overlay-vars-check.sh`, `lib/dry-render.sh` |
 | 6 | Postgres+Kafka → ClickHouse → Connect → exporters → k3s deploy → CDC pipeline → seed | `lib/native/install-all.sh` (01–07) |
-| 7 | docker-port block always; UFW if not cloud | `lib/install-docker-fw.sh`, `lib/ufw-baseline.sh` |
+| 6b | Portainer: native server + agent, admin, environments | `lib/portainer.sh`, `lib/portainer-agent.yaml` |
+| 7 | docker-port block (when docker is installed); UFW if not cloud | `lib/install-docker-fw.sh`, `lib/ufw-baseline.sh` |
 
 **Re-running is safe and resumes.** An existing Infisical project, overlay, native install or connector is reused; a failure
 in phase 6 can be fixed and the same command re-run.

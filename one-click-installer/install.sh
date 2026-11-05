@@ -53,7 +53,8 @@ cat <<SUMMARY
  Overlay:            k8s/overlays/$OVERLAY_NAME  (from template: $OVERLAY_TEMPLATE)
  Ingress:            ${INGRESS_HOST:-<none — plain HTTP>}
  Hosting:            $( [ "$IS_CLOUD_DEPLOYMENT" = true ] && echo "cloud (provider firewall is the perimeter; UFW not configured)" || echo "on-prem / direct (UFW host firewall WILL be configured)")
- Infisical:          $( [ "${USE_LOCAL_INFISICAL:-false}" = true ] && echo "local, self-contained (127.0.0.1:8080)" || echo "${INFISICAL_DOMAIN:-http://localhost:8080}")
+ Infisical:          $( [ "${USE_LOCAL_INFISICAL:-false}" = true ] && echo "local on this machine, ${LOCAL_INFISICAL_RUNTIME:-native} (127.0.0.1:8080)" || echo "${INFISICAL_DOMAIN:-http://localhost:8080}")
+ Exporters:          ${EXPORTER_RUNTIME:-systemd}   Portainer: $( [ "${PORTAINER_ENABLED:-true}" = true ] && echo "native ${PORTAINER_VERSION:-2.39.2} (127.0.0.1:9443, SSH tunnel)" || echo "not installed")
  Login theme:        $KEYCLOAK_THEME_DIR
  Data pipeline:      $( [ -n "${DATA_PIPELINE_REF:-}" ] && echo "${DATA_PIPELINE_REPO:-https://github.com/openphc/cce-data-pipeline.git} @ $DATA_PIPELINE_REF" || echo "vendored data-pipeline/ in this repo")
  Versions:           k3s ${K3S_VERSION:-default}  ClickHouse ${CLICKHOUSE_VERSION:-26.5}  Postgres ${POSTGRES_VERSION:-16}  Kafka ${KAFKA_VERSION:-3.7.0}
@@ -62,12 +63,24 @@ cat <<SUMMARY
 SUMMARY
 confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
-phase "1/7 Prerequisites (k3s, Infisical CLI, docker, tools)"
+phase "1/7 Prerequisites (k3s, Infisical CLI, tools; docker only if a docker runtime is chosen)"
 if [ -n "${SKIP_PREREQS:-}" ]; then echo "  SKIP_PREREQS set — skipping"
 else bash "$LIB/prereqs.sh" || { echo "ERROR: prerequisites failed (FAIL lines above)"; exit 1; }; fi
 
 phase "2/7 Secrets store: Infisical project + machine identity"
-if [ "${USE_LOCAL_INFISICAL:-false}" = true ]; then bash "$LIB/infisical-local.sh" up; fi
+# A local Infisical runs NATIVELY by default (infisical-native.sh: infisical-core + Redis + a database in the native PostgreSQL);
+# LOCAL_INFISICAL_RUNTIME=docker keeps the older docker-compose one. An existing docker Infisical is moved to native once (same keys,
+# database copied, verified, containers removed — its volume and a dump are kept as a rollback copy).
+if [ "${USE_LOCAL_INFISICAL:-false}" = true ]; then
+  if [ "${LOCAL_INFISICAL_RUNTIME:-native}" = docker ]; then
+    bash "$LIB/infisical-local.sh" up
+  elif command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' | grep -Fx cce-local-infisical-db-1 >/dev/null; then
+    bash "$LIB/infisical-native.sh" migrate
+    docker compose --project-name cce-local-infisical --project-directory "${CCE_LOCAL_INFISICAL_DIR:-/opt/cce-local-infisical}" down >/dev/null 2>&1 || true
+  else
+    bash "$LIB/infisical-native.sh" up
+  fi
+fi
 LOCAL_ADMIN="${CCE_LOCAL_INFISICAL_DIR:-/opt/cce-local-infisical}/admin.env"
 if [ -z "${INFISICAL_ADMIN_EMAIL:-}" ] && [ -z "${INFISICAL_ADMIN_PASSWORD:-}" ] && [ -r "$LOCAL_ADMIN" ]; then
   echo "  using the local Infisical's admin login ($LOCAL_ADMIN)"; set -a; . "$LOCAL_ADMIN"; set +a
@@ -107,6 +120,12 @@ confirm "Render OK — install native services and deploy to k3s?" || { echo "St
 phase "6/7 Install: native PostgreSQL/Kafka/ClickHouse/Connect, k3s deploy, CDC pipeline, seed"
 bash "$LIB/native/install-all.sh" "$ENVCODE"
 
+if [ "${PORTAINER_ENABLED:-true}" = true ]; then
+  phase "6b/7 Portainer (native server on 127.0.0.1:9443 — SSH tunnel; agent in k3s)"
+  bash "$LIB/infisical-run.sh" "$ENVCODE" bash "$LIB/portainer.sh" "$ENVCODE" 2>&1 \
+    | grep -vE 'new release of infisical|To update, run|Your logged-in session|Injecting [0-9]+ Infisical|^host-ip:|^$'
+fi
+
 phase "7/7 Host hardening"
 bash "$LIB/install-docker-fw.sh"                       # docker-published ports: blocked from the public NIC (always)
 if [ "$IS_CLOUD_DEPLOYMENT" = true ]; then
@@ -118,6 +137,9 @@ fi
 echo; echo "████ Result"
 KUBECTL="k3s kubectl"
 $KUBECTL -n "$NS" get pods --no-headers 2>/dev/null | awk '{split($2,a,"/"); t++; if ($3=="Running" && a[1]==a[2]) r++; else print "   not ready: "$1" "$2" "$3} END{printf "   pods ready: %d/%d\n", r, t}'
+# With the default runtimes nothing runs in docker: every service is systemd-managed or in k3s.
+LEFT="$(docker ps -a --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')"
+if [ -n "${LEFT// /}" ]; then echo "   docker containers present: $LEFT (expected none unless a docker runtime was chosen)"; else echo "   docker containers: none"; fi
 cat <<DONE
 
 Done: namespace $NS · Infisical project cce-$ENVCODE · creds $CREDS_DIR/${ENVCODE}.{creds,meta}

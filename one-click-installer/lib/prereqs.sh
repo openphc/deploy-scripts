@@ -57,9 +57,15 @@ if [ "${#need_pkgs[@]}" -gt 0 ] && [ -z "$CHECK_ONLY" ]; then
   DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${need_pkgs[@]}" >/dev/null && ok "installed: ${need_pkgs[*]}" || bad "apt install failed: ${need_pkgs[*]}"
 fi
 
-sect "Docker (the native Postgres/Kafka monitoring exporters run as containers — one-click-installer/lib/native/07)"
+# Docker is needed only when a docker runtime is chosen: EXPORTER_RUNTIME=docker, or a local Infisical with
+# LOCAL_INFISICAL_RUNTIME=docker (NEED_DOCKER=1 forces it, e.g. for a caller that builds images). The defaults run nothing in docker.
+NEED_DOCKER="${NEED_DOCKER:-}"
+[ "${EXPORTER_RUNTIME:-systemd}" = docker ] && NEED_DOCKER=1
+[ "${USE_LOCAL_INFISICAL:-false}" = true ] && [ "${LOCAL_INFISICAL_RUNTIME:-native}" = docker ] && NEED_DOCKER=1
+sect "Docker (only for a docker runtime)"
 if command -v docker >/dev/null 2>&1; then ok "docker $(docker --version | awk '{print $3}' | tr -d ,)"
-elif [ -n "$CHECK_ONLY" ]; then note "docker not installed (needed by one-click-installer/lib/native/07-monitoring-exporters.sh)"
+elif [ -z "$NEED_DOCKER" ]; then ok "not needed (native exporters/Infisical/Portainer) — not installing"
+elif [ -n "$CHECK_ONLY" ]; then note "docker not installed (needed by the docker runtime you chose)"
 else
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io >/dev/null 2>&1 && systemctl enable --now docker >/dev/null 2>&1 \
     && ok "installed docker $(docker --version | awk '{print $3}' | tr -d ,)" || bad "docker install failed"
