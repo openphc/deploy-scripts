@@ -29,6 +29,10 @@ SHA="$(git -C "$T" rev-parse --short HEAD)"
 for need in schema/01-create-tables.sql cdc/01-configure-replication.sql connectors/debezium-postgres-source.json; do
   [ -r "$T/$need" ] || { echo "ERROR: $URL@$REF has no $need — not a cce-data-pipeline tree the installer can deploy"; exit 1; }
 done
+# data-pipeline/ may be absent: a deployment branch that always deploys a fetched version need not vendor it (the RW branch does
+# not). Then scripts/ comes from the fetched version too — apply-schema.py, the one day-2 helper the installer uses, is the same.
+mkdir -p "$DP"
+[ -d "$DP/scripts" ] || { [ -d "$T/scripts" ] && cp -r "$T/scripts" "$DP/scripts"; }
 for d in schema cdc connectors infra; do
   [ -d "$T/$d" ] || continue
   rm -rf "${DP:?}/$d"; cp -r "$T/$d" "$DP/$d"
