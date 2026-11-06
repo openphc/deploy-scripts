@@ -41,9 +41,19 @@ cpu="$(nproc)"; mem="$(awk '/MemTotal/{printf "%d", $2/1048576+0.5}' /proc/memin
 [ "$disk" -ge "$REC_DISK_GB" ] && ok "free disk ${disk} GB (>= $REC_DISK_GB)" || note "free disk ${disk} GB < $REC_DISK_GB recommended"
 
 sect "outbound access (everything the installer downloads)"
-for u in https://get.k3s.io https://github.com https://ghcr.io/v2/ https://quay.io/v2/ https://registry-1.docker.io/v2/ https://registry.k8s.io/v2/ \
-         https://archive.apache.org https://packages.clickhouse.com https://artifacts-cli.infisical.com http://archive.ubuntu.com/ubuntu/; do
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$u" 2>/dev/null || true)"
+# A site used only to install something that is already in place is not checked: the install steps skip it (k3s is never
+# reinstalled without FORCE_K3S_REINSTALL; Kafka when /opt/kafka exists — k8s/infrastructure/setup-prod-infra.sh; ClickHouse when
+# clickhouse-server exists — native/02; the Infisical CLI at the pinned version). So a slow or unreachable archive.apache.org
+# (seen: 7–8 s per request) cannot stop a re-run. Image registries, github.com and the Ubuntu mirror are always needed.
+sites=(https://github.com https://ghcr.io/v2/ https://quay.io/v2/ https://registry-1.docker.io/v2/ https://registry.k8s.io/v2/ http://archive.ubuntu.com/ubuntu/)
+skip_site(){ ok "$1 — not needed ($2 already installed)"; }
+if command -v k3s >/dev/null 2>&1 && [ -z "${FORCE_K3S_REINSTALL:-}" ]; then skip_site https://get.k3s.io k3s; else sites+=(https://get.k3s.io); fi
+if [ -d /opt/kafka ]; then skip_site https://archive.apache.org "Kafka (/opt/kafka)"; else sites+=(https://archive.apache.org); fi
+if command -v clickhouse-server >/dev/null 2>&1; then skip_site https://packages.clickhouse.com ClickHouse; else sites+=(https://packages.clickhouse.com); fi
+if [ "$(infisical --version 2>/dev/null | awk '{print $3}')" = "${INFISICAL_CLI_VERSION:-0.43.93}" ]; then skip_site https://artifacts-cli.infisical.com "Infisical CLI ${INFISICAL_CLI_VERSION:-0.43.93}"
+else sites+=(https://artifacts-cli.infisical.com); fi
+for u in "${sites[@]}"; do
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 3 "$u" 2>/dev/null || true)"
   case "$code" in 2*|3*|401|403|404) ok "$u ($code)";; *) bad "cannot reach $u (curl: ${code:-none})";; esac
 done
 
