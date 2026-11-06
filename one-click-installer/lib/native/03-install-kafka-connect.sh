@@ -52,6 +52,12 @@ offset.flush.interval.ms=10000
 
 listeners=HTTP://0.0.0.0:${CONNECT_REST_PORT}
 plugin.path=${PLUGIN_DIR}
+
+# CVE-2025-27817 / -27818 (Kafka Connect <= 3.9.0): an unauthenticated REST call can create a connector whose
+# producer./consumer./admin.override.* client settings read local files or reach internal URLs. The default policy (All) lets
+# any connector set them; the CCE connector sets none. None = every connector-level client override is refused. Exploited on
+# the old RW UAT (port 8083) on 2026-10-24. Lasting fix: Kafka/Connect >= 3.9.1.
+connector.client.config.override.policy=None
 EOF
 sudo chown "${KAFKA_USER}:${KAFKA_USER}" "$PROPS_FILE"
 
@@ -67,6 +73,8 @@ Type=simple
 User=${KAFKA_USER}
 Group=${KAFKA_USER}
 Environment="KAFKA_HEAP_OPTS=-Xmx1G -Xms1G"
+# Same advisory (CVE-2025-27818, and CVE-2023-25194): refuse the JNDI/LDAP JAAS login modules process-wide.
+Environment="KAFKA_OPTS=-Dorg.apache.kafka.disallowed.login.modules=com.sun.security.auth.module.JndiLoginModule,com.sun.security.auth.module.LdapLoginModule"
 ExecStart=${KAFKA_HOME}/bin/connect-distributed.sh ${PROPS_FILE}
 Restart=on-failure
 RestartSec=10

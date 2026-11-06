@@ -58,6 +58,16 @@ if [ "${ENABLE_PG_STAT_STATEMENTS:-true}" = "true" ]; then
   done
 fi
 
+# Connection logging, so access to the databases can be audited afterwards (who connected, from where, as which role). Without
+# it, past access cannot be ruled out after an exposure (the case on the old RW UAT, 2026-10). Only NEW connections are logged,
+# and the services use connection pools, so the volume is small. A reload is enough. LOG_CONNECTIONS=false to skip.
+if [ "${LOG_CONNECTIONS:-true}" = "true" ]; then
+  if [ "$(sudo -u postgres psql -tAc 'SHOW log_connections' | tr -d '[:space:]')" != on ]; then
+    sudo -u postgres psql -qc "ALTER SYSTEM SET log_connections = on" && sudo -u postgres psql -qtAc "SELECT pg_reload_conf()" >/dev/null
+  fi
+  echo "=== [$ENVCODE] log_connections = $(sudo -u postgres psql -tAc 'SHOW log_connections' | tr -d '[:space:]') ==="
+fi
+
 echo ""
 echo "PostgreSQL: sudo systemctl status postgresql   (port 5432, db ${POSTGRES_DB:-ccedb})"
 echo "Kafka:      sudo systemctl status kafka         (port 9092, KRaft)"
