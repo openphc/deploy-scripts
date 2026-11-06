@@ -95,6 +95,9 @@ sudo tee "/etc/clickhouse-server/users.d/cce-${ENVCODE}-users.xml" >/dev/null <<
   </users>
 </clickhouse>
 EOF
+# Only root and the clickhouse server may read it (the password hash; tee leaves it 644 = every local user).
+sudo chown root:clickhouse "/etc/clickhouse-server/users.d/cce-${ENVCODE}-users.xml"
+sudo chmod 640 "/etc/clickhouse-server/users.d/cce-${ENVCODE}-users.xml"
 
 echo "=== [$ENVCODE 4/4] enable + start ==="
 sudo systemctl daemon-reload

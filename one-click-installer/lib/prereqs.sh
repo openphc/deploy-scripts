@@ -48,7 +48,10 @@ sect "outbound access (everything the installer downloads)"
 sites=(https://github.com https://ghcr.io/v2/ https://quay.io/v2/ https://registry-1.docker.io/v2/ https://registry.k8s.io/v2/ http://archive.ubuntu.com/ubuntu/)
 skip_site(){ ok "$1 — not needed ($2 already installed)"; }
 if command -v k3s >/dev/null 2>&1 && [ -z "${FORCE_K3S_REINSTALL:-}" ]; then skip_site https://get.k3s.io k3s; else sites+=(https://get.k3s.io); fi
-if [ -d /opt/kafka ]; then skip_site https://archive.apache.org "Kafka (/opt/kafka)"; else sites+=(https://archive.apache.org); fi
+# Kafka: needed unless the installed version IS the configured one (a newer KAFKA_VERSION is an in-place upgrade = a download).
+kafka_have="$(ls /opt/kafka/libs/kafka_*.jar 2>/dev/null | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1)"
+if [ -n "$kafka_have" ] && [ "$kafka_have" = "${KAFKA_VERSION:-3.7.0}" ]; then skip_site https://archive.apache.org "Kafka $kafka_have"
+else sites+=(https://archive.apache.org); fi
 if command -v clickhouse-server >/dev/null 2>&1; then skip_site https://packages.clickhouse.com ClickHouse; else sites+=(https://packages.clickhouse.com); fi
 if [ "$(infisical --version 2>/dev/null | awk '{print $3}')" = "${INFISICAL_CLI_VERSION:-0.43.93}" ]; then skip_site https://artifacts-cli.infisical.com "Infisical CLI ${INFISICAL_CLI_VERSION:-0.43.93}"
 else sites+=(https://artifacts-cli.infisical.com); fi

@@ -21,8 +21,11 @@ export POSTGRES_PROD_PASSWORD="${POSTGRES_PROD_PASSWORD:-${POSTGRES_PASSWORD:?se
 
 echo "=== [$ENVCODE] install PostgreSQL + Kafka (KRaft) via setup-prod-infra.sh ==="
 # NOT `sudo -E`: sudo-rs (Ubuntu 26.04) ignores -E and drops the variables below (see one-click-installer/lib/sudo-compat.sh).
+# KAFKA_VERSION / POSTGRES_VERSION must be passed too: before 2026-11-06 they were not, so the config keys were silently ignored and
+# every install got the script defaults. A KAFKA_VERSION newer than the installed one upgrades Kafka in place (setup-prod-infra.sh).
 as_root_env "POSTGRES_PROD_PASSWORD=$POSTGRES_PROD_PASSWORD" ${POSTGRES_USER:+"POSTGRES_USER=$POSTGRES_USER"} ${POSTGRES_DB:+"POSTGRES_DB=$POSTGRES_DB"} \
-  ${POSTGRES_PORT:+"POSTGRES_PORT=$POSTGRES_PORT"} -- bash "$REPO/k8s/infrastructure/setup-prod-infra.sh"
+  ${POSTGRES_PORT:+"POSTGRES_PORT=$POSTGRES_PORT"} ${KAFKA_VERSION:+"KAFKA_VERSION=$KAFKA_VERSION"} ${POSTGRES_VERSION:+"POSTGRES_VERSION=$POSTGRES_VERSION"} \
+  -- bash "$REPO/k8s/infrastructure/setup-prod-infra.sh"
 
 echo "=== [$ENVCODE] fix Kafka advertised listener -> ${VM_HOST_IP}:9092 (so k3s pods can connect) ==="
 KPROPS="/opt/kafka/config/kraft/server.properties"

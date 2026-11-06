@@ -140,6 +140,12 @@ $KUBECTL -n "$NS" get pods --no-headers 2>/dev/null | awk '{split($2,a,"/"); t++
 # With the default runtimes nothing runs in docker: every service is systemd-managed or in k3s.
 LEFT="$(docker ps -a --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')"
 if [ -n "${LEFT// /}" ]; then echo "   docker containers present: $LEFT (expected none unless a docker runtime was chosen)"; else echo "   docker containers: none"; fi
+# Security settings the native steps apply (01/02/03) — reported so drift shows on every run.
+KV="$(ls /opt/kafka/libs/kafka_*.jar 2>/dev/null | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1)"
+OVR="$(grep -h '^connector.client.config.override.policy=' /opt/kafka/config/connect-"$ENVCODE".properties 2>/dev/null | cut -d= -f2)"
+LOGC="$(sudo -u postgres psql -tAc 'SHOW log_connections' 2>/dev/null | tr -d '[:space:]')"
+CHF="$(stat -c '%a' /etc/clickhouse-server/users.d/cce-"$ENVCODE"-users.xml 2>/dev/null)"
+echo "   security: Kafka ${KV:-?} · Connect override policy ${OVR:-NOT SET (All)} · Postgres log_connections ${LOGC:-?} · ClickHouse users file ${CHF:-?}"
 cat <<DONE
 
 Done: namespace $NS · Infisical project cce-$ENVCODE · creds $CREDS_DIR/${ENVCODE}.{creds,meta}

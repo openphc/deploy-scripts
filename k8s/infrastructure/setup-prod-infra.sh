@@ -96,8 +96,8 @@ if ! id "${KAFKA_USER}" &>/dev/null; then
     sudo useradd -r -s /bin/false "${KAFKA_USER}"
 fi
 
-# Download and install Kafka
-if [ ! -d "${KAFKA_HOME}" ]; then
+# Download a SHA-512-verified Kafka ${KAFKA_VERSION} tarball to /tmp (reused if already there and matching).
+kafka_fetch() {
     KAFKA_TARBALL="kafka_${KAFKA_SCALA_VERSION}-${KAFKA_VERSION}.tgz"
     # downloads.apache.org (and dlcdn) only host CURRENT releases: once a newer Kafka ships, ${KAFKA_VERSION} is moved off them and
     # the old URL 404s — wget exit 8 — which silently broke every fresh install after 3.7.0 stopped being current. archive.apache.org
@@ -129,14 +129,46 @@ if [ ! -d "${KAFKA_HOME}" ]; then
     done
     [ -n "${KAFKA_OK}" ] || { echo "ERROR: could not download a verified Kafka ${KAFKA_VERSION} from any mirror"; exit 1; }
     rm -f "${KAFKA_TGZ}.sha512"
-    sudo mkdir -p "${KAFKA_HOME}"
-    sudo tar -xzf "/tmp/${KAFKA_TARBALL}" -C "${KAFKA_HOME}" --strip-components=1
-    rm -f "/tmp/${KAFKA_TARBALL}"
+}
 
+# The installed version, from the broker jar's name (libs/kafka_2.13-<version>.jar); empty when there is none.
+kafka_installed_version() {
+    ls "${KAFKA_HOME}"/libs/kafka_*.jar 2>/dev/null | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1
+}
+
+KAFKA_CURRENT="$(kafka_installed_version)"
+if [ ! -d "${KAFKA_HOME}" ]; then
+    kafka_fetch
+    sudo mkdir -p "${KAFKA_HOME}"
+    sudo tar -xzf "${KAFKA_TGZ}" -C "${KAFKA_HOME}" --strip-components=1
+    rm -f "${KAFKA_TGZ}"
     sudo chown -R "${KAFKA_USER}:${KAFKA_USER}" "${KAFKA_HOME}"
     echo "  Kafka extracted to ${KAFKA_HOME}"
+elif [ -n "${KAFKA_CURRENT}" ] && [ "${KAFKA_CURRENT}" != "${KAFKA_VERSION}" ] \
+     && [ "$(printf '%s\n%s\n' "${KAFKA_CURRENT}" "${KAFKA_VERSION}" | sort -V | tail -1)" = "${KAFKA_VERSION}" ]; then
+    # In-place upgrade to a newer KAFKA_VERSION (e.g. 3.7.0 -> 3.9.2 for CVE-2025-27817/-27818). Same layout, same data:
+    # the data directory (${KAFKA_DATA_DIR}) is outside ${KAFKA_HOME} and is not touched. Kept from the old install: config/
+    # (server, Connect, log4j), .cluster-id (it must match the data dir's meta.properties) and connect-plugins/ (Debezium).
+    # Kafka and Kafka Connect are down for about a minute; Connect is started again by 03-install-kafka-connect.sh.
+    # metadata.version is NOT finalized, so going back is possible: stop kafka, put ${KAFKA_HOME}-${KAFKA_CURRENT} back.
+    echo "  Upgrading Kafka ${KAFKA_CURRENT} -> ${KAFKA_VERSION} in place"
+    kafka_fetch
+    sudo systemctl stop kafka-connect 2>/dev/null || true
+    sudo systemctl stop kafka 2>/dev/null || true
+    KAFKA_OLD="${KAFKA_HOME}-${KAFKA_CURRENT}"; [ -e "${KAFKA_OLD}" ] && KAFKA_OLD="${KAFKA_OLD}.$(date +%Y%m%d%H%M%S)"
+    sudo mv "${KAFKA_HOME}" "${KAFKA_OLD}"
+    sudo mkdir -p "${KAFKA_HOME}"
+    sudo tar -xzf "${KAFKA_TGZ}" -C "${KAFKA_HOME}" --strip-components=1
+    rm -f "${KAFKA_TGZ}"
+    sudo cp -a "${KAFKA_OLD}/config/." "${KAFKA_HOME}/config/"
+    [ -f "${KAFKA_OLD}/.cluster-id" ] && sudo cp -a "${KAFKA_OLD}/.cluster-id" "${KAFKA_HOME}/"
+    [ -d "${KAFKA_OLD}/connect-plugins" ] && sudo cp -a "${KAFKA_OLD}/connect-plugins" "${KAFKA_HOME}/"
+    sudo chown -R "${KAFKA_USER}:${KAFKA_USER}" "${KAFKA_HOME}"
+    echo "  Kafka ${KAFKA_VERSION} installed; previous install kept at ${KAFKA_OLD} (rollback copy)"
 else
-    echo "  Kafka already installed at ${KAFKA_HOME}, skipping download."
+    echo "  Kafka ${KAFKA_CURRENT:-?} already installed at ${KAFKA_HOME}, skipping download."
+    [ -n "${KAFKA_CURRENT}" ] && [ "${KAFKA_CURRENT}" != "${KAFKA_VERSION}" ] \
+        && echo "  NOTE: KAFKA_VERSION=${KAFKA_VERSION} is older than the installed ${KAFKA_CURRENT} — not downgrading." || true
 fi
 
 # Create data and log directories
