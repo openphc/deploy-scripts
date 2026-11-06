@@ -11,8 +11,31 @@ remote-deployment/
 .claude/__pycache__/
 *.pyc
 
-# RW-specific deployment scripts/data — not for the shared repo
-rw/
+# rw/: ONLY the RW one-click installer files below are tracked (allow-list). Everything else under rw/ — ACCESS-CREDENTIALS.md,
+# bkp/ (Infisical credentials), seed files, the .20 scripts (prod/, uat/) — stays out even when it is on disk.
+rw/*
+!rw/one-click-install.sh
+!rw/redeploy-from-source.sh
+!rw/config/
+rw/config/*
+!rw/config/*.env
+!rw/lib/
+rw/lib/*
+!rw/lib/build-from-source.sh
+!rw/lib/source-services.sh
+!rw/lib/overlay-tweaks.sh
+!rw/lib/keycloak-openhim-basic.sh
+!rw/lib/backup-db.sh
+!rw/lib/install-cron-backups.sh
+!rw/lib/tls-check.sh
+!rw/docs/
+rw/docs/*
+!rw/docs/ONE-CLICK-INSTALL.md
+!rw/docs/UAT_OPERATIONS_RUNBOOK.md
+# overlays generated on the server by the installer (k8s/overlays/<OVERLAY_NAME>, e.g. rw-uat): regenerated on every run
+k8s/overlays/rw-*/
+# data-pipeline/ is written by the installer from the cce-data-pipeline commit in rw/config/<env>.env (GitLab) on every run
+data-pipeline/
 .claude/
 
 scripts/*
