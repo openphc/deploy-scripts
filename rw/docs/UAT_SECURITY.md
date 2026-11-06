@@ -38,8 +38,8 @@ Operations: `UAT_OPERATIONS_RUNBOOK.md`. Facts below were checked on the machine
   | `/etc/cce-exporters/cce-postgres-exporter.env` | postgres_exporter's connection string, password included (640, group `cce-exporter`) |
   | `/var/backups/cce-uat/` | the daily dumps. `keycloak` includes password hashes and client secrets; `ccedb` holds the events (700). |
 
-  `/etc/clickhouse-server/users.d/cce-uat-users.xml` holds the ClickHouse password as a SHA-256 hash (not plaintext). Its mode is
-  644, which any local user can read; tighten it to 640, group `clickhouse`.
+  `/etc/clickhouse-server/users.d/cce-uat-users.xml` holds the ClickHouse password as a SHA-256 hash (not plaintext). It is
+  640, `root:clickhouse`, so only root and the ClickHouse server can read it. The installer (step 02) sets this every run.
 
 ## 2. Credential rotation
 
@@ -92,8 +92,13 @@ What the closed ports rely on:
 - **UFW only:** PostgreSQL (`*`), ClickHouse (`0.0.0.0`), Kafka Connect (`0.0.0.0:8083`, no authentication) and Kafka listen on
   all interfaces. They are reachable from the internet the moment UFW is off. Use `ufw disable` only as a short emergency
   measure.
-- **Kafka Connect, hardened (2026-11-06).** Its REST API has no authentication and every pod can reach it, so it refuses what the
-  2026-10-24 exploit on the old UAT used (CVE-2025-27817 / -27818):
+- **Kafka and Kafka Connect 3.9.2** (upgraded from 3.7.0 on 2026-11-06), which fixes CVE-2025-27817 / -27818, the Connect
+  vulnerabilities behind the 2026-10-24 exploit on the old UAT. `KAFKA_VERSION` in `rw/config/uat.env` sets it. A newer value
+  upgrades Kafka in place on the next installer run: the data and cluster ID are kept, and the old install stays as
+  `/opt/kafka-<old version>` for rollback. `metadata.version` is left at 3.7 so rollback stays possible. Finalize it once 3.9.2 has
+  run for a while: `sudo /opt/kafka/bin/kafka-features.sh --bootstrap-server localhost:9092 upgrade --release-version 3.9`.
+- **Kafka Connect is also hardened.** Its REST API has no authentication and every pod can reach it, so it refuses what that
+  exploit used, independent of the version:
   - `connector.client.config.override.policy=None` in `/opt/kafka/config/connect-uat.properties`. A connector may not set any
     `producer.`/`consumer.`/`admin.override.*` client setting; the CCE connector uses none.
   - the JNDI and LDAP JAAS login modules blocked for the whole process (`KAFKA_OPTS=-Dorg.apache.kafka.disallowed.login.modules=…`
@@ -216,23 +221,10 @@ The same limits as PROD, enforced at the ingress before authentication. Each API
 1. **The Infisical database is not backed up.** The daily backup (`rw/lib/backup-db.sh`) dumps `ccedb` and `keycloak` only.
    Losing the VM loses every UAT secret. Fix: add `infisical` to the backup, and keep `/opt/cce-local-infisical/` (the
    encryption key) offsite. A dump is useless without that key.
-2. **Kafka Connect 3.7.0 is still a vulnerable version** (CVE-2025-27817 / -27818; fixed in 3.9.1 / 4.0.0). The known way
-   in, connector client overrides, is closed (§4, done 2026-11-06), but the lasting fix is a newer Kafka / Connect (`KAFKA_VERSION`
-   in the config; Kafka is not upgraded in place by the installer).
-3. **SSH password login is on, and 22 is open to all** (§7).
-4. **No alerting:** Prometheus has no notifier, and the emitter's redaction alerts (`CceEmitterRedactionNotApplied`,
+2. **SSH password login is on, and 22 is open to all** (§7).
+3. **No alerting:** Prometheus has no notifier, and the emitter's redaction alerts (`CceEmitterRedactionNotApplied`,
    `CceEmitterRedactionPathMatchesNothing`) are **not loaded** (checked: not in `prometheus-config`). Redaction stopping, or a
    service going down, pages nobody.
-5. **The ClickHouse user file is world-readable** (644, hash only) (§1).
-6. **Outbound OpenHIM mediator registration** (emitter → MoH HIE) is not finalized; `OPENHIM_CORE_HOST`/`_API_PORT` need the
-   correct Core API endpoint.
-
-**Done:**
-
-| Date | Item | How |
-|---|---|---|
-| 2026-11-06 | Kafka Connect client overrides refused, JNDI/LDAP login modules blocked (CVE-2025-27817 / -27818 mitigation) | installer step 03 + `systemctl restart kafka-connect`. Checked: the override is refused, the CCE connector and task are RUNNING, the replication slot is active. Previous files: `/var/backups/cce-uat/pre-connect-hardening-20261106/`. |
-| 2026-11-06 | PostgreSQL `log_connections = on` | installer step 01 (`ALTER SYSTEM` + reload, no restart). Checked: a test login is logged with source, role and database. |
 
 ## 10. Clinical-data minimisation (emitter redaction)
 
