@@ -10,7 +10,7 @@ It is in use for RW UAT on 102.215.10.21.
 | `rw/redeploy-from-source.sh` | day 2: pull new commits from GitLab, build, deploy (`--build-only`, `--deploy-only`, `--restart`) |
 | `rw/config/uat.env` | the UAT configuration: which repo and branch each service is built from, sizing, versions. No secrets. |
 | `rw/lib/` | the RW steps: building from source, OpenHIM's Keycloak client, backups, TLS check, sizing tweaks |
-| `rw/docs/` | `ONE-CLICK-INSTALL.md` (how the installer works) and `UAT_OPERATIONS_RUNBOOK.md` (day-to-day operation) |
+| `rw/docs/` | `ONE-CLICK-INSTALL.md` (how the installer works), `UAT_OPERATIONS_RUNBOOK.md` (day-to-day operation) and `UAT_SECURITY.md` (security, credential rotation) |
 | `one-click-installer/` | the generic installer the RW one wraps (native services, Infisical, k3s deploy, data pipeline, Portainer, firewall) |
 | `k8s/` | the Kubernetes manifests: `base/`, `overlays/prod/` (the template each environment's overlay is generated from), the realm/permission seeds, the native Postgres/Kafka setup |
 | `grafana/dashboards/`, `keycloak-themes/` | Grafana dashboards; the Keycloak login themes (RW uses `insights-ui-theme`) |

@@ -32,6 +32,7 @@ rw/lib/*
 rw/docs/*
 !rw/docs/ONE-CLICK-INSTALL.md
 !rw/docs/UAT_OPERATIONS_RUNBOOK.md
+!rw/docs/UAT_SECURITY.md
 # overlays generated on the server by the installer (k8s/overlays/<OVERLAY_NAME>, e.g. rw-uat): regenerated on every run
 k8s/overlays/rw-*/
 # data-pipeline/ is written by the installer from the cce-data-pipeline commit in rw/config/<env>.env (GitLab) on every run

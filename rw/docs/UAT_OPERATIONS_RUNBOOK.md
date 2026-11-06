@@ -2,7 +2,8 @@
 
 For the team running **RW UAT on 102.215.10.21**, the environment set up by `rw/one-click-install.sh`. The CCE services are
 built on this machine from the RW-MOH GitLab. This runbook lists only the scripts that apply to it. The original shared-VM setup on
-102.215.10.20 has its own, `OPERATIONS-RUNBOOK.md`. How the installer works: `ONE-CLICK-INSTALL.md`.
+102.215.10.20 has its own, `OPERATIONS-RUNBOOK.md`. How the installer works: `ONE-CLICK-INSTALL.md`. Security, credential rotation
+and open security items: `UAT_SECURITY.md`.
 
 > The VM's hostname is `cce-prod`, but **102.215.10.21 is UAT**. Always go by IP.
 
