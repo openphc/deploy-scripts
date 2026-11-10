@@ -355,6 +355,15 @@ Keys in `example.env`: `IMAGE_CCE_COLLECTOR_SERVICE`, `IMAGE_CCE_PROTOCOL_SERVIC
 - The template overlay's own tags are mutable (`latest`, and for the insights images `demo-rw-latest`, a build of the
   first implementation). apply-image-pins.sh prints a `NOTE` while any image still uses a `demo-rw` tag. Pin every
   service for a real deployment.
+- **Insights builds.** `example.env` sets `IMAGE_CCE_INSIGHTS_SERVICE` and `IMAGE_CCE_INSIGHTS_UI` to `demo-dev-latest`:
+  the unbranded `demo-dev` branch build, with step groups. It reads ClickHouse's `step_group_instances`, which the
+  vendored `data-pipeline/` creates (cce-data-pipeline `demo-v2`, step groups), and needs Matcher migration V8. For a
+  real deployment pin `demo-dev-v<N>` or a digest. Other lines: `demo-rw-*` (Rwanda), `demo-tiberbu-*`, `latest`/`v<N>`
+  (main).
+- **Upgrading an existing environment to the step-group pipeline** (a fresh install needs none of this): follow the
+  steps at the top of `data-pipeline/schema/10-step-groups-upgrade.sql` — publication + connector (re-run install.sh),
+  then `sudo bash one-click-installer/lib/redeploy-clickhouse.sh <env> 10-step-groups-upgrade` followed by a plain
+  `redeploy-clickhouse.sh <env>` to create the new tables and views.
 
 ## Emitter adaptor selection
 

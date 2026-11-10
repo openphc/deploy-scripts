@@ -85,8 +85,9 @@ files=["01-create-tables","02-kafka-ingestion","03-create-materialized-views",
        "04-create-indexes","05-create-dictionary","06-current-state-rollups",
        "08-reference-tables","07-daily-summary-aggregates"]
 failed=0
-# 09-historical-backfill is deliberately not applied here: it refills rollups after a ClickHouse REBUILD, not on install.
-known=set(files)|{"09-historical-backfill"}
+# Deliberately not applied here: 09-historical-backfill refills rollups after a ClickHouse REBUILD, and 10-step-groups-upgrade
+# upgrades an EXISTING pre-step-group cce_analytics (a fresh one gets the step-group tables from 01/02).
+known=set(files)|{"09-historical-backfill","10-step-groups-upgrade"}
 extra=sorted(x[:-4] for x in os.listdir(SCHEMA) if x.endswith(".sql") and x[:-4] not in known)
 if extra: print("  NOTE: not applied (unknown to this installer — apply with redeploy-clickhouse.sh if needed): " + ", ".join(extra))
 for f in files:
