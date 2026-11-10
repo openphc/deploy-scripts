@@ -160,7 +160,8 @@ cat <<DONE
 Done: namespace $NS · Infisical project cce-$ENVCODE · creds $CREDS_DIR/${ENVCODE}.{creds,meta}
   URL:        ${INGRESS_HOST:+https://$INGRESS_HOST/insights/}${INGRESS_HOST:-http://<this-host>/insights/}
   Inbound:    ${INGRESS_HOST:+https://$INGRESS_HOST}${INGRESS_HOST:-http://<this-host>}/v1/${EMITTER_DEPLOYMENT}/inbound  (${EMITTER_NAME} emitter, HTTP Basic)
-              credentials for the source system: sudo bash $LIB/infisical-run.sh $ENVCODE printenv EMITTER_INBOUND_USER EMITTER_INBOUND_PASSWORD
+  Logins:     sudo bash $HERE/tools/show-credentials.sh $ENVCODE [--reveal]   (every URL/user/password, incl. the inbound login)
+  Back up:    $CREDS_DIR/${ENVCODE}.{creds,meta}$( { [ -f "$LOCAL_ADMIN" ] && echo ", $LOCAL_ADMIN and .env beside it"; } || true ) — off this machine
   Verify:     sudo bash $HERE/tools/host-ip-check.sh $ENVCODE      (nothing still holds a stale IP)
               sudo bash $HERE/tools/env-fingerprint.sh $ENVCODE > $ENVCODE.fp; python3 $HERE/tools/env-parity.py <reference.fp> $ENVCODE.fp
               nmap -Pn <public-ip> from OUTSIDE the network — only 22/80/443 should be open

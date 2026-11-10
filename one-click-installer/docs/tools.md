@@ -1,7 +1,8 @@
 # tools/ — checks and repairs you run by hand
 
 Scripts in [`tools/`](../tools/). None of them is run by `install.sh`; the install's last screen suggests the first
-two. Three are read-only. [connector-repoint.sh](#connector-repointsh) changes the Debezium connector.
+two and [show-credentials.sh](#show-credentialssh). Four are read-only. [connector-repoint.sh](#connector-repointsh) changes the Debezium
+connector.
 
 Every section uses the same labels: **Purpose · Called by / when to run · Usage · Reads · Changes · Safe to re-run? ·
 Verify · Notes**, plus a worked example.
@@ -10,7 +11,8 @@ Contents:
 [host-ip-check.sh](#host-ip-checksh) ·
 [env-fingerprint.sh](#env-fingerprintsh) ·
 [env-parity.py](#env-paritypy) ·
-[connector-repoint.sh](#connector-repointsh)
+[connector-repoint.sh](#connector-repointsh) ·
+[show-credentials.sh](#show-credentialssh)
 
 ---
 
@@ -220,3 +222,97 @@ re-supplied from Infisical; it is never printed), then polls the status for up t
   user. That protects a connector you did not create.
 - If no connector named `cce-ccedb-source` exists, the GET fails and the script stops with a Python error. Run
   [04-data-pipeline.sh](native.md#04-data-pipelinesh) (or re-run install.sh) to register it.
+
+---
+
+## show-credentials.sh
+
+[`tools/show-credentials.sh`](../tools/show-credentials.sh)
+
+**Purpose.** Prints every login of an installed environment in one place: where to log in, the user name, the password
+and where it is stored. The installer deliberately writes no plain-text credentials file. Every password is generated
+into the environment's Infisical project, and this script reads them from there each time, so the output cannot go stale
+and nothing extra is left on disk.
+
+**Called by / when to run.** By hand, after an install: to log in to an admin UI, to hand the source system its inbound
+login, or to check which files must be backed up. The install's last screen shows the command.
+
+**Usage.**
+```bash
+sudo bash one-click-installer/tools/show-credentials.sh <env>            # URLs and user names; passwords masked
+sudo bash one-click-installer/tools/show-credentials.sh <env> --reveal   # also print the passwords
+```
+Run it with `sudo`: it re-runs itself under [infisical-run.sh](lib-infisical.md#infisical-runsh) to get the values,
+and the creds files and `admin.env` are readable only by root. `OVERLAY_NAME=<name>` is needed only if the environment
+was installed with an overlay name other than `<env>`; it is used to name the emitter adaptor.
+
+**Reads.**
+- From Infisical (every folder): `KEYCLOAK_ADMIN_*`, `GRAFANA_ADMIN_*`, `PORTAINER_ADMIN_PASSWORD`, `POSTGRES_*`,
+  `CLICKHOUSE_*`, `EMITTER_INBOUND_*`, `BASIC_AUTH_CLIENT_*`, `CCE_COLLECTOR_AUTH_TOKEN`, `CCE_INTELLIGENCE_SMTP_*`,
+  `OPENHIM_*`.
+- `CCE_PUBLIC_URL` from [host-ip.sh](lib-infisical.md#host-ipsh) (`https://<INGRESS_HOST>`, or `http://<host IP>`).
+- `/opt/cce-local-infisical/admin.env` (local Infisical only; `CCE_LOCAL_INFISICAL_DIR` overrides the directory).
+- The overlay's `kustomization.yaml`, to find the emitter adaptor and so the inbound URL.
+- `systemctl is-active cce-portainer`, to decide whether to list Portainer.
+
+**Changes.** Nothing.
+
+**Safe to re-run?** Yes.
+
+**What it lists.**
+
+| Entry | Where | Stored in |
+|---|---|---|
+| Infisical (holds everything else) | SSH tunnel to `localhost:8080` | file `/opt/cce-local-infisical/admin.env` |
+| Insights UI | `<CCE_PUBLIC_URL>/insights/` | users of the Keycloak realm `cce`; the installer creates none |
+| Keycloak admin console | `<CCE_PUBLIC_URL>/auth/admin/` | Infisical `/keycloak` |
+| Grafana | `<CCE_PUBLIC_URL>/grafana/` | Infisical `/grafana` |
+| Portainer | SSH tunnel to `localhost:9443` | Infisical `/portainer` |
+| PostgreSQL owner and CDC read-only user | `localhost:5432`, database `ccedb` | Infisical `/postgres` |
+| PostgreSQL superuser | `sudo -u postgres psql` on the host | no password (peer authentication) |
+| ClickHouse | `http://localhost:8123`, database `cce_analytics` | Infisical `/clickhouse` |
+| ClickHouse `default` user | `clickhouse-client` on the host | no password; loopback only |
+| Emitter inbound (give to the source system) | `<CCE_PUBLIC_URL>/v1/<emitter deployment>/inbound`, HTTP Basic | Infisical `/keycloak` |
+| Service-to-service secrets | used by the services: gateway Basic-auth client secret, collector token, SMTP, OpenHIM | Infisical `/keycloak`, `/platform`, `/openhim-emitter-adaptor` |
+
+Kafka and Kafka Connect have no login. Connect listens on `127.0.0.1` only; Kafka's 9092 must stay closed to the outside
+(UFW, or the cloud security group).
+
+**Back these up off the machine.** All are 0600 and owned by root. Without them Infisical, and so every password above,
+cannot be recovered:
+- `/opt/cce-local-infisical/admin.env`: the Infisical admin login.
+- `/opt/cce-local-infisical/.env`: Infisical's encryption key, auth secret and database password. The encryption key
+  is needed to decrypt Infisical's data, including from a database backup.
+- `~<sudo user>/.cce-infisical/<env>.creds` and `.meta`: the machine identity and project ID the scripts use. These
+  can be re-created from the Infisical UI, the two above cannot.
+
+With a remote Infisical (`USE_LOCAL_INFISICAL=false`) only the `.creds`/`.meta` pair is on the machine; the Infisical
+admin login is whatever the operator used at install.
+
+**Verify.** The masked output lists every entry with a user name and `********`. `(not set)` means the key is empty in
+Infisical: expected for SMTP and OpenHIM until they are filled in, wrong for anything else.
+
+**Notes.**
+- Changing an admin password: Keycloak, Grafana and Portainer keep it in their own database after the first start, so
+  editing Infisical alone does nothing. Grafana and Portainer:
+  [set-admin-passwords.sh](lib-day2.md#set-admin-passwordssh). Keycloak: change it in the admin console, then set
+  `KEYCLOAK_ADMIN_PASSWORD` in Infisical to the same value. [06-seed.sh](native.md#06-seedsh) logs in with it on every
+  re-run.
+- `--reveal` prints passwords to the terminal. Clear the scrollback afterwards if the screen is shared or recorded.
+- The `SEED_ENV_FILE` given at install can hold the SMTP password. Delete it after the install, or protect it like the
+  files above.
+
+Example (masked, trimmed):
+```
+== Credentials for environment 'trial'   (passwords masked — add --reveal to show) ==
+-- Keycloak admin console
+   where:     http://13.235.174.187/auth/admin/
+   user:      admin
+   password:  ********
+   stored in: Infisical /keycloak KEYCLOAK_ADMIN_*
+-- Emitter inbound (tiberbu) — give to the source system
+   where:     http://13.235.174.187/v1/tiberbu-emitter-adaptor/inbound  (HTTP Basic)
+   user:      tiberbu-emitter-inbound
+   password:  ********
+   stored in: Infisical /keycloak EMITTER_INBOUND_*
+```

@@ -102,6 +102,34 @@ in phase 6 can be fixed and the same command re-run.
 * Ops-alert e-mails start **off**. Once the environment is live and the recipients are right, set
   `CCE_OPSALERT_NOTIFICATIONS_ENABLED=true` in Infisical and redeploy `cce-intelligence-service`.
 * From **outside** the network: `nmap -Pn <public-ip>` — only 22/80/443 should be open.
+* Back up the Infisical files listed under [Credentials](#credentials) **off the machine**.
+
+### Credentials
+
+There is no plain-text credentials file. Every password is generated into the environment's Infisical project, and
+`tools/show-credentials.sh` prints all the logins from there on demand (URLs and user names; passwords only with `--reveal`):
+
+```bash
+sudo bash one-click-installer/tools/show-credentials.sh <env>            # passwords masked
+sudo bash one-click-installer/tools/show-credentials.sh <env> --reveal   # passwords shown
+```
+
+It covers Infisical, Insights, the Keycloak admin console, Grafana, Portainer, PostgreSQL, ClickHouse and the emitter
+inbound login for the source system. Insights users themselves are created in the Keycloak realm `cce`; the installer
+creates none.
+
+Three things live only on the machine (0600, root). Without them Infisical, and so every password, cannot be recovered:
+
+| File | Holds |
+|---|---|
+| `/opt/cce-local-infisical/admin.env` | the Infisical admin login (local Infisical only) |
+| `/opt/cce-local-infisical/.env` | Infisical's encryption key, auth secret and database password |
+| `~<sudo user>/.cce-infisical/<env>.creds` and `.meta` | the machine identity and project ID the scripts use to read Infisical |
+
+Keycloak, Grafana and Portainer keep their admin password in their own database after the first start, so changing it in
+Infisical alone does nothing: use `lib/set-admin-passwords.sh <env>` (Grafana, Portainer), or the Keycloak admin console
+and then update `KEYCLOAK_ADMIN_PASSWORD` in Infisical to match. Delete the `SEED_ENV_FILE` after the install, or keep it
+as protected as the files above: it may hold the SMTP password.
 
 ### Day-2 operations
 
@@ -114,6 +142,7 @@ in phase 6 can be fixed and the same command re-run.
 | Grafana dashboards | `sudo bash lib/grafana-redeploy.sh <env>` |
 | Machine IP changed | `sudo bash tools/host-ip-check.sh <env>` lists anything still holding the old address |
 | CDC connector re-registered | `sudo bash tools/connector-repoint.sh <env>` (keeps it IP-free; root: it reads the Infisical credentials) |
+| Look up a login / password | `sudo bash tools/show-credentials.sh <env> [--reveal]` |
 | Compare with another environment | `sudo bash tools/env-fingerprint.sh <env> > a.fp` on each host, then `python3 tools/env-parity.py ref.fp a.fp` |
 
 ## Troubleshooting — problems this installer already handles
