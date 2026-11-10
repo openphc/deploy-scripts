@@ -16,10 +16,8 @@
 # that is exactly the stale-IP situation. To adopt this fully, delete those keys from Infisical.
 #
 # Deliberately NOT derived: GATEWAY_ALLOWED_ORIGINS (a CORS policy choice, not topology), and
-# anything that must already be a hostname. The default ports mirror the documented topology:
-# UAT Kafka :9093 (shared VM, shifted); UAT ClickHouse is the docker bridge gateway, never the public IP.
-# PROD and every OTHER env code (one-click-installer/install.sh = dedicated machine, standard ports) use Kafka :9092
-# and ClickHouse on the host IP — exactly what infisical-seed.sh used to store, now computed instead.
+# anything that must already be a hostname. One-click installs are dedicated machines with the standard ports: Kafka :9092 and
+# ClickHouse on the host IP — what infisical-seed.sh used to store, now computed instead.
 
 cce_detect_host_ip() {
   # Source address the kernel would use to reach the outside world. Same address k3s reports as
@@ -49,8 +47,13 @@ cce_fill_host_defaults() {
   _cce_default VM_HOST_IP   "$ip"
   _cce_default VM_HOST_CIDR "${VM_HOST_IP}/32"
   _cce_default POSTGRES_HOST "$VM_HOST_IP"
-  # One-click installs are dedicated machines with the standard ports (KAFKA_PORT overridable via the config file).
-  _cce_default KAFKA_BOOTSTRAP_SERVERS "${VM_HOST_IP}:${KAFKA_PORT:-9092}"
+  # One-click installs are dedicated machines with the standard ports; Kafka always listens on 9092 (setup-prod-infra.sh).
+  _cce_default KAFKA_BOOTSTRAP_SERVERS "${VM_HOST_IP}:9092"
   _cce_default CLICKHOUSE_HOST "$VM_HOST_IP"
+  # The address users and the gateway reach this environment at — Keycloak's token issuer is built from it, and the gateway
+  # rejects tokens whose issuer differs. With a domain: https://INGRESS_HOST. Without one (plain HTTP): http://<this host's IP>,
+  # so Basic-auth exchange and JWT validation work on a domain-less install too (before, the issuer was "https:///auth/...",
+  # and every authenticated call failed with "Host is not specified"). Set CCE_PUBLIC_URL in Infisical to override.
+  if [ -n "${INGRESS_HOST:-}" ]; then _cce_default CCE_PUBLIC_URL "https://${INGRESS_HOST}"; else _cce_default CCE_PUBLIC_URL "http://${VM_HOST_IP}"; fi
   [ -z "$filled" ] || echo "host-ip: [$env] derived from this host ($ip):$filled" >&2
 }

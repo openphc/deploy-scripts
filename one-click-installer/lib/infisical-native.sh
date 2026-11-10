@@ -30,9 +30,11 @@ psql_su() { sudo -u postgres psql -v ON_ERROR_STOP=1 -qtA "$@"; }
 ensure_secrets() {
   install -d -m 700 "$STATE"
   if [ ! -f "$STATE/.env" ]; then
-    umask 077
-    { echo "ENCRYPTION_KEY=$(openssl rand -hex 16)"; echo "AUTH_SECRET=$(openssl rand -base64 32)"
-      echo "PG_PASSWORD=$(openssl rand -hex 24)"; } > "$STATE/.env"
+    # umask in a subshell: left set, it made everything this script creates later 0600 — including the PGDG apt keyring,
+    # which apt's unprivileged _apt user then could not read ("repository ... is not signed"), on a fresh machine.
+    ( umask 077
+      { echo "ENCRYPTION_KEY=$(openssl rand -hex 16)"; echo "AUTH_SECRET=$(openssl rand -base64 32)"
+        echo "PG_PASSWORD=$(openssl rand -hex 24)"; } > "$STATE/.env" )
     log "generated secrets -> $STATE/.env (0600)"
   fi
   set -a; . "$STATE/.env"; set +a
@@ -56,6 +58,7 @@ ensure_postgres() {
     apt_q gnupg2 lsb-release
     echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/postgresql.gpg
+    chmod 644 /etc/apt/trusted.gpg.d/postgresql.gpg   # apt verifies as _apt: an unreadable keyring = "not signed"
     DEBIAN_FRONTEND=noninteractive apt-get update -qq; apt_q "postgresql-${PG_VER}"
     systemctl enable --now postgresql >/dev/null 2>&1
   fi
@@ -74,7 +77,9 @@ ensure_package() {
     local s; s="$(mktemp)"; curl -1sLf 'https://artifacts-infisical-core.infisical.com/setup.deb.sh' -o "$s"; bash "$s" >/dev/null; rm -f "$s"
   fi
   if [ "$(dpkg-query -W -f='${Version}' infisical-core 2>/dev/null || true)" != "$VER" ]; then
-    log "installing infisical-core $VER"; apt_q --allow-downgrades "infisical-core=$VER"; apt-mark hold infisical-core >/dev/null
+    # The package is held (below) so a routine apt upgrade cannot move it; changing INFISICAL_CORE_VERSION must override that.
+    log "installing infisical-core $VER"; apt_q --allow-downgrades --allow-change-held-packages "infisical-core=$VER"
+    apt-mark hold infisical-core >/dev/null
   fi
 }
 
@@ -92,6 +97,10 @@ infisical_core['PORT'] = '8080'
 infisical_core['TELEMETRY_ENABLED'] = 'false'
 RB
   )
+  # reconfigure enables and starts the runit supervisor only when it (re)writes its systemd unit. A unit left from an earlier
+  # install (it is not package-owned, so a purge keeps it) is "up to date", nothing starts runsvdir, and reconfigure fails with
+  # "runsv not running". Start it ourselves when the unit is already there.
+  if [ -f /usr/lib/systemd/system/infisical-runsvdir.service ]; then systemctl enable --now infisical-runsvdir >/dev/null 2>&1 || true; fi
   infisical-ctl reconfigure >/tmp/infisical-reconfigure.log 2>&1 || { echo "ERROR: infisical-ctl reconfigure failed:"; tail -20 /tmp/infisical-reconfigure.log; exit 1; }
   for _ in $(seq 1 90); do healthy && break; sleep 2; done
   healthy || { echo "ERROR: native Infisical not answering on $BASE — see: infisical-ctl tail" >&2; exit 1; }

@@ -6,7 +6,7 @@
 #
 # Covers what Infisical does NOT (that is handled by one-click-installer/lib/host-ip.sh): Kafka's advertised
 # listeners, the NetworkPolicy, the live cce-config, DNS, the Debezium connectors, ClickHouse config.
-# It changes nothing; the FIX for each DRIFT line is in rw/docs/OPERATIONS-RUNBOOK.md ("Server IP changed").
+# It changes nothing; the FIX for each DRIFT line is in one-click-installer/docs/tools.md (host-ip-check.sh).
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/../lib/host-ip.sh"
@@ -25,13 +25,14 @@ echo "Host IP (detected from routing table): $IP"
 echo
 echo "── Kafka advertised listeners (clients are told to reconnect to this address)"
 if [ -r /opt/kafka/config/kraft/server.properties ]; then
-  row "PROD native kafka advertised.listeners" "$IP" \
+  row "native Kafka advertised.listeners" "$IP" \
       "$(sed -n 's/^advertised.listeners=//p' /opt/kafka/config/kraft/server.properties | host_of)"
 fi
-if docker inspect kafka-uat >/dev/null 2>&1; then
-  row "UAT kafka container KAFKA_ADVERTISED_LISTENERS" "$IP" \
-      "$(docker inspect kafka-uat --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^KAFKA_ADVERTISED_LISTENERS=//p' | host_of)"
-fi
+# A host that also runs Kafka in docker (not a one-click default): check every container that sets advertised listeners.
+for c in $(command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null); do
+  adv="$(docker inspect "$c" --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null | sed -n 's/^KAFKA_ADVERTISED_LISTENERS=//p')"
+  [ -n "$adv" ] && row "docker $c KAFKA_ADVERTISED_LISTENERS" "$IP" "$(printf '%s' "$adv" | host_of)"
+done
 
 echo "── Kubernetes"
 ENVS="${1:-$(k3s kubectl get ns -o name 2>/dev/null | sed -n 's#^namespace/cce-##p' | tr '\n' ' ')}"   # default: every cce-* namespace
@@ -56,8 +57,8 @@ for it in json.load(sys.stdin)["items"]:
 done
 
 echo "── Debezium connectors (should be IP-free: localhost / docker service name)"
-for p in "UAT:8083" "PROD:8086"; do
-  e="${p%%:*}"; port="${p##*:}"
+for port in 8083 8086; do   # Kafka Connect's standard REST port, and the shifted one some shared hosts use
+  e="Connect :$port"
   h="$(curl -s --max-time 6 "localhost:$port/connectors/cce-ccedb-source/config" 2>/dev/null \
         | python3 -c 'import sys,json; print(json.load(sys.stdin).get("database.hostname",""))' 2>/dev/null)"
   if [[ "$h" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then row "$e connector database.hostname" "$IP" "$h"

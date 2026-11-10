@@ -9,8 +9,8 @@
 # READ-ONLY. No secrets: config keys by NAME only; no passwords, tokens or credential values are ever printed.
 #
 # Normalisation, so legitimate per-environment differences don't drown real ones: cce-<envcode> -> cce-ENV and every
-# IPv4 -> <IP>. PROD's shifted native ports (ClickHouse HTTP 8124, Connect 8086 — rw/docs/ARCHITECTURE.md §3) are probed
-# per envcode; override with CH_PORT_OVERRIDE / CONNECT_PORT_OVERRIDE.
+# IPv4 -> <IP>. Native ports are the standard ones (ClickHouse HTTP 8123, Connect 8083); for a host with shifted ports
+# (e.g. 8124 / 8086) set CH_PORT_OVERRIDE / CONNECT_PORT_OVERRIDE.
 # One fact per line:   <section> | <subject> | <detail>
 set -uo pipefail
 ENVCODE="${1:?usage: env-fingerprint.sh <envcode>}"

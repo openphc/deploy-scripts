@@ -29,7 +29,7 @@ PG_DB="${POSTGRES_DB:-ccedb}"
 POSTGRES_READ_ONLY_USER="${POSTGRES_READ_ONLY_USER:-cce_cdc_user}"
 : "${POSTGRES_READ_ONLY_PASSWORD:?set POSTGRES_READ_ONLY_PASSWORD}"
 CONNECT_URL="${CONNECT_URL:-http://localhost:8083}"
-# The connector JSON uses POSTGRES_HOST/PORT/DATABASE (consistent with UAT). Kafka Connect reaches
+# The connector JSON uses POSTGRES_HOST/PORT/DATABASE. Kafka Connect reaches
 # Postgres over the loopback (pg_hba trusts 127.0.0.1), so pin HOST=localhost here — the Infisical
 # POSTGRES_HOST is the host IP that k8s pods use, not the native CDC path.
 export POSTGRES_HOST="localhost"
@@ -85,8 +85,15 @@ files=["01-create-tables","02-kafka-ingestion","03-create-materialized-views",
        "04-create-indexes","05-create-dictionary","06-current-state-rollups",
        "08-reference-tables","07-daily-summary-aggregates"]
 failed=0
+# 09-historical-backfill is deliberately not applied here: it refills rollups after a ClickHouse REBUILD, not on install.
+known=set(files)|{"09-historical-backfill"}
+extra=sorted(x[:-4] for x in os.listdir(SCHEMA) if x.endswith(".sql") and x[:-4] not in known)
+if extra: print("  NOTE: not applied (unknown to this installer — apply with redeploy-clickhouse.sh if needed): " + ", ".join(extra))
 for f in files:
-    stmts=split_stmts(strip_comments(open(os.path.join(SCHEMA,f+".sql")).read()))
+    path=os.path.join(SCHEMA,f+".sql")
+    if not os.path.exists(path):   # e.g. a DATA_PIPELINE_REF that predates this file
+        print("  %s: not in this data-pipeline version — skipped"%f); continue
+    stmts=split_stmts(strip_comments(open(path).read()))
     n=0
     for st in stmts:
         if st.lower().startswith("use "): continue

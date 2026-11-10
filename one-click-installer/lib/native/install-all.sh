@@ -10,9 +10,8 @@
 # Flags:
 #   --pull-images   also force a rollout-restart of the CCE services so the latest GHCR :latest
 #                   builds are pulled (apply alone won't redeploy an unchanged image tag).
-#   --skip-seed     skip step 7 (gateway api_permissions + Keycloak realm). Seeding defaults to ON
-#                   here (unlike rw/prod/install-all.sh, which defaults it off for re-runs against
-#                   an already-seeded live PROD) — a brand-new env has no api_permissions/realm yet.
+#   --skip-seed     skip step 7 (gateway api_permissions + Keycloak realm). Seeding defaults to ON: a brand-new env has no
+#                   api_permissions/realm yet, and every seed step is safe to re-run.
 set -euo pipefail
 
 ENVCODE="${1:?usage: install-all.sh <envcode> [--pull-images] [--skip-seed]}"; shift || true

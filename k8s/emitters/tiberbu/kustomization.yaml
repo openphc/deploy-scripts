@@ -1,0 +1,7 @@
+# tibERbu emitter adaptor (https://github.com/openphc/tiberbu-cce-emitter-adaptor) — deployed INSTEAD of the base
+# openhim-emitter-adaptor when the one-click installer's EMITTER_ADAPTOR=tiberbu (one-click-installer/lib/apply-emitter.sh).
+# Not part of k8s/base, so environments that deploy from the base alone are unaffected.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - tiberbu-emitter-adaptor.yaml

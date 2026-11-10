@@ -14,11 +14,14 @@ and the Kafka download (see Troubleshooting).
 
 Deploys **CCE 2.0** (protocol / matcher / step-sla). Verified end to end on a freshly wiped Ubuntu 26.04 VM, 2026-10-28.
 
+**Detailed documentation:** [`docs/`](docs/README.md) — every script in `lib/`, `lib/native/` and `tools/`, every config
+key, and the seed file: what each does, when it runs, what it changes, and how to check it worked.
+
 ## What you get
 
 | Layer | What | Notes |
 |---|---|---|
-| Data (native, systemd) | PostgreSQL 16 · Kafka 3.7 (KRaft) · ClickHouse 26.5 · Kafka Connect + Debezium | versions pinned in the config |
+| Data (native, systemd) | PostgreSQL 16 · Kafka 3.9 (KRaft) · ClickHouse 26.5 · Kafka Connect + Debezium | versions pinned in the config |
 | Platform | k3s with its bundled Traefik ingress | k3s version pinned in the config (pins Traefik too); with `INGRESS_HOST`, Traefik gets Let's Encrypt + HTTP→HTTPS ([`k8s/base/traefik/`](../k8s/base/traefik/traefik-helmchartconfig.yaml)) |
 | CCE services | namespace `cce-<envcode>`: gateway, collector, protocol, matcher, step-sla, intelligence, insights service + UI, OpenHIM emitter, Keycloak, Grafana, Prometheus, kafka-ui | sizing / HPAs / rate limits cloned from the reference production overlay |
 | Pipeline | Postgres → Debezium → Kafka → ClickHouse analytics schema | version: vendored `data-pipeline/` or `DATA_PIPELINE_REF`; CDC connector points at `localhost` (survives IP changes) |
@@ -33,7 +36,8 @@ Deploys **CCE 2.0** (protocol / matcher / step-sla). Verified end to end on a fr
 * Fresh **Ubuntu 26.04** (systemd, apt), root/sudo. 8 vCPU / 24 GiB RAM / 40 GB free disk recommended — the production-sized
   overlay requests ≈7.6 vCPU and the data services share the node.
 * Outbound HTTPS to: get.k3s.io, github.com, ghcr.io, quay.io, Docker Hub, registry.k8s.io, archive.apache.org,
-  packages.clickhouse.com, artifacts-cli.infisical.com, the Ubuntu mirror. `lib/prereqs.sh` checks all of them first.
+  packages.clickhouse.com, keyserver.ubuntu.com, apt.postgresql.org + www.postgresql.org, repo1.maven.org,
+  artifacts-cli.infisical.com, artifacts-infisical-core.infisical.com, and the Ubuntu mirror apt uses. `lib/prereqs.sh` checks all of them first.
 * An Infisical instance — or let the installer run its own (`USE_LOCAL_INFISICAL=true`, the default).
 
 Everything else (k3s, Infisical CLI, ClickHouse, Kafka, …) is installed for you.
@@ -58,11 +62,12 @@ Every key is documented in [`config/example.env`](config/example.env). The essen
 |---|---|
 | `ENVCODE` | short code → namespace `cce-<ENVCODE>` and Infisical project `cce-<ENVCODE>` |
 | `IS_CLOUD_DEPLOYMENT` | `true` = behind a cloud security group (no host firewall); `false` = on-prem/direct → UFW is configured |
-| `INGRESS_HOST` / `ACME_EMAIL` | DNS name + Let's Encrypt contact for TLS; empty = plain HTTP |
+| `INGRESS_HOST` / `ACME_EMAIL` | DNS name + Let's Encrypt contact for TLS; empty = plain HTTP on the host's IP (open the UI at that address; see [config.md](docs/config.md#ingress_host)) |
 | `USE_LOCAL_INFISICAL` | run a self-contained Infisical on the machine, or use an existing one |
 | `IMAGE_<SERVICE>` | per-service image **tag** or **`sha256:` digest**; `IMAGE_CCE_EMITTER_ADAPTOR` for whichever emitter adaptor the overlay uses; `IMAGE_TAG_DEFAULT`, `IMAGE_REGISTRY` for all |
 | `*_VERSION` | k3s, Infisical CLI, ClickHouse, Postgres, Kafka, Debezium |
 | `DATA_PIPELINE_REF` | `cce-data-pipeline` branch/tag/commit to deploy (schema, CDC, connector, dashboards); empty = the vendored `data-pipeline/` |
+| `EMITTER_ADAPTOR` | the source system's emitter adaptor: `openhim` (default) or `tiberbu`; it receives events at `/v1/<name>-emitter-adaptor/inbound` with HTTP Basic credentials generated into Infisical |
 | `KEYCLOAK_THEME_DIR` | login page theme; default = unbranded `keycloak-themes/cce-insights-theme/dev`; point at a branded copy to brand it |
 | `SEED_ENV_FILE` | initial values; **must** contain the intelligence-service alert recipients + SMTP login (see `example.env`) |
 
@@ -108,7 +113,7 @@ in phase 6 can be fixed and the same command re-run.
 | ClickHouse schema change | `sudo bash lib/redeploy-clickhouse.sh <env>` (additive; `DROP_FIRST="table …"` to replace changed objects) |
 | Grafana dashboards | `sudo bash lib/grafana-redeploy.sh <env>` |
 | Machine IP changed | `sudo bash tools/host-ip-check.sh <env>` lists anything still holding the old address |
-| CDC connector re-registered | `bash tools/connector-repoint.sh <env>` (keeps it IP-free) |
+| CDC connector re-registered | `sudo bash tools/connector-repoint.sh <env>` (keeps it IP-free; root: it reads the Infisical credentials) |
 | Compare with another environment | `sudo bash tools/env-fingerprint.sh <env> > a.fp` on each host, then `python3 tools/env-parity.py ref.fp a.fp` |
 
 ## Troubleshooting — problems this installer already handles
@@ -129,9 +134,14 @@ These were all hit on real fresh installs; the fixes are in the scripts. Listed 
 | exporter "not reporting" aborts install | slow first scrape on a fresh VM | longer wait; warning, not fatal |
 | CDC setup: *relation "…" does not exist*, connector `FAILED` | services still pulling images when CDC ran (fixed sleep) | `04-data-pipeline.sh` waits for every CDC table (`CDC_TABLE_WAIT_SECS`, default 1200); a re-run restarts a failed connector |
 | collector crash-loop: *"Found non-empty schema(s) "public" but no schema history table"* | 2.0 services share one schema; the collector's manifest lacks Flyway baseline settings, so it fails unless it migrates first | generated overlay adds `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true` / `_VERSION=0` for the collector |
-| login page is Keycloak's stock page, not the CCE theme | `cce-realm.json` selects no login theme | `06-seed.sh` sets the realm's `loginTheme` (the `KEYCLOAK_THEME_DIR` theme, mounted as `insights-ui-theme`) |
+| login page is Keycloak's stock page, not the CCE theme | the realm had no login theme (`cce-realm.json` now selects `insights-ui-theme`; older realms do not) | `06-seed.sh` sets the realm's `loginTheme` (the `KEYCLOAK_THEME_DIR` theme, mounted as `insights-ui-theme`) |
 | Prometheus target `node-exporter` down (*connection refused*); Postgres / Kafka dashboards empty | the base NetworkPolicy lets pods reach only data ports on the host, and the base Prometheus config has no job for the two host exporters | `05-k8s-deploy.sh` adds 9100/9187/9308 to the policy's host rule and the `postgres-exporter` / `kafka-exporter` scrape jobs |
-| protocol-service restarts 2–3 times at first start | it waits for a sequence matcher's migration V6 creates | expected; settles on its own |
+| protocol-service / step-sla restart again and again (exit 143), never ready | on a busy fresh machine they need more than the ~105 s their liveness probe allows at their 500m CPU limit | generated overlay adds a `startupProbe` (up to 5 min) to the Spring services; a few restarts while matcher's migration V6 runs are still normal |
+| prereqs: *cannot reach http://archive.ubuntu.com/…* though apt works | the check tested a host apt does not use (cloud VMs use a regional mirror), and some of Canonical's addresses accept connections but never answer | the mirrors in apt's sources are checked, and one answering address is enough |
+| native Infisical: *repository 'http://apt.postgresql.org/…' is not signed* | a `umask 077` leaked from the secrets step made the PGDG keyring unreadable to apt's `_apt` user | umask confined to the secrets file; every apt keyring is `chmod 644` |
+| fresh install stops right after Java installs (*exit status 2*) | the Kafka version check ran `ls` on a not-yet-installed Kafka under `set -e` | the check tolerates no Kafka |
+| re-run fails in the exporter step: *install: No such file or directory* | Ubuntu 26.04's `install` (uutils coreutils) cannot copy from `/dev/stdin` over an existing file | the password file is written through a root-only temp file |
+| seeded password cut short, or a value you changed in Infisical reset on re-run | the seed parser cut at the first `#`; `default` keys were rewritten every run | `#` kept inside values; existing Infisical values are kept |
 
 ## Notes
 

@@ -87,6 +87,37 @@ else:
     print("  removed node-exporter patch block")
 PY
 
+echo "[generate-overlay] public URLs from CCE_PUBLIC_URL (works with and without a domain)"
+# The template builds Keycloak's issuer and Grafana's root URL as https://${INGRESS_HOST}/..., which is "https:///..." on a
+# plain-HTTP install. CCE_PUBLIC_URL is derived at deploy time (lib/host-ip.sh): https://INGRESS_HOST, or http://<host IP>.
+sed -i -e 's#KEYCLOAK_ISSUER=https://${INGRESS_HOST}/auth/realms/cce#KEYCLOAK_ISSUER=${CCE_PUBLIC_URL}/auth/realms/cce#' \
+       -e 's#GRAFANA_ROOT_URL=https://${INGRESS_HOST}/grafana#GRAFANA_ROOT_URL=${CCE_PUBLIC_URL}/grafana#' "$DST/kustomization.yaml"
+grep -q 'KEYCLOAK_ISSUER=${CCE_PUBLIC_URL}' "$DST/kustomization.yaml" && echo "  issuer: \${CCE_PUBLIC_URL}/auth/realms/cce" \
+  || echo "WARNING: KEYCLOAK_ISSUER literal not found in the template — check it is not built from INGRESS_HOST alone" >&2
+echo "[generate-overlay] startupProbe for the Spring services (slow first start on a busy fresh machine)"
+python3 - "$DST/kustomization.yaml" <<'PY'
+import sys
+path = sys.argv[1]
+text = open(path).read()
+# The base manifests give each Spring service ~105 s (liveness delay 60 s + 3 x 15 s) before the kubelet kills it. On a fresh
+# machine, with every service starting at once under its CPU limit, cce-protocol-service (500m) took longer than that on every
+# attempt and never became ready (killed with exit 143, 6+ restarts). A startupProbe holds liveness off until the first
+# successful health check — up to 5 minutes here — and changes nothing once the service is up. Matcher already has a long window.
+services = [("cce-collector-service", 8080), ("cce-protocol-service", 8080), ("cce-step-sla-service", 8092),
+            ("cce-intelligence-service", 8085), ("cce-insights-service", 8084), ("gateway-service", 8090)]
+patch = "  # Fresh-install fix (one-click-installer): startupProbe — see generate-overlay.sh.\n" + "".join(
+    f"  - target: {{ kind: Deployment, name: {name} }}\n    patch: |\n"
+    f"      - {{op: add, path: /spec/template/spec/containers/0/startupProbe, value: "
+    f"{{httpGet: {{path: /actuator/health, port: {port}}}, periodSeconds: 10, failureThreshold: 30}}}}\n"
+    for name, port in services)
+if "startupProbe" in text:
+    print("  already present")
+elif "\npatches:\n" in text:
+    open(path, "w").write(text.replace("\npatches:\n", "\npatches:\n" + patch, 1))
+    print(f"  added startupProbe to {len(services)} services")
+else:
+    print("WARNING: no top-level 'patches:' — startupProbe NOT added", file=sys.stderr)
+PY
 echo "[generate-overlay] collector: let Flyway baseline a non-empty schema (fresh installs)"
 python3 - "$DST/kustomization.yaml" <<'PY'
 import sys
