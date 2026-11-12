@@ -68,7 +68,8 @@ spec:
               value: "1048576"
             - name: CCE_COLLECTOR_FHIR_STRICT_VALIDATION
               value: "false"
-            - name: CCE_COLLECTOR_KAFKA_TOPICS_INBOUND
+            # 2.0.0 collector reads CCE_KAFKA_TOPICS_INBOUND_EVENTS (1.x read CCE_COLLECTOR_KAFKA_TOPICS_INBOUND)
+            - name: CCE_KAFKA_TOPICS_INBOUND_EVENTS
               value: "cce.events.inbound"
             - name: CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER
               value: "cce.deadletter"

@@ -1,9 +1,8 @@
-# HPAs for the STATELESS CCE services (PROD). Unlike cce-scheduler-service (leader-elected, see
-# scheduler-hpa.yaml), these scale horizontally for real added capacity. CPU target 70% of the
+# HPAs for the STATELESS CCE services (PROD). These scale horizontally for real added capacity. CPU target 70% of the
 # pod's CPU request. Requires metrics-server (present) and the raised ResourceQuota (namespace.yaml)
 # to fit the max-replica footprint.
 #   collector / gateway / emitter   : min 2 / max 3   (higher-traffic — keep 2 for HA, burst to 3)
-#   compliance / intelligence / insights-service / insights-ui : min 1 / max 2
+#   matcher / intelligence / insights-service / insights-ui : min 1 / max 2
 # NOTE: HPAs manage .spec.replicas; the base deployments still declare replicas:1, so a redeploy
 # briefly resets to 1 before the HPA scales back to min (converges; harmless).
 apiVersion: autoscaling/v2
@@ -45,9 +44,10 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: cce-compliance-service
+  name: cce-matcher-service
 spec:
-  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: cce-compliance-service }
+  # Matcher scales by Kafka consumer-group rebalancing (cce.events.inbound has 25 partitions).
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: cce-matcher-service }
   minReplicas: 1
   maxReplicas: 3
   metrics:

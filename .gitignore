@@ -11,6 +11,47 @@ remote-deployment/
 .claude/__pycache__/
 *.pyc
 
-# RW-specific deployment scripts/data — not for the shared repo
-rw/
+# rw/: ONLY the RW one-click files below are tracked (allow-list). Everything else under rw/ stays out even when it is on disk:
+# bkp/ (Infisical exports, database dumps, access-credentials notes, the archive of the old .20 setup), seed files, anything new.
+# A new file under rw/ must be added here on purpose.
+rw/*
+!rw/README.md
+!rw/one-click-install.sh
+!rw/redeploy-from-source.sh
+!rw/config/
+rw/config/*
+!rw/config/*.env
+!rw/lib/
+rw/lib/*
+!rw/lib/build-from-source.sh
+!rw/lib/source-services.sh
+!rw/lib/overlay-tweaks.sh
+!rw/lib/keycloak-openhim-basic.sh
+!rw/lib/backup-db.sh
+!rw/lib/install-cron-backups.sh
+!rw/lib/tls-check.sh
+!rw/protocols/
+rw/protocols/*
+!rw/protocols/*.json
+!rw/tools/
+rw/tools/*
+!rw/tools/openhim/
+rw/tools/openhim/*
+!rw/tools/openhim/register-mediator.sh
+!rw/tools/openhim/openhim_non2xx_primary.py
+!rw/docs/
+rw/docs/*
+!rw/docs/ONE-CLICK-INSTALL.md
+!rw/docs/uat/
+rw/docs/uat/*
+!rw/docs/uat/*.md
+!rw/docs/prod/
+rw/docs/prod/*
+!rw/docs/prod/INSTALL-GUIDE.md
+# overlays generated on the server by the installer (k8s/overlays/<OVERLAY_NAME>, e.g. rw-uat): regenerated on every run
+k8s/overlays/rw-*/
+# data-pipeline/ is written by the installer from the cce-data-pipeline commit in rw/config/<env>.env (GitLab) on every run
+data-pipeline/
 .claude/
+
+scripts/*

@@ -54,7 +54,14 @@ VALUES
     (8, 'COMPLIANCE_WRITE',       'PUT',    '/v1/compliance/**', 'Update compliance resources',           'Compliance'),
     (9, 'COMPLIANCE_WRITE',       'DELETE', '/v1/compliance/**', 'Delete compliance resources',           'Compliance'),
     (10, 'INSIGHTS_READ',         'GET',    '/v1/insights/**',   'Read analytics from insights service',  'Insights'),
-    (11, 'EMITTER_INBOUND_WRITE', 'POST',   '/v1/openhim-emitter-adaptor/**', 'Post inbound FHIR events to the OpenHIM emitter adaptor', 'Emitter')
+    (11, 'EMITTER_INBOUND_WRITE', 'POST',   '/v1/openhim-emitter-adaptor/**', 'Post inbound FHIR events to the OpenHIM emitter adaptor', 'Emitter'),
+    -- CCE 2.0.0: the PlanDefinition / ActionDefinition API moved to cce-protocol-service
+    -- (/v1/protocol/**). Same COMPLIANCE_* permissions, so the realm roles are unchanged. Re-run this
+    -- file on an upgraded environment to add these rows.
+    (12, 'COMPLIANCE_READ',       'GET',    '/v1/protocol/**',   'Read protocol definitions',             'Protocol'),
+    (13, 'COMPLIANCE_WRITE',      'POST',   '/v1/protocol/**',   'Create protocol definitions',           'Protocol'),
+    (14, 'COMPLIANCE_WRITE',      'PUT',    '/v1/protocol/**',   'Update protocol definitions',           'Protocol'),
+    (15, 'COMPLIANCE_WRITE',      'DELETE', '/v1/protocol/**',   'Delete protocol definitions',           'Protocol')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT pg_catalog.setval('public.api_permissions_id_seq',

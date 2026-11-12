@@ -13,7 +13,8 @@ metadata:
 spec:
   # Sized for the vertically-scaled services PLUS the HPAs at max replicas (cce-hpas.yaml:
   # collector/gateway/emitter→3, compliance/intelligence/insights-svc/insights-ui→2,
-  # scheduler→5) with rolling-update surge headroom. Bounded under the 24-core/96Gi VM so
+  # scheduler→5) with rolling-update surge headroom. CCE 2.0.0 (Matcher in compliance's place,
+  # Protocol + Step SLA at 1 replica of base sizing, no scheduler) needs less, so the quota stands. Bounded under the 24-core/96Gi VM so
   # cce-prod cannot starve UAT + native infra. (All-maxed footprint ≈ req 17c/23Gi, lim 58c/63Gi.)
   hard:
     requests.cpu: "20"

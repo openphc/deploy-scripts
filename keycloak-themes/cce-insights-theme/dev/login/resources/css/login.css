@@ -1,0 +1,158 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f9fafb;
+  min-height: 100vh;
+}
+
+/* ── Top bar ── */
+.top-bar {
+  width: 100%;
+  background-color: #1d5fae;
+  color: #ffffff;
+  padding: 8px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.top-bar-left {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.top-bar-right {
+  font-size: 15px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+/* ── Page ── */
+.page {
+  width: 100%;
+  min-height: calc(100vh - 57px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+.card {
+  width: 100%;
+  max-width: 448px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+}
+
+/* ── Banner (in-card title) ── */
+.banner {
+  background-color: #ffffff;
+  padding: 36px 32px 20px;
+  text-align: center;
+}
+
+.banner h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1d5fae;
+  margin-bottom: 6px;
+}
+
+.banner p {
+  font-size: 15px;
+  color: #6b7280;
+}
+
+/* ── Form body ── */
+.body {
+  background-color: #ffffff;
+  border-top: 1px solid #e5e7eb;
+  padding: 24px 32px 32px;
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 20px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.field label {
+  display: block;
+  font-size: 15px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 15px;
+  color: #111827;
+  background: #ffffff;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field input::placeholder {
+  color: #9ca3af;
+}
+
+.field input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+/* ── Error ── */
+.error-box {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  color: #b91c1c;
+  margin-bottom: 16px;
+}
+
+/* ── Submit ── */
+button[type="submit"] {
+  margin-top: 8px;
+  width: 100%;
+  background-color: #1d5fae;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+button[type="submit"]:hover {
+  background-color: #174d8f;
+}
+
+/* ── Footer ── */
+.footer {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: #9ca3af;
+}

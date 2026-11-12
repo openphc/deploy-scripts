@@ -1,0 +1,13 @@
+[Unit]
+Description=Block public inbound connections to docker-published ports (DOCKER-USER)
+After=docker.service network-online.target
+Wants=network-online.target
+PartOf=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cce-docker-fw.sh
+
+[Install]
+WantedBy=multi-user.target

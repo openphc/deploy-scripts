@@ -1,0 +1,134 @@
+# CCE 2.0.0 — Matcher takes over event matching from the retired 1.x cce-compliance-service:
+# consumes cce.events.inbound (group cce-matcher-service), owns protocol_instance, step_instance,
+# step_sla_state_transition, matcher_event_log, deviation (Flyway ledger flyway_schema_history_matcher).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cce-matcher-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cce-matcher-service
+  template:
+    metadata:
+      labels:
+        app: cce-matcher-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: cce-matcher-service
+          image: ghcr.io/openphc/cce-matcher-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            # Paketo caps -XX:MaxDirectMemorySize at 10m by default; the Kafka consumer needs
+            # bigger direct buffers to fetch a large backlog (e.g. a replay) — raise to 512m.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxDirectMemorySize=512m"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_DB
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DB_POOL_SIZE
+              value: "30"
+            - name: DB_POOL_MIN_IDLE
+              value: "10"
+            - name: DB_CONNECTION_TIMEOUT
+              value: "30000"
+            - name: DB_IDLE_TIMEOUT
+              value: "600000"
+            - name: DB_MAX_LIFETIME
+              value: "1800000"
+            # Flyway builds and upgrades the schema (1.x ran with Flyway off and ddl-auto update).
+            # Baseline 0 = run every migration; the replay upgrade (REPLAY-RUNBOOK.md part U) and a
+            # fresh install both need 0. Only the in-place database migration uses 1, for that run only.
+            - name: CCE_FLYWAY_BASELINE_VERSION
+              value: "0"
+            # The prod profile turns baseline-on-migrate off; ccedb is never empty (it holds
+            # inbound_event_log), so without it Matcher stops with "non-empty schema … no schema
+            # history table". Inert once flyway_schema_history_matcher exists.
+            - name: SPRING_FLYWAY_BASELINE_ON_MIGRATE
+              value: "true"
+            # V5 runs CREATE INDEX CONCURRENTLY, which waits on the transaction Flyway's own lock holds;
+            # a session-level lock avoids the hang. Harmless once migrated.
+            - name: SPRING_FLYWAY_POSTGRESQL_TRANSACTIONAL_LOCK
+              value: "false"
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_CONCURRENCY
+              value: "5"
+            - name: KAFKA_PARTITIONS
+              value: "25"
+            - name: KAFKA_RETRY_MAX_ATTEMPTS
+              value: "5"
+            - name: KAFKA_RETRY_BACKOFF_MS
+              value: "2000"
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              value: "health,info,prometheus,metrics"
+            - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+              value: "cce-matcher-service"
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 200m
+            limits:
+              memory: 1536Mi
+              cpu: "1"
+          # Generous start-up delays: the first start on an upgraded or replayed ccedb runs the
+          # migrations (V5 builds an index concurrently) before the app answers.
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 15
+            failureThreshold: 8
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cce-matcher-service
+spec:
+  selector:
+    app: cce-matcher-service
+  ports:
+    - port: 8080
+      targetPort: 8080
