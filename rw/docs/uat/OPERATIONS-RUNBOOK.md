@@ -473,7 +473,7 @@ PostgreSQL (`ccedb`). Its dashboards are provisioned from the configmap `grafana
 | `kafka-exporter` | topics, consumer lag |
 | `clickhouse-query-analytics` | ClickHouse queries, table sizes, merges |
 | `cce-collector-service`, `cce-matcher-service`, `cce-step-sla-service`, `cce-intelligence-service`, `openhim-emitter-adaptor` | each service: JVM, HTTP, throughput |
-| `caddy`, `tiberbu-emitter-adaptor` | not used here (no Caddy, no Tiberbu emitter) |
+| `caddy`, `tiberbu-emitter-adaptor` | not used here (no Caddy, no Tiberbu emitter). Removed from `deploy-scripts-rw` on 2026-11-12; they leave Grafana at the next dashboards rebuild: `sudo bash one-click-installer/lib/grafana-redeploy.sh uat` (or an installer re-run) |
 
 **Prometheus** scrapes every 15 s and keeps 15 days. Its 12 targets were all up on 2026-11-12: the 7 CCE services, the
 ClickHouse server, postgres_exporter, kafka_exporter, node-exporter and itself. To see them:
