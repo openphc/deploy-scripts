@@ -101,7 +101,7 @@ spec:
       volumes:
         - name: insights-ui-theme
           hostPath:
-            path: /home/cceadmin/deploy-scripts/keycloak-themes/cce-insights-theme/dev
+            path: /home/cceadmin/deploy-scripts/keycloak-themes/insights-ui-theme   # RW: branded theme (05-k8s-deploy.sh rewrites it to KEYCLOAK_THEME_DIR)
             type: Directory
 ---
 apiVersion: v1
