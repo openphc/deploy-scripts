@@ -84,6 +84,7 @@ automated_bootstrap() {
   if [ -z "$INFISICAL_ADMIN_PASSWORD" ]; then
     read -r -s -p "Infisical org-admin password: " INFISICAL_ADMIN_PASSWORD; echo
   fi
+  export INFISICAL_ADMIN_EMAIL INFISICAL_ADMIN_PASSWORD   # read from the environment by the login below (not passed in argv)
 
   # NOTE: the CLI's `login --method=user` ALWAYS requires --organization-id (errors otherwise) —
   # there's no CLI-level "org-less" login. But the raw REST endpoint it calls under the hood
@@ -93,9 +94,10 @@ automated_bootstrap() {
   # must be a raw curl call, not the CLI — only the second, org-scoped login (below) uses the CLI.
   log "logging in (org-less, to discover organization)..."
   local probe_token org_json org_id
-  probe_token=$(curl -sf -X POST "$INFISICAL_DOMAIN/api/v3/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"${INFISICAL_ADMIN_EMAIL}\",\"password\":\"${INFISICAL_ADMIN_PASSWORD}\",\"providerAuthToken\":null}" \
+  # The body goes in on stdin, built by python from the environment: the password never appears in any process's argv (ps), and
+  # a password containing quotes or backslashes is JSON-escaped correctly.
+  probe_token=$(python3 -c 'import json,os;print(json.dumps({"email":os.environ["INFISICAL_ADMIN_EMAIL"],"password":os.environ["INFISICAL_ADMIN_PASSWORD"],"providerAuthToken":None}))' \
+    | curl -sf -X POST "$INFISICAL_DOMAIN/api/v3/auth/login" -H "Content-Type: application/json" --data-binary @- \
     | python3 -c 'import json,sys;print(json.load(sys.stdin).get("accessToken",""))') || return 1
   [ -n "$probe_token" ] || return 1
 
@@ -111,9 +113,10 @@ print(orgs[0]["id"] if len(orgs) == 1 else "")')
 
   log "logging in (org-scoped)..."
   local token
-  token=$(infisical login --method=user --email="$INFISICAL_ADMIN_EMAIL" \
-    --password="$INFISICAL_ADMIN_PASSWORD" --organization-id="$org_id" \
-    --plain --silent --domain="$INFISICAL_DOMAIN" 2>/dev/null) || return 1
+  # Same exchange the CLI's `infisical login --organization-id` performs, over the API: the CLI needed --password=... in argv.
+  token=$(curl -sf -X POST "$INFISICAL_DOMAIN/api/v3/auth/select-organization" -H "Authorization: Bearer $probe_token" \
+    -H "Content-Type: application/json" -d "{\"organizationId\":\"$org_id\"}" \
+    | python3 -c 'import json,sys;print(json.load(sys.stdin).get("token",""))') || return 1
   [ -n "$token" ] || return 1
 
   api() { # method path json_body

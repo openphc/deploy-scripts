@@ -18,7 +18,7 @@
 # project's secrets injected. Set REFRESH_ENV=0 to skip step 1 (image-only rollout).
 #
 #   one-click-installer/lib/redeploy.sh <namespace> [deployment...]
-#     - with no names: ALL CCE app deployments (those whose image is ghcr.io/openphc/*)
+#     - with no names: ALL CCE app deployments (those running an image the overlay's images: block pins)
 #     - with names:    just those deployments
 #   DRY_RUN=1     -> print what would be refreshed/restarted, change nothing
 #   REFRESH_ENV=0 -> skip the Infisical config refresh (image-only rollout)
@@ -44,7 +44,7 @@
 #                                (use per-deployment IMAGE_TAG/IMAGE_DIGEST calls instead there).
 #   ROLLOUT_TIMEOUT=180s, WAIT_DELETE_TIMEOUT=90s  -> tunable waits
 #
-# Run as root on the host (e.g. `sudo bash rw/uat/redeploy.sh ...`) so kubectl can reach k3s.
+# Run as root on the host (e.g. `sudo bash one-click-installer/lib/redeploy.sh cce-<envcode> ...`) so kubectl can reach k3s.
 set -euo pipefail
 
 NS="${1:?usage: redeploy.sh <namespace> [deployment...]}"; shift || true
@@ -93,12 +93,11 @@ refresh_env() {
   : "${VM_HOST_IP:?VM_HOST_IP missing — Infisical env not injected (set REFRESH_ENV=0 to skip the refresh)}"
   export VM_HOST_CIDR="${VM_HOST_CIDR:-${VM_HOST_IP}/32}"
   local tmp; tmp="$(mktemp -d)"
-  cp "$overlay/kustomization.yaml" "$overlay/kustomization.yaml.bak"
-  envsubst < "$overlay/kustomization.yaml.bak" > "$overlay/kustomization.yaml"
-  if $KUBECTL kustomize "$overlay" > "$tmp/render.yaml"; then
-    mv "$overlay/kustomization.yaml.bak" "$overlay/kustomization.yaml"
-  else
-    mv "$overlay/kustomization.yaml.bak" "$overlay/kustomization.yaml"
+  # Substitute in a throwaway copy of k8s/: the result holds the secrets, so it must never be written over the tracked
+  # kustomization.yaml (an interrupted run used to leave them there).
+  cp -r "$REPO/k8s" "$tmp/k8s"
+  envsubst < "$overlay/kustomization.yaml" > "$tmp/k8s/overlays/$(basename "$overlay")/kustomization.yaml"
+  if ! $KUBECTL kustomize "$tmp/k8s/overlays/$(basename "$overlay")" > "$tmp/render.yaml"; then
     rm -rf "$tmp"; echo "  !! kustomize render failed"; return 1
   fi
   python3 - "$tmp/render.yaml" > "$tmp/env.yaml" <<'PY'
@@ -118,18 +117,29 @@ PY
   rm -rf "$tmp"
 }
 
-# Candidate deployments: the named ones, else ALL ghcr.io/openphc/* app deployments.
+# Candidate deployments: the named ones, else every CCE app deployment — those running an image the overlay's images: block
+# pins, matched by image name whatever its registry (with IMAGE_REGISTRY set to a mirror, matching "ghcr.io/openphc/" found
+# nothing). Without a readable overlay, falls back to ghcr.io/openphc/* images.
 CANDIDATES=("$@")
 if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+  OVL="$REPO/k8s/overlays/${OVERLAY_NAME:-${IENV:-${NS#cce-}}}/kustomization.yaml"
   mapfile -t CANDIDATES < <($KUBECTL -n "$NS" get deploy -o json | python3 -c '
-import sys, json
+import sys, json, re, os
+ovl = sys.argv[1]
+names = set()
+if os.path.exists(ovl):
+    block = re.search(r"(?ms)^images:\n(.*?)(?=^\S|\Z)", open(ovl).read())
+    for line in (block.group(1).splitlines() if block else []):
+        m = re.match(r"\s*(?:-\s*)?(?:name|newName):\s*(\S+)", line)
+        if m: names.add(m.group(1).rsplit("/", 1)[-1])
+base = lambda img: re.split(r"[:@]", img.rsplit("/", 1)[-1])[0]
 for d in json.load(sys.stdin).get("items", []):
     imgs = [c.get("image", "") for c in d["spec"]["template"]["spec"].get("containers", [])]
-    if any("ghcr.io/openphc/" in i for i in imgs):
-        print(d["metadata"]["name"])')
+    if any((base(i) in names) if names else ("ghcr.io/openphc/" in i) for i in imgs):
+        print(d["metadata"]["name"])' "$OVL")
 fi
 if [ "${#CANDIDATES[@]}" -eq 0 ]; then
-  echo "redeploy: no target deployments in $NS (no ghcr.io/openphc/* images?)"; exit 0
+  echo "redeploy: no target deployments in $NS (no image from the overlay's images: list is running)"; exit 0
 fi
 
 # IMAGE_TAG/IMAGE_DIGEST pin a specific image ref instead of rollout-restarting onto whatever a
@@ -239,11 +249,13 @@ for dep in "${TARGETS[@]}"; do
     echo "  $dep is HPA-managed — not scaling to 0 (would fight the HPA). Check quota/scheduling manually."
     rc=1; continue
   fi
-  # Fallback for the UAT CPU-quota surge: rolling update needs room for old+new; scale 0->1 avoids it.
-  echo "  fallback: scale $dep 0 -> 1 (avoids the rolling-update surge / quota clash)..."
+  # Fallback for a CPU-quota surge: a rolling update needs room for old+new pods; scaling 0 -> N avoids it.
+  # Scale back to the count it had, not to 1: a deployment running 2 (and not HPA-managed) used to stay at 1 afterwards.
+  want="$($KUBECTL -n "$NS" get "deploy/$dep" -o jsonpath='{.spec.replicas}' 2>/dev/null)"; [ "${want:-0}" -ge 1 ] 2>/dev/null || want=1
+  echo "  fallback: scale $dep 0 -> $want (avoids the rolling-update surge / quota clash)..."
   $KUBECTL -n "$NS" scale "deploy/$dep" --replicas=0
   $KUBECTL -n "$NS" wait --for=delete pod -l "app=$dep" --timeout="$WAIT_DELETE_TIMEOUT" 2>/dev/null || true
-  $KUBECTL -n "$NS" scale "deploy/$dep" --replicas=1
+  $KUBECTL -n "$NS" scale "deploy/$dep" --replicas="$want"
   $KUBECTL -n "$NS" rollout status "deploy/$dep" --timeout="$ROLLOUT_TIMEOUT" || { echo "  !! still not ready"; rc=1; }
 done
 

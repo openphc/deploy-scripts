@@ -20,21 +20,54 @@ POD_CIDR="${K3S_CLUSTER_CIDR:-10.42.0.0/16}"; SVC_CIDR="${K3S_SERVICE_CIDR:-10.4
 systemctl stop cce-ufw-deadman.timer 2>/dev/null || true
 systemd-run --quiet --on-active=600 --unit=cce-ufw-deadman /usr/sbin/ufw --force disable >/dev/null 2>&1 || true
 
-ufw default deny incoming  >/dev/null
-ufw default allow outgoing >/dev/null
-ufw default allow routed   >/dev/null      # REQUIRED: k3s pod traffic is forwarded; "deny routed" breaks the cluster
-for ifc in lo cni0 flannel.1 docker0; do ufw allow in on "$ifc" >/dev/null; done
-for src in "$POD_CIDR" "$SVC_CIDR" 172.16.0.0/12; do ufw allow from "$src" >/dev/null; done   # pods, services, docker bridges
-if [ -n "${SSH_ALLOWED_CIDR:-}" ]; then ufw allow from "$SSH_ALLOWED_CIDR" to any port 22 proto tcp >/dev/null
-else ufw allow 22/tcp >/dev/null; fi
-ufw allow 80/tcp  >/dev/null
-ufw allow 443/tcp >/dev/null
+# ufw rewrites ALL its iptables/ip6tables chains on every rule change. If that collides with k3s rewriting its own rules
+# (pods being created or restarted), the reload can fail halfway and leave ufw's ip6tables chains missing: then every ufw
+# command fails ("Could not load logging rules" / "problem running ip6tables") — seen on a re-run. A reload rebuilds them,
+# so each call is retried after one. The dead-man timer above stays armed throughout.
+u() {
+  local i
+  for i in 1 2 3; do
+    ufw "$@" >/dev/null 2>&1 && return 0
+    echo "  ufw $* failed (attempt $i) — reloading ufw and retrying" >&2; ufw reload >/dev/null 2>&1 || true; sleep 3
+  done
+  ufw "$@"   # last try, with its error shown
+}
+
+u default deny incoming
+u default allow outgoing
+u default allow routed        # REQUIRED: k3s pod traffic is forwarded; "deny routed" breaks the cluster
+for ifc in lo cni0 flannel.1 docker0; do u allow in on "$ifc"; done
+for src in "$POD_CIDR" "$SVC_CIDR" 172.16.0.0/12; do u allow from "$src"; done   # pods, services, docker bridges
+if [ -n "${SSH_ALLOWED_CIDR:-}" ]; then
+  u allow from "$SSH_ALLOWED_CIDR" to any port 22 proto tcp
+  # Narrowing SSH must also REMOVE an earlier allow-from-anywhere rule (rules only ever accumulated, so setting
+  # SSH_ALLOWED_CIDR on a re-run changed nothing). The dead-man below stays armed unless this session is still allowed.
+  ufw status | grep -qE '^22/tcp[[:space:]]+ALLOW[[:space:]]+Anywhere[[:space:]]*$' && u delete allow 22/tcp   # ufw pads lines with spaces
+else
+  u allow 22/tcp
+fi
+u allow 80/tcp
+u allow 443/tcp
 IFS=',' read -ra EXTRA <<< "${UFW_EXTRA_ALLOW:-}"
 for r in "${EXTRA[@]}"; do r="$(echo "$r" | xargs)"; [ -z "$r" ] && continue
-  if [[ "$r" == */* && "$r" =~ ^[0-9.]+/[0-9]+$ ]]; then ufw allow from "$r" >/dev/null; else ufw allow "$r" >/dev/null; fi
+  if [[ "$r" == */* && "$r" =~ ^[0-9.]+/[0-9]+$ ]]; then u allow from "$r"; else u allow "$r"; fi
 done
-ufw --force enable >/dev/null
+u --force enable
 
-# Still reachable over SSH (we are running over it) -> disarm the dead-man.
-if ufw status | grep -qE '^22(/tcp)?\s+ALLOW'; then systemctl stop cce-ufw-deadman.timer 2>/dev/null || true; fi
+# Disarm the dead-man only if SSH is still open to the people running this. With SSH_ALLOWED_CIDR, that means at least one
+# CURRENT SSH connection comes from inside it: otherwise an admin outside the range would be locked out with no automatic undo.
+ssh_ok=0
+if ufw status | grep -qE '^22(/tcp)?[[:space:]]+ALLOW'; then
+  if [ -z "${SSH_ALLOWED_CIDR:-}" ]; then ssh_ok=1
+  else
+    peers="$(ss -Htn state established '( sport = :22 )' 2>/dev/null | awk '{print $NF}' | sed -E 's/^\[?([^]]*)\]?:[0-9]+$/\1/' | sort -u)"
+    if [ -z "$peers" ] || python3 -c 'import ipaddress,sys; n=ipaddress.ip_network(sys.argv[1],strict=False); sys.exit(0 if any(ipaddress.ip_address(p) in n for p in sys.argv[2:]) else 1)' "$SSH_ALLOWED_CIDR" $peers 2>/dev/null; then
+      ssh_ok=1   # no SSH session (console/automation), or one from inside the range
+    else
+      echo "ufw: WARNING — no current SSH connection comes from SSH_ALLOWED_CIDR=$SSH_ALLOWED_CIDR (peers: $(echo $peers)). The dead-man"
+      echo "     timer stays ARMED: UFW is disabled again in 10 minutes unless you fix the range and re-run (or: systemctl stop cce-ufw-deadman.timer)."
+    fi
+  fi
+fi
+[ "$ssh_ok" = 1 ] && { systemctl stop cce-ufw-deadman.timer 2>/dev/null || true; }
 echo "ufw: $(ufw status | head -1) — default deny incoming; public: 22$( [ -n "${SSH_ALLOWED_CIDR:-}" ] && echo " (from $SSH_ALLOWED_CIDR)")/80/443${UFW_EXTRA_ALLOW:+ + $UFW_EXTRA_ALLOW}; internal: $POD_CIDR $SVC_CIDR 172.16.0.0/12"

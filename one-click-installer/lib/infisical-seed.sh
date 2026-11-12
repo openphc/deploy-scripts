@@ -34,10 +34,14 @@ while IFS='=' read -r key val; do
   key="$(echo "$key" | tr -d '[:space:]')"
   [ -z "$key" ] && continue
   case "$key" in \#*) continue ;; esac
-  # strip surrounding quotes and inline comments the same way `set -a; . file` would tolerate
-  val="${val%%#*}"
-  val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
-  val="$(echo "$val" | sed 's/[[:space:]]*$//')"
+  # A quoted value is taken verbatim up to its closing quote. Otherwise only " #..." (whitespace, then #) is a comment, as in
+  # shell/dotenv: cutting at the first "#" silently truncated passwords that contain one.
+  val="$(printf '%s' "$val" | sed 's/^[[:space:]]*//')"
+  case "$val" in
+    \"*) val="${val#\"}"; val="${val%%\"*}" ;;
+    \'*) val="${val#\'}"; val="${val%%\'*}" ;;
+    *)   val="$(printf '%s' "$val" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]*$//')" ;;
+  esac
   SEED["$key"]="$val"
 done < "$SEED_FILE"
 echo "[seed $ENVCODE] parsed ${#SEED[@]} key(s) from $SEED_FILE"
@@ -53,6 +57,8 @@ echo "[seed $ENVCODE] parsed ${#SEED[@]} key(s) from $SEED_FILE"
 SPEC=(
   "POSTGRES_HOST:/postgres:detected"
   "POSTGRES_PORT:/postgres:default:5432"
+  # The database name is a platform convention: the overlay passes POSTGRES_DB=ccedb to every service. This key only feeds the
+  # Debezium connector template, and 04-data-pipeline.sh sets it from POSTGRES_DB, so a different value here is not used.
   "POSTGRES_DATABASE:/postgres:default:ccedb"
   "POSTGRES_USER:/postgres:default:admin"
   "POSTGRES_PASSWORD:/postgres:secret"
@@ -67,9 +73,14 @@ SPEC=(
   "CONNECT_URL:/kafka-connect:default:http://localhost:8083"
   "KEYCLOAK_ADMIN_USER:/keycloak:default:admin"
   "KEYCLOAK_ADMIN_PASSWORD:/keycloak:secret"
-  "BASIC_AUTH_ENABLED:/keycloak:default:false"
-  "BASIC_AUTH_CLIENT_ID:/keycloak:blank"
+  # The source system posts to the emitter through the gateway with HTTP Basic credentials (keycloak-inbound-basic.sh sets up
+  # the Keycloak side): the gateway's password-grant client, and the inbound user that system is given. Names follow the
+  # chosen emitter; the password is generated — read it from Infisical to hand to the source system's team.
+  "BASIC_AUTH_ENABLED:/keycloak:default:true"
+  "BASIC_AUTH_CLIENT_ID:/keycloak:default:${EMITTER_ADAPTOR:-openhim}-basic"
   "BASIC_AUTH_CLIENT_SECRET:/keycloak:secret"
+  "EMITTER_INBOUND_USER:/keycloak:default:${EMITTER_ADAPTOR:-openhim}-emitter-inbound"
+  "EMITTER_INBOUND_PASSWORD:/keycloak:secret"
   "GRAFANA_ADMIN_USER:/grafana:default:admin"
   "GRAFANA_ADMIN_PASSWORD:/grafana:secret"
   "OPENHIM_CORE_HOST:/openhim-emitter-adaptor:blank"
@@ -121,7 +132,7 @@ SPEC=(
 # because detection did. See one-click-installer/lib/host-ip.sh.
 
 # --- 4) fill every key, tracking outcome for the summary ----------------------------------------
-FROM_FILE=() GENERATED=() DEFAULTED=() BLANK=() DETECTED=()
+FROM_FILE=() GENERATED=() DEFAULTED=() KEPT=() BLANK=() DETECTED=()
 for entry in "${SPEC[@]}"; do
   IFS=':' read -r key folder kind extra <<< "$entry"
   if [ -n "${SEED[$key]+x}" ] && [ -n "${SEED[$key]}" ]; then
@@ -130,7 +141,11 @@ for entry in "${SPEC[@]}"; do
   else
     case "$kind" in
       secret)  value=$(infisical_get_or_generate "$folder" "$key" "$PROJECT_ID" "$INFISICAL_ENV_SLUG"); GENERATED+=("$key") ;;
-      default) value="$extra"; DEFAULTED+=("$key") ;;
+      default)
+        # A value already in Infisical wins: the docs tell operators to change some defaults there (e.g.
+        # CCE_OPSALERT_NOTIFICATIONS_ENABLED=true), and rewriting them on every re-run silently undid that.
+        if [ -n "$(infisical_get "$folder" "$key" "$PROJECT_ID" "$INFISICAL_ENV_SLUG")" ]; then KEPT+=("$key"); continue; fi
+        value="$extra"; DEFAULTED+=("$key") ;;
       detected) DETECTED+=("$key"); continue ;;   # derived from the host at deploy time (one-click-installer/lib/host-ip.sh) — never stored
       blank)
         # The CLI rejects `secrets set KEY=` with a truly empty value ("ensure that each secret
@@ -160,6 +175,7 @@ echo "[seed $ENVCODE] done."
 echo "  from seed file (${#FROM_FILE[@]}): ${FROM_FILE[*]:-none}"
 echo "  generated secrets (${#GENERATED[@]}): ${GENERATED[*]:-none}"
 echo "  fixed defaults (${#DEFAULTED[@]}): ${DEFAULTED[*]:-none}"
+echo "  kept (already in Infisical, default not re-applied) (${#KEPT[@]}): ${KEPT[*]:-none}"
 if [ "${#DETECTED[@]}" -gt 0 ]; then
   echo "  NOT STORED — detected from the host at deploy time (${#DETECTED[@]}): ${DETECTED[*]}"
 fi

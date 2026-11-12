@@ -45,17 +45,48 @@ sect "outbound access (everything the installer downloads)"
 # reinstalled without FORCE_K3S_REINSTALL; Kafka when /opt/kafka exists — k8s/infrastructure/setup-prod-infra.sh; ClickHouse when
 # clickhouse-server exists — native/02; the Infisical CLI at the pinned version). So a slow or unreachable archive.apache.org
 # (seen: 7–8 s per request) cannot stop a re-run. Image registries, github.com and the Ubuntu mirror are always needed.
-sites=(https://github.com https://ghcr.io/v2/ https://quay.io/v2/ https://registry-1.docker.io/v2/ https://registry.k8s.io/v2/ http://archive.ubuntu.com/ubuntu/)
+sites=(https://github.com https://ghcr.io/v2/ https://quay.io/v2/ https://registry-1.docker.io/v2/ https://registry.k8s.io/v2/)
+# The Ubuntu mirror(s) apt is actually configured with — a cloud VM uses a regional one (e.g. ap-south-1.ec2.archive.ubuntu.com),
+# so testing archive.ubuntu.com would check a host apt never uses (and fail the run when it blips).
+while read -r m; do sites+=("$m"); done < <( { sed -n 's/^URIs:[[:space:]]*//p' /etc/apt/sources.list.d/*.sources 2>/dev/null | tr ' ' '\n'
+  grep -h '^deb ' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null | awk '{print $2}'; } \
+  | grep -E '^https?://' | grep -i ubuntu | sed 's#/*$#/#' | sort -u)
+printf '%s\n' "${sites[@]}" | grep -qi ubuntu || sites+=(http://archive.ubuntu.com/ubuntu/)
 skip_site(){ ok "$1 — not needed ($2 already installed)"; }
 if command -v k3s >/dev/null 2>&1 && [ -z "${FORCE_K3S_REINSTALL:-}" ]; then skip_site https://get.k3s.io k3s; else sites+=(https://get.k3s.io); fi
 # Kafka: needed unless the installed version IS the configured one (a newer KAFKA_VERSION is an in-place upgrade = a download).
 kafka_have="$(ls /opt/kafka/libs/kafka_*.jar 2>/dev/null | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1)"
-if [ -n "$kafka_have" ] && [ "$kafka_have" = "${KAFKA_VERSION:-3.7.0}" ]; then skip_site https://archive.apache.org "Kafka $kafka_have"
+if [ -n "$kafka_have" ] && [ "$kafka_have" = "${KAFKA_VERSION:-3.9.2}" ]; then skip_site https://archive.apache.org "Kafka $kafka_have"
 else sites+=(https://archive.apache.org); fi
-if command -v clickhouse-server >/dev/null 2>&1; then skip_site https://packages.clickhouse.com ClickHouse; else sites+=(https://packages.clickhouse.com); fi
+# ClickHouse's signing key comes from the Ubuntu keyserver (packages.clickhouse.com/deb/key.gpg 404s).
+if command -v clickhouse-server >/dev/null 2>&1; then skip_site https://packages.clickhouse.com ClickHouse
+else sites+=(https://packages.clickhouse.com https://keyserver.ubuntu.com); fi
+# PostgreSQL comes from the PGDG apt repository (key on www.postgresql.org); Debezium from Maven Central.
+if dpkg-query -W -f='${Status}' "postgresql-${POSTGRES_VERSION:-16}" 2>/dev/null | grep -q 'install ok installed'; then skip_site http://apt.postgresql.org "PostgreSQL ${POSTGRES_VERSION:-16}"
+else sites+=(http://apt.postgresql.org/pub/repos/apt/ https://www.postgresql.org); fi
+if ls /opt/kafka/connect-plugins/debezium-connector-postgres >/dev/null 2>&1; then skip_site https://repo1.maven.org Debezium
+else sites+=(https://repo1.maven.org/maven2/); fi
+# The local Infisical server (native runtime) comes from its own apt repository.
+if [ "${USE_LOCAL_INFISICAL:-true}" = true ] && [ "${LOCAL_INFISICAL_RUNTIME:-native}" = native ]; then
+  if dpkg-query -W -f='${Status}' infisical-core 2>/dev/null | grep -q 'install ok installed'; then skip_site https://artifacts-infisical-core.infisical.com infisical-core
+  else sites+=(https://artifacts-infisical-core.infisical.com); fi
+fi
 if [ "$(infisical --version 2>/dev/null | awk '{print $3}')" = "${INFISICAL_CLI_VERSION:-0.43.93}" ]; then skip_site https://artifacts-cli.infisical.com "Infisical CLI ${INFISICAL_CLI_VERSION:-0.43.93}"
 else sites+=(https://artifacts-cli.infisical.com); fi
+# An Ubuntu mirror name resolves to many addresses, and some can hang (seen 2026-11: 3 of Canonical's 11 accepted the connection
+# and never answered). apt simply moves on to the next address, so a mirror counts as reachable when ANY of its IPv4 addresses
+# answers — testing whichever one DNS returned first failed installs that apt itself would have completed.
+mirror_ok() {
+  local u="$1" host port ip code dead=()
+  host="${u#*://}"; host="${host%%/*}"; port=80; [ "${u%%://*}" = https ] && port=443
+  for ip in $(getent ahostsv4 "$host" 2>/dev/null | awk '{print $1}' | sort -u); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$host:$port:$ip" "$u" 2>/dev/null || true)"
+    case "$code" in 2*|3*|401|403|404) ok "$u ($code via $ip${dead[*]:+; not answering: ${dead[*]}})"; return 0;; *) dead+=("$ip");; esac
+  done
+  bad "cannot reach $u on any address (${dead[*]:-no IPv4 address})"
+}
 for u in "${sites[@]}"; do
+  case "$u" in *ubuntu*) mirror_ok "$u"; continue;; esac
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 3 "$u" 2>/dev/null || true)"
   case "$code" in 2*|3*|401|403|404) ok "$u ($code)";; *) bad "cannot reach $u (curl: ${code:-none})";; esac
 done
@@ -74,7 +105,7 @@ fi
 # LOCAL_INFISICAL_RUNTIME=docker (NEED_DOCKER=1 forces it, e.g. for a caller that builds images). The defaults run nothing in docker.
 NEED_DOCKER="${NEED_DOCKER:-}"
 [ "${EXPORTER_RUNTIME:-systemd}" = docker ] && NEED_DOCKER=1
-[ "${USE_LOCAL_INFISICAL:-false}" = true ] && [ "${LOCAL_INFISICAL_RUNTIME:-native}" = docker ] && NEED_DOCKER=1
+[ "${USE_LOCAL_INFISICAL:-true}" = true ] && [ "${LOCAL_INFISICAL_RUNTIME:-native}" = docker ] && NEED_DOCKER=1
 sect "Docker (only for a docker runtime)"
 if command -v docker >/dev/null 2>&1; then ok "docker $(docker --version | awk '{print $3}' | tr -d ,)"
 elif [ -z "$NEED_DOCKER" ]; then ok "not needed (native exporters/Infisical/Portainer) — not installing"
@@ -104,11 +135,22 @@ if [ -n "$cur" ] && [ "$cur" != "$K3S_VERSION" ] && [ -n "${FORCE_K3S_REINSTALL:
   if [ "$pods" -eq 0 ]; then echo "  empty cluster — uninstalling $cur to install $K3S_VERSION"; /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1; cur=""
   else note "FORCE_K3S_REINSTALL refused: cluster has $pods workload pod(s)"; fi
 fi
+# An existing cluster keeps the networks it was created with; say so when the config asks for others.
+if [ -n "$cur" ] && [ -f /etc/systemd/system/k3s.service ]; then
+  for want in ${K3S_CLUSTER_CIDR:+cluster-cidr=$K3S_CLUSTER_CIDR} ${K3S_SERVICE_CIDR:+service-cidr=$K3S_SERVICE_CIDR}; do
+    grep -q -- "--${want}" /etc/systemd/system/k3s.service || note "k3s already installed without --${want}; the cluster keeps its networks (reinstall on an empty cluster to change them)"
+  done
+fi
 if [ "$cur" = "$K3S_VERSION" ]; then ok "k3s $cur"
 elif [ -n "$cur" ]; then note "k3s $cur is installed; pinned (PROD) is $K3S_VERSION — leaving it (set FORCE_K3S_REINSTALL=1 on an EMPTY cluster to align)"
 elif [ -n "$CHECK_ONLY" ]; then note "k3s not installed"
 else
-  curl -sfL https://get.k3s.io | as_root_env "INSTALL_K3S_VERSION=$K3S_VERSION" sh -s - >/tmp/k3s-install.log 2>&1 || true
+  # K3S_CLUSTER_CIDR / K3S_SERVICE_CIDR (e.g. when 10.42/10.43 clash with the site's network) must reach k3s itself — before,
+  # they only changed the firewall rules. Cluster DNS is the 10th address of the service range, as k3s's default 10.43.0.10 is.
+  k3s_args=""
+  [ -n "${K3S_CLUSTER_CIDR:-}" ] && k3s_args="$k3s_args --cluster-cidr=$K3S_CLUSTER_CIDR"
+  [ -n "${K3S_SERVICE_CIDR:-}" ] && k3s_args="$k3s_args --service-cidr=$K3S_SERVICE_CIDR --cluster-dns=$(python3 -c 'import ipaddress,sys;print(ipaddress.ip_network(sys.argv[1],strict=False)[10])' "$K3S_SERVICE_CIDR")"
+  curl -sfL https://get.k3s.io | as_root_env "INSTALL_K3S_VERSION=$K3S_VERSION" ${k3s_args:+"INSTALL_K3S_EXEC=server$k3s_args"} sh -s - >/tmp/k3s-install.log 2>&1 || true
   cur="$(k3s --version 2>/dev/null | awk 'NR==1{print $3}')"
   if   [ "$cur" = "$K3S_VERSION" ]; then ok "installed k3s $cur"
   elif [ -n "$cur" ];               then bad "k3s pin IGNORED: asked $K3S_VERSION, got $cur (see /tmp/k3s-install.log; sudo -E?)"

@@ -3,11 +3,8 @@
 # Install ClickHouse server + client NATIVELY (apt) and drop in this env's config.
 #
 # Ports default to ClickHouse's own standard values (HTTP 8123, native 9000, interserver 9009,
-# Prometheus metrics 9363) — correct for a DEDICATED machine. PROD's wrapper (rw/prod/
-# 02-install-clickhouse.sh) overrides these to its historical SHIFTED values (8124/9001/9010/9364)
-# because it shares one physical host with UAT's docker-based ClickHouse, which already holds the
-# defaults — that collision doesn't exist for a fresh dedicated machine, hence standard-by-default
-# here.
+# Prometheus metrics 9363) — correct for a DEDICATED machine. The CH_*_PORT variables override them (a host shared with
+# another ClickHouse, e.g. 8124/9001/9010/9364).
 #
 # Requires: CLICKHOUSE_USER, CLICKHOUSE_PASSWORD, KAFKA_BOOTSTRAP_SERVERS in the env.
 set -euo pipefail
@@ -29,6 +26,7 @@ if ! command -v clickhouse-server >/dev/null 2>&1; then
   # (id 8919F6BD2B48D754 / 3E4AD4719DDE9A38) from the Ubuntu keyserver instead.
   curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x3E4AD4719DDE9A38" \
     | sudo gpg --dearmor --yes -o /usr/share/keyrings/clickhouse-keyring.gpg
+  sudo chmod 644 /usr/share/keyrings/clickhouse-keyring.gpg   # apt verifies as _apt; under a restrictive umask gpg writes 0600
   ARCH=$(dpkg --print-architecture)
   echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] https://packages.clickhouse.com/deb stable main" \
     | sudo tee /etc/apt/sources.list.d/clickhouse.list >/dev/null
@@ -98,6 +96,24 @@ EOF
 # Only root and the clickhouse server may read it (the password hash; tee leaves it 644 = every local user).
 sudo chown root:clickhouse "/etc/clickhouse-server/users.d/cce-${ENVCODE}-users.xml"
 sudo chmod 640 "/etc/clickhouse-server/users.d/cce-${ENVCODE}-users.xml"
+
+# The package's "default" user has an EMPTY password and accepts connections from any address: from every pod, the host IP,
+# and on a cloud install with 8123 open in the security group, the internet. CCE never uses it remotely (everything connects
+# as the pipeline user; host-side tools use localhost), so confine it to the loopback.
+sudo tee /etc/clickhouse-server/users.d/zz-cce-default-user-localhost.xml >/dev/null <<'EOF'
+<clickhouse>
+  <users>
+    <default>
+      <networks replace="replace">
+        <ip>::1</ip>
+        <ip>127.0.0.1</ip>
+      </networks>
+    </default>
+  </users>
+</clickhouse>
+EOF
+sudo chown root:clickhouse /etc/clickhouse-server/users.d/zz-cce-default-user-localhost.xml 2>/dev/null || true
+sudo chmod 640 /etc/clickhouse-server/users.d/zz-cce-default-user-localhost.xml
 
 echo "=== [$ENVCODE 4/4] enable + start ==="
 sudo systemctl daemon-reload

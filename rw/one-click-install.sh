@@ -123,6 +123,14 @@ echo "IMAGE_PULL_POLICY=IfNotPresent" >> "$SEED_MERGED"
 # on, unless the seed file says otherwise.
 grep -q '^BASIC_AUTH_ENABLED=' "$SEED_MERGED" || echo "BASIC_AUTH_ENABLED=true" >> "$SEED_MERGED"
 grep -q '^BASIC_AUTH_CLIENT_ID=' "$SEED_MERGED" || echo "BASIC_AUTH_CLIENT_ID=openhim-basic" >> "$SEED_MERGED"
+# The generic seed now creates the inbound user itself (one-click-installer/lib/keycloak-inbound-basic.sh, before RW 4b), from
+# EMITTER_INBOUND_USER/EMITTER_INBOUND_PASSWORD, and generates the password when none is given. A seed file written with RW's
+# older names (OPENHIM_INBOUND_*) is passed on under the new ones, so the user gets the password OpenHIM is configured with.
+for k in USER PASSWORD; do
+  grep -q "^EMITTER_INBOUND_$k=" "$SEED_MERGED" && continue
+  l="$(sed -n "s/^OPENHIM_INBOUND_$k=/EMITTER_INBOUND_$k=/p" "$SEED_MERGED" | tail -1)"
+  [ -n "$l" ] && printf '%s\n' "$l" >> "$SEED_MERGED"
+done
 export SEED_ENV_FILE="$SEED_MERGED"
 
 # The generic installer reads its config from a file; give it the effective values (the environment wins over the file anyway).

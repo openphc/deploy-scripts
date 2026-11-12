@@ -6,14 +6,11 @@
 # Config/secrets come from the environment (`infisical run --env=<envcode>`, or a .meta-resolved
 # project for a bootstrapped env — see one-click-installer/lib/infisical-run.sh).
 #
-# CH_METRICS_PORT defaults to ClickHouse's standard 9363 (dedicated machine); PROD's wrapper
-# overrides to 9364 (its historical shift). The host-IP rewrite itself is NOT optional for any
-# native-install env — the base Prometheus config's default target (172.18.0.1:9363) is UAT's
-# docker-bridge IP, wrong for every native install regardless of port.
+# CH_METRICS_PORT defaults to ClickHouse's standard 9363 (dedicated machine). The host-IP rewrite itself is NOT optional: the
+# base Prometheus config's default target (172.18.0.1:9363) is a docker-bridge address, wrong for every native install.
 #
-# NODE_EXPORTER_SHIFT_PORT is unset by default (dedicated machine, no collision -> keep node-
-# exporter on the base's standard :9100). PROD's wrapper sets it to 9101 to dodge UAT's :9100 on
-# their shared host.
+# NODE_EXPORTER_SHIFT_PORT is unset by default (dedicated machine: node-exporter stays on the standard :9100); set it on a
+# host where :9100 is already taken.
 set -euo pipefail
 
 ENVCODE="${1:?usage: 05-k8s-deploy.sh <envcode>}"
@@ -24,7 +21,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 K8S="$REPO/k8s"
 OVERLAY="$K8S/overlays/${OVERLAY_NAME:-$ENVCODE}"
-INGRESS_REWRITE="$REPO/one-click-installer/lib/plain-http-ingress.py"   # shared helper (was rw/uat/lib/ — a hidden cross-dependency for one-click installs)
+INGRESS_REWRITE="$REPO/one-click-installer/lib/plain-http-ingress.py"
 
 [ -d "$OVERLAY" ] || { echo "ERROR: no overlay at $OVERLAY — generate it first (one-click-installer/lib/generate-overlay.sh)"; exit 1; }
 
@@ -36,16 +33,17 @@ fi
 : "${VM_HOST_IP:?set VM_HOST_IP}"
 export VM_HOST_CIDR="${VM_HOST_CIDR:-${VM_HOST_IP}/32}"
 
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"; [ -f "$OVERLAY/kustomization.yaml.bak" ] && mv "$OVERLAY/kustomization.yaml.bak" "$OVERLAY/kustomization.yaml"' EXIT
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 echo "=== [$ENVCODE 1/5] render overlays/$ENVCODE (envsubst BEFORE kustomize) ==="
-cp "$OVERLAY/kustomization.yaml" "$OVERLAY/kustomization.yaml.bak"
-envsubst < "$OVERLAY/kustomization.yaml.bak" > "$OVERLAY/kustomization.yaml"
-$KUBECTL kustomize "$OVERLAY" > "$TMP/render.yaml"
-mv "$OVERLAY/kustomization.yaml.bak" "$OVERLAY/kustomization.yaml"
+# Substitute in a throwaway copy of k8s/ (as dry-render.sh does): the substituted kustomization.yaml holds the secrets, and
+# writing it over the tracked file — even briefly, with a restore — could leave them in the repository if the run was killed.
+cp -r "$K8S" "$TMP/k8s"; ROVERLAY="$TMP/k8s/overlays/$(basename "$OVERLAY")"
+envsubst < "$OVERLAY/kustomization.yaml" > "$ROVERLAY/kustomization.yaml"
+$KUBECTL kustomize "$ROVERLAY" > "$TMP/render.yaml"
 
-# ClickHouse (native install) Prometheus scrape target: base config defaults to UAT's docker-
-# bridge IP, wrong for every native env — always repoint to the host IP; only the PORT varies.
+# ClickHouse (native install) Prometheus scrape target: the base config defaults to a docker-bridge
+# IP, wrong for every native env — always repoint to the host IP; only the PORT varies.
 sed -i "s#172.18.0.1:9363#${VM_HOST_IP}:${CH_METRICS_PORT}#g" "$TMP/render.yaml"
 # postgres_exporter (:9187) and kafka_exporter (:9308) are installed on the host by 07-monitoring-exporters.sh and their Grafana
 # dashboards ship in data-pipeline/, but the base Prometheus config has no job for them (PROD's overlay once carried one; it was
@@ -66,6 +64,14 @@ add = "".join(f'{pad(0)}- job_name: "{name}"\n{pad(2)}static_configs:\n{pad(4)}-
 open(path, "w").write(text[:m.end()] + add + text[m.end():])
 print("  prometheus: + postgres-exporter :9187, kafka-exporter :9308")
 PY
+# The base Prometheus config scrapes the openhim emitter. When the overlay runs another one (apply-emitter.sh), point that job
+# at it instead — otherwise the emitter goes unscraped and a dead openhim target shows "down".
+. "$HERE/../emitter-lib.sh"; cce_emitter_from_overlay "$OVERLAY"
+if [ "$EMITTER_NAME" != openhim ]; then
+  sed -i -e "s#job_name: \"openhim-emitter-adaptor\"#job_name: \"${EMITTER_DEPLOYMENT}\"#" \
+         -e "s#\"openhim-emitter-adaptor:8082\"#\"${EMITTER_DEPLOYMENT}:${EMITTER_PORT}\"#" "$TMP/render.yaml"
+  echo "  prometheus: emitter job -> ${EMITTER_DEPLOYMENT}:${EMITTER_PORT}"
+fi
 
 # The base NetworkPolicy carries a literal ${VM_HOST_CIDR}: the overlay's envsubst only covers kustomization.yaml, not base files.
 # Applying the render with it left in makes kubectl reject that one resource ("ipBlock.cidr: Invalid value") and exit 1, which under
@@ -80,7 +86,7 @@ sed -i "s#\${VM_HOST_CIDR}#${VM_HOST_CIDR}#g" "$TMP/render.yaml"
 # NAME the realm already selects (insights-ui-theme), exactly like docker-compose does for dev, so no realm change is needed.
 THEME_DIR="${KEYCLOAK_THEME_DIR:-keycloak-themes/cce-insights-theme/dev}"
 [ "${THEME_DIR#/}" = "$THEME_DIR" ] && THEME_DIR="$REPO/$THEME_DIR"
-sed -i "s#/home/cceadmin/deploy-scripts/keycloak-themes/insights-ui-theme#${THEME_DIR}#g" "$TMP/render.yaml"
+sed -i -E "s#/home/cceadmin/deploy-scripts/keycloak-themes/[A-Za-z0-9_./-]+#${THEME_DIR}#g" "$TMP/render.yaml"
 sed -i "s#/home/cceadmin/deploy-scripts#${REPO}#g" "$TMP/render.yaml"
 [ -r "$THEME_DIR/login/theme.properties" ] || echo "  WARNING: $THEME_DIR has no login/theme.properties — keycloak will not start (copy the keycloak-themes/ directory)"
 

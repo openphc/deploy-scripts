@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # one-click-installer/lib/set-admin-passwords.sh <envcode> — set the Grafana and Portainer admin passwords of an environment installed
-# by one-click-installer/install.sh (or rw/one-click-install.sh), e.g. to the values an older environment used. Prompts for each (blank = leave unchanged).
+# by one-click-installer/install.sh, e.g. to the values an older environment used. Prompts for each (blank = leave unchanged).
 #
 #   sudo [SEED_ENV_FILE=/path/seed.env] bash one-click-installer/lib/set-admin-passwords.sh <envcode>
 #

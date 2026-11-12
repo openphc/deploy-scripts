@@ -1,6 +1,7 @@
 {
  "id": "04d04795-1e04-4cee-8077-7c965e995f62",
  "realm": "cce",
+ "loginTheme": "insights-ui-theme",
  "notBefore": 0,
  "defaultSignatureAlgorithm": "RS256",
  "revokeRefreshToken": false,

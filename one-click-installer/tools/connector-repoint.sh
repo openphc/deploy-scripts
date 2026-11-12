@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# one-click-installer/tools/connector-repoint.sh <prod|uat> — make the Debezium connector's DB address independent of the public IP.
+# one-click-installer/tools/connector-repoint.sh <envcode> — make the Debezium connector's DB address independent of the host IP.
 #
-#   bash one-click-installer/tools/connector-repoint.sh prod     # -> localhost:5432        (native Postgres on the same host)
-#   bash one-click-installer/tools/connector-repoint.sh uat      # -> postgres-uat:5432     (same docker network as cce-kafka-connect)
+#   sudo bash one-click-installer/tools/connector-repoint.sh <envcode>   # -> localhost:5432 (Connect and Postgres both native here)
+#   CDC_DB_HOST=<name> / CONNECT_URL=<url> override the target and the Connect REST address for other topologies.
 #
 # WHY: register-connectors.sh / 04-data-pipeline.sh render database.hostname from ${POSTGRES_HOST}, which is the host's
 # public IP — so every (re-)registration re-bakes the IP into the connector, and when the IP changes the CDC task dies
-# (PROD's did, 2026-10: "Couldn't obtain encoding for database ccedb"). Run this AFTER any (re-)registration.
+# (seen 2026-10: "Couldn't obtain encoding for database ccedb"). Run this AFTER any (re-)registration.
 #
 # Takes the connector's OWN live config and changes only host/port/password, so the replicated table list cannot drift
 # (the repo has two differing connector templates). Idempotent: if already IP-free it changes nothing and does not restart
 # the task. The password is injected from Infisical (Connect's GET masks it as "[hidden]"); it is never printed.
 set -euo pipefail
-ENVN="${1:?usage: connector-repoint.sh <prod|uat>}"
+ENVN="${1:?usage: connector-repoint.sh <envcode>}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -z "${POSTGRES_READ_ONLY_PASSWORD:-}" ]; then exec bash "$HERE/../lib/infisical-run.sh" "$ENVN" bash "$0" "$ENVN"; fi   # self-wrap
 export ENVN

@@ -115,8 +115,12 @@ if [ "$RUNTIME" = systemd ]; then
     "$PGEXP_SHA" postgres_exporter "$PGEXP_VER"
   install_release "https://github.com/danielqsj/kafka_exporter/releases/download/v${KEXP_VER}/kafka_exporter-${KEXP_VER}.linux-amd64.tar.gz" \
     "$KEXP_SHA" kafka_exporter "$KEXP_VER"
+  # Via a root-only temp file, not "install /dev/stdin": Ubuntu 26.04's install (uutils coreutils 0.10) fails with "No such
+  # file or directory" when reading /dev/stdin over an EXISTING file, which broke every re-run here.
+  envtmp="$(sudo mktemp)"
   printf 'DATA_SOURCE_NAME=postgresql://postgres_exporter:%s@localhost:5432/%s?sslmode=disable\n' "$PGEXP_PW" "${POSTGRES_DB:-ccedb}" \
-    | sudo install -m 0640 -o root -g "$EXP_USER" /dev/stdin "$EXP_ETC/cce-postgres-exporter.env"
+    | sudo tee "$envtmp" >/dev/null
+  sudo install -m 0640 -o root -g "$EXP_USER" "$envtmp" "$EXP_ETC/cce-postgres-exporter.env"; sudo rm -f "$envtmp"
   exporter_unit cce-postgres-exporter "Prometheus postgres_exporter for native PostgreSQL" postgresql.service \
     "/usr/local/bin/postgres_exporter --web.listen-address=:9187"
   exporter_unit cce-kafka-exporter "Prometheus kafka_exporter for native Kafka" kafka.service \
@@ -133,7 +137,7 @@ else
   docker run -d --name postgres-exporter --restart unless-stopped --network host \
     --log-opt max-size=10m --log-opt max-file=3 \
     -e DATA_SOURCE_NAME="postgresql://postgres_exporter:${PGEXP_PW}@localhost:5432/${POSTGRES_DB:-ccedb}?sslmode=disable" \
-    quay.io/prometheuscommunity/postgres-exporter:latest >/dev/null
+    "quay.io/prometheuscommunity/postgres-exporter:v${PGEXP_VER}" >/dev/null   # same version as the systemd runtime, not :latest
 fi
 wait_for_metric http://localhost:9187/metrics '^pg_up 1$' \
   && log "  OK: pg_up=1" || { log "  !! postgres_exporter not reporting pg_up=1"; exit 1; }
@@ -144,7 +148,7 @@ if [ "$RUNTIME" = docker ]; then
   docker rm -f kafka-exporter >/dev/null 2>&1 || true
   docker run -d --name kafka-exporter --restart unless-stopped --network host \
     --log-opt max-size=10m --log-opt max-file=3 \
-    danielqsj/kafka-exporter --kafka.server=localhost:9092 >/dev/null
+    "danielqsj/kafka-exporter:v${KEXP_VER}" --kafka.server=localhost:9092 >/dev/null
 fi
 # kafka_exporter's initial broker-metadata handshake has been observed taking ~40s on the reference VM and well over 90s on a fresh cloud VM
 # (each collection round also trips over the Kafka Connect consumer group it cannot decode, which slows the first scrape) —
