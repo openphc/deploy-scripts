@@ -155,11 +155,13 @@ OVR="$({ grep -h '^connector.client.config.override.policy=' /opt/kafka/config/c
 LOGC="$({ sudo -u postgres psql -tAc 'SHOW log_connections' 2>/dev/null || true; } | tr -d '[:space:]')"
 CHF="$(stat -c '%a' /etc/clickhouse-server/users.d/cce-"$ENVCODE"-users.xml 2>/dev/null || true)"
 echo "   security: Kafka ${KV:-?} · Connect override policy ${OVR:-NOT SET (All)} · Postgres log_connections ${LOGC:-?} · ClickHouse users file ${CHF:-?}"
+# ${INGRESS_HOST:-...} expands to INGRESS_HOST itself when it is set, so the old "${X:+a}${X:-b}" printed the host twice.
+PUBLIC_BASE="http://<this-host>"; [ -n "${INGRESS_HOST:-}" ] && PUBLIC_BASE="https://$INGRESS_HOST"
 cat <<DONE
 
 Done: namespace $NS · Infisical project cce-$ENVCODE · creds $CREDS_DIR/${ENVCODE}.{creds,meta}
-  URL:        ${INGRESS_HOST:+https://$INGRESS_HOST/insights/}${INGRESS_HOST:-http://<this-host>/insights/}
-  Inbound:    ${INGRESS_HOST:+https://$INGRESS_HOST}${INGRESS_HOST:-http://<this-host>}/v1/${EMITTER_DEPLOYMENT}/inbound  (${EMITTER_NAME} emitter, HTTP Basic)
+  URL:        $PUBLIC_BASE/insights/
+  Inbound:    $PUBLIC_BASE/v1/${EMITTER_DEPLOYMENT}/inbound  (${EMITTER_NAME} emitter, HTTP Basic)
   Logins:     sudo bash $HERE/tools/show-credentials.sh $ENVCODE [--reveal]   (every URL/user/password, incl. the inbound login)
   Back up:    $CREDS_DIR/${ENVCODE}.{creds,meta}$( { [ -f "$LOCAL_ADMIN" ] && echo ", $LOCAL_ADMIN and .env beside it"; } || true ) — off this machine
   Verify:     sudo bash $HERE/tools/host-ip-check.sh $ENVCODE      (nothing still holds a stale IP)
