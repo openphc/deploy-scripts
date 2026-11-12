@@ -25,12 +25,13 @@ Tick each one off. Do not start until you have all of them.
 | # | What | Why |
 |---|---|---|
 | 1 | Confirmation that **the old PROD data was backed up and copied off the server before the wipe** | The wipe erased everything on the server; the backup is the only copy |
-| 2 | Confirmation that **the wipe is done**: Ubuntu **26.04 LTS** freshly installed, the server still has the address **102.215.10.20**, and a user **`cceadmin`** exists that may use `sudo` | This guide and the scripts are tested on exactly that |
+| 2 | Confirmation that **the wipe is done**: Ubuntu **26.04 LTS** freshly installed, the server still has the address **102.215.10.20**, and a user **`cceadmin`** exists that may use `sudo` | This guide is written for exactly that (the old PROD also ran Ubuntu 26.04 LTS) |
 | 3 | Confirmation that a **maintenance window** has been agreed | CCE PROD is unavailable until the install finishes |
 | 4 | The **SSH login** for `cceadmin@102.215.10.20` (the password set during the fresh install) | To log in |
 | 5 | A **GitLab token** (a long text, starting with `glpat-`) with *read_repository* access to `repository.moh.gov.rw/cce` | The script downloads the CCE code with it |
-| 6 | The **seed file content**: a block of `NAME=value` lines (the Appendix shows what it looks like) | E-mail settings, OpenHIM login and passwords that must stay the same |
-| 7 | The **address of the install scripts in GitLab**. Expected: `https://repository.moh.gov.rw/cce/deploy-scripts.git`, branch `deploy-scripts-rw` | Step 4 downloads them from there |
+| 6 | The **seed file content**: a block of `NAME=value` lines (the Appendix shows what it looks like) | E-mail settings, the OpenHIM connection, and the passwords that must stay the same |
+| 7 | The **install scripts**: the branch **`deploy-scripts-rw`** of the deploy-scripts repository. Either its GitLab address (expected: `https://repository.moh.gov.rw/cce/deploy-scripts.git`) or a copy of that branch you bring yourself | Step 4 puts them on the server |
+| 8 | Whether **the old PROD Keycloak database will be restored** (recommended; step 9), and if so the dump file itself, `prod-keycloak-20261111-020004.sql.gz` (kept by the technical team) | It decides what goes in the seed file (Appendix) |
 
 ---
 
@@ -132,9 +133,12 @@ sudo wc -c /root/.cce-gitlab.token
 
 ---
 
-## Step 4. Download the install scripts
+## Step 4. Put the install scripts on the server
 
-Paste this whole box (it uses the token from step 3; the token is not shown on screen):
+They must end up in **`/home/cceadmin/deploy-scripts`**, and must be the **whole `deploy-scripts-rw` branch** (not only its
+`rw/` folder, and not another branch: the others have no `rw/`). Use **A** when the branch is in the RW GitLab, otherwise **B**.
+
+**A. From the RW GitLab.** Paste this whole box (it uses the token from step 3; the token is not shown on screen):
 
 ```sh
 cd ~
@@ -149,6 +153,25 @@ ls ~/deploy-scripts
 
 **If you see** `not found`, `Authentication failed` or `could not read`: the token or the address is wrong. Send the message to the
 technical team. (If the technical team gave you a different address in item 7, use that one in the `git clone` line.)
+
+**B. A copy from your computer.** On **your computer** (not the server), get the branch and send it over. If you already have a
+copy of the branch, skip the `git clone` line and use your copy's folder:
+
+```sh
+git clone --depth 1 -b deploy-scripts-rw https://github.com/openphc/deploy-scripts.git deploy-scripts
+tar czf deploy-scripts.tgz deploy-scripts
+scp deploy-scripts.tgz cceadmin@102.215.10.20:
+```
+
+Then, **on the server**:
+
+```sh
+tar xzf ~/deploy-scripts.tgz -C ~ && rm ~/deploy-scripts.tgz
+cd ~/deploy-scripts && git branch --show-current 2>/dev/null; ls ~/deploy-scripts
+```
+
+**You should see** `deploy-scripts-rw` (only if the copy came with git), then a list that includes `k8s`, `keycloak-themes`,
+`one-click-installer` and `rw`. **If `rw` or `one-click-installer` is missing:** it is the wrong branch or an incomplete copy.
 
 ---
 
@@ -254,7 +277,7 @@ and the command prompt (`cceadmin@…$`) is back.
 
 **If it stopped with a line starting with `ERROR`:** run **exactly the same command again** (7b). The install continues from
 where it stopped; work already done is not repeated. If it stops with an `ERROR` **a second time at the same place**, stop and
-send the log file to the technical team (see step 9 for where it is).
+send the log file to the technical team (see step 10 for where it is).
 
 ---
 
@@ -300,13 +323,57 @@ sudo ls /var/backups/cce-prod/
 
 ---
 
-## Step 9. Hand over to the technical team
+## Step 9. Restore the old Keycloak (only if item 8 says so)
+
+The old PROD's Keycloak database holds OpenHIM's login (`openhim-emitter-inbound`, with its password) and the Insights users.
+Restoring it means nobody, OpenHIM included, has to change a password. **Do it right after step 8:** until then, OpenHIM's
+calls get `401`. It replaces the new, empty Keycloak data; the install's first backup (step 8d) keeps a copy of that.
+
+**9a.** On **your computer**, copy the dump to the server (it holds password hashes: never by e-mail or chat):
+
+```sh
+scp prod-keycloak-20261111-020004.sql.gz cceadmin@102.215.10.20:
+```
+
+**9b.** On the server, paste this whole box:
+
+```sh
+cd /tmp
+sudo install -m 600 ~/prod-keycloak-20261111-020004.sql.gz /root/ && rm ~/prod-keycloak-20261111-020004.sql.gz
+sudo k3s kubectl -n cce-prod scale deploy/keycloak --replicas=0
+while sudo k3s kubectl -n cce-prod get pods --no-headers | grep -q '^keycloak-'; do sleep 5; done
+sudo sh -c 'gunzip -c /root/prod-keycloak-20261111-020004.sql.gz' \
+  | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -d keycloak -c 'SET ROLE admin' -f - && echo "RESTORE OK"
+sudo k3s kubectl -n cce-prod scale deploy/keycloak --replicas=1
+sudo k3s kubectl -n cce-prod rollout status deploy/keycloak --timeout=600s
+```
+
+**You should see** `RESTORE OK`, then `deployment "keycloak" successfully rolled out`.
+(`SET ROLE admin` makes the restored tables belong to `admin`, the user Keycloak connects as. Without it they belong to
+`postgres` and Keycloak cannot read them.)
+
+**9c.** Check the OpenHIM client and user against the server's secret store:
+
+```sh
+cd ~/deploy-scripts && sudo bash one-click-installer/lib/infisical-run.sh prod bash rw/lib/keycloak-openhim-basic.sh prod 2>&1 \
+  | grep -vE 'new release of infisical|To update, run|Your logged-in session|Injecting [0-9]+ Infisical|^host-ip:|^$'
+```
+
+**You should see** `client openhim-basic: present, secret matches Infisical` (or `… aligned to Infisical`) and
+`user openhim-emitter-inbound: has EMITTER_INBOUND_WRITE`. **If you see an error about the admin login or a token:** the seed
+file did not have the old `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD` (Appendix). Tell the technical team.
+
+Then delete the dump from the server: `sudo rm /root/prod-keycloak-20261111-020004.sql.gz`.
+
+---
+
+## Step 10. Hand over to the technical team
 
 Close the safe window (type `exit` inside tmux), then tell the technical team the install is finished and send them:
 
 1. **The log file.** It is on the server in `/home/cceadmin/`, named `prod-install-<date>-<time>.log`. To see its exact name:
    `ls ~/prod-install-*.log`
-2. **The results of step 8** (a screenshot of 8a is enough).
+2. **The results of steps 8 and 9** (a screenshot of 8a and of 9c is enough).
 
 The technical team then finishes these items, which are **not** part of your job:
 
@@ -314,8 +381,10 @@ The technical team then finishes these items, which are **not** part of your job
   `/home/cceadmin/.cce-infisical/prod.*`); without them the passwords cannot be recovered
 - load the clinical protocol: `rw/protocols/emr-service-protocol.json`, the same definition UAT .21 runs (how:
   `rw/docs/uat/OPERATIONS-RUNBOOK.md` §12, with namespace `cce-prod`)
-- create the Insights users in Keycloak, or restore the old Keycloak data if that was decided (the dump taken from the
-  old PROD on 2026-11-11 is kept by the technical team)
+- if step 9 was skipped: create the Insights users in Keycloak (`rw/docs/uat/OPERATIONS-RUNBOOK.md` §13, with `cce-prod`),
+  and give the OpenHIM admins the inbound login (`sudo bash one-click-installer/tools/show-credentials.sh prod --reveal`)
+- if step 9 was done: put OpenHIM's real password into Infisical as `EMITTER_INBOUND_PASSWORD` once known; until then
+  Infisical holds a generated value that is not the password (`show-credentials.sh` shows that one)
 - confirm that OpenHIM traffic is arriving
 - from now on, run PROD the way UAT is run (`rw/docs/uat/OPERATIONS-RUNBOOK.md`, with `rw/config/prod.env` and namespace
   `cce-prod`), until PROD's own runbook is written
@@ -338,6 +407,8 @@ Finally, log out of the server: `exit`.
 | `no sessions` after `tmux attach -t install` | the install window was closed | check whether it finished: `tail -20 ~/prod-install-*.log`. If it did not finish, run step 7a and 7b again |
 | An `ERROR` line during step 7 | one part failed | run step 7b again once; if the same error comes back, send the log |
 | Browser shows a certificate warning | the certificate is still being issued | step 8b |
+| No `RESTORE OK` in step 9b | the Keycloak restore stopped | run step 9b again from its first line; Keycloak stays at 0 until it succeeds. If it fails again, send the screen |
+| OpenHIM's calls get `401` after the install | the old Keycloak is not restored yet, or OpenHIM uses another password | step 9; otherwise tell the technical team |
 
 **Do not**, under any circumstances: edit files in `/opt/cce-src` or `~/deploy-scripts`, use `rw/config/uat.env` on this
 server, or run anything on 102.215.10.21.
@@ -362,9 +433,10 @@ CCE_INTELLIGENCE_ALERT_NAME_TIER2=
 CCE_INTELLIGENCE_ALERT_EMAIL_TIER3=
 CCE_INTELLIGENCE_ALERT_NAME_TIER3=
 
-# OpenHIM → CCE: so OpenHIM's existing Basic-auth credentials keep working without changing OpenHIM
-EMITTER_INBOUND_USER=openhim-emitter-inbound
-EMITTER_INBOUND_PASSWORD=
+# Keycloak: REQUIRED when the old Keycloak is restored (step 9). They must be the old PROD's values, because the restored
+# database brings the old Keycloak admin and the old openhim-basic client with it.
+KEYCLOAK_ADMIN_USER=
+KEYCLOAK_ADMIN_PASSWORD=
 BASIC_AUTH_CLIENT_SECRET=
 
 # CCE → OpenHIM core API (mediator registration), as on the old PROD
@@ -375,19 +447,21 @@ OPENHIM_CORE_AUTH_TYPE=
 OPENHIM_USERNAME=
 OPENHIM_PASSWORD=
 
-# Optional: fixed admin passwords instead of generated ones (min 12 characters)
-KEYCLOAK_ADMIN_USER=
-KEYCLOAK_ADMIN_PASSWORD=
+# Optional
 GRAFANA_ADMIN_PASSWORD=
 GATEWAY_ALLOWED_ORIGINS=https://cce.moh.gov.rw
 ```
 
-Delete any optional line you do not fill in. Take the values from the old PROD's Infisical export, made on 2026-11-11 before
-the wipe and kept by the technical team (after the wipe the old Infisical is gone). The old PROD had no
-`EMITTER_INBOUND_USER`/`EMITTER_INBOUND_PASSWORD`: choose them, and give the same pair to the OpenHIM admins for the channel.
-If `EMITTER_INBOUND_PASSWORD` is left out, the installer generates one: read it after the install with
-`sudo bash one-click-installer/tools/show-credentials.sh prod --reveal` and give that to the OpenHIM admins instead.
-(The older names `OPENHIM_INBOUND_USER`/`OPENHIM_INBOUND_PASSWORD` are still accepted.)
+Take every value from the old PROD's Infisical export, made on 2026-11-11 before the wipe and kept by the technical team (after
+the wipe the old Infisical is gone); all of these keys are in it. Delete any optional line you do not fill in.
+
+**OpenHIM's login** (`EMITTER_INBOUND_USER`/`EMITTER_INBOUND_PASSWORD`) is **not** in that export: its password exists only in
+the old Keycloak database (as a hash) and in OpenHIM's channel.
+- **Old Keycloak restored (step 9):** leave both out. The restore brings OpenHIM's user back with its password, so OpenHIM
+  keeps working unchanged.
+- **Not restored:** add `EMITTER_INBOUND_USER=openhim-emitter-inbound` and `EMITTER_INBOUND_PASSWORD=<new password>`, and
+  give that pair to the OpenHIM admins for the channel. The three Keycloak lines above may then be left out (generated).
+  (RW's older names `OPENHIM_INBOUND_USER`/`OPENHIM_INBOUND_PASSWORD` are still accepted.)
 
 What the script uses, for reference: config `rw/config/prod.env` (namespace `cce-prod`, overlay `k8s/overlays/rw-prod`, public
 name `cce.moh.gov.rw`, PROD's replica counts, the same code branches as UAT .21). Details: `../ONE-CLICK-INSTALL.md`.

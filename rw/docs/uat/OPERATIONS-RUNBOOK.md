@@ -187,10 +187,15 @@ sudo SCHEDULE="30 1 * * *" RETENTION_DAYS=14 bash rw/lib/install-cron-backups.sh
 **Restore a Postgres database.** Stop its users first. Replicas set to 0 also pause the HPA.
 
 ```bash
-sudo k3s kubectl -n cce-uat scale deploy --all --replicas=0          # (for keycloak alone: deploy/keycloak)
-gunzip -c /var/backups/cce-uat/<date>/pg-ccedb-<stamp>.sql.gz | sudo -u postgres psql -q -d ccedb
+cd /tmp; sudo k3s kubectl -n cce-uat scale deploy --all --replicas=0  # (for keycloak alone: deploy/keycloak)
+sudo sh -c 'gunzip -c /var/backups/cce-uat/<date>/pg-keycloak-<stamp>.sql.gz' \
+  | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -d keycloak -c 'SET ROLE admin' -f -
+sudo sh -c 'gunzip -c /var/backups/cce-uat/<date>/pg-ccedb-<stamp>.sql.gz' | sudo -u postgres psql -q -d ccedb
 sudo k3s kubectl -n cce-uat scale deploy --all --replicas=1          # back up (HPA_REPLICAS=1); a redeploy does NOT undo a manual scale
 ```
+
+`SET ROLE admin`: the dumps carry no owner, and Keycloak (as `admin`) cannot read tables restored as `postgres`. The `ccedb`
+restore has the same problem plus the CDC publication's, and is not resolved yet: see `DISASTER-RECOVERY.md` §4 D, step 4.
 
 After a `ccedb` restore, ClickHouse no longer matches it. Rebuild ClickHouse from Postgres (drop `cce_analytics`, then re-run the
 installer, which re-snapshots it through CDC).
