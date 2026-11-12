@@ -4,10 +4,10 @@
 #   sudo bash one-click-installer/lib/install-docker-fw.sh
 #
 # WHY: ports published by Docker bypass UFW (DNAT/FORWARD run ahead of it), so `ufw default deny` does NOT protect the
-# docker stack. On 2026-10 UAT's Kafka Connect REST (8083), Postgres (5433), ClickHouse (8123) and Kafka (9093) were open to
-# the internet and an exploit connector (CVE-2025-27817) was planted. This installs cce-docker-fw.sh + its systemd unit,
-# which drops NEW connections from the public NIC into any docker bridge. See SECURITY.md §4.
-# RUN IT on every host that runs the docker stack (UAT infra, one-click installs) and after a full host rebuild.
+# docker stack. In 2026-10, on a reference deployment's UAT host, Kafka Connect REST (8083), Postgres, ClickHouse and Kafka were
+# open to the internet and an exploit connector (CVE-2025-27817) was planted. This installs cce-docker-fw.sh + its systemd unit,
+# which drops NEW connections from the public NIC into any docker bridge.
+# install.sh runs it whenever docker is present (a docker runtime was chosen); also after a full host rebuild.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo bash $0" >&2; exit 1; }

@@ -28,7 +28,7 @@ DROP_FIRST="${DROP_FIRST:-}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 SCHEMA="$REPO/data-pipeline/schema"
-DB="cce_analytics"
+DB="${CLICKHOUSE_DB:-cce_analytics}"
 
 CH_PORT_DEFAULT="${CLICKHOUSE_PORT:-8123}"   # dedicated machine: standard ClickHouse HTTP port
 
@@ -39,11 +39,11 @@ if [ -z "${__CCE_CH_REEXEC:-}" ] && [ -z "${CLICKHOUSE_PASSWORD:-}" ]; then
   exec bash "$HERE/infisical-run.sh" "$ENVNAME" bash "$0" "$ENVNAME" "$@"
 fi
 
-export CH_USER="${CLICKHOUSE_USER:-cce_pipeline}"
+CH_USER="${CLICKHOUSE_USER:-cce_pipeline}"
 : "${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD not set (Infisical)}"
-export CLICKHOUSE_PASSWORD CH_DB="$DB"
-# Same host:port the data-pipeline scripts use from the host (uat: docker bridge 172.18.0.1:8123;
-# prod: host IP:8124). Override with CH_HTTP if needed.
+# apply-schema.py reads CLICKHOUSE_USER / CLICKHOUSE_DB (CH_USER / CH_DB, exported before, were ignored by it).
+export CLICKHOUSE_PASSWORD CLICKHOUSE_USER="$CH_USER" CLICKHOUSE_DB="$DB"
+# The host's ClickHouse HTTP endpoint (CLICKHOUSE_HOST:CLICKHOUSE_PORT from Infisical). Override with CH_HTTP if needed.
 export CH_HTTP="${CH_HTTP:-http://${CLICKHOUSE_HOST:?CLICKHOUSE_HOST not set (Infisical)}:${CLICKHOUSE_PORT:-$CH_PORT_DEFAULT}}"
 
 # URL-encode the password once; run a single statement against $DB over HTTP.

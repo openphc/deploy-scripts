@@ -23,7 +23,7 @@ set -euo pipefail
 HOST="${1:?usage: register-mediator.sh <host> <port> <http|https> <user> <pass> [channel_name|--list]}"
 PORT="${2:?port}"; SCHEME="${3:?http|https}"; USER="${4:?username}"; PASS="${5:?password}"
 CHANNEL="${6:-}"
-# Adding the route needs the OpenHIM inbound user's password (Infisical OPENHIM_INBOUND_PASSWORD); it is never defaulted.
+# Adding the route needs the OpenHIM inbound user's password (Infisical EMITTER_INBOUND_PASSWORD, or OPENHIM_INBOUND_PASSWORD on an older install); it is never defaulted.
 if [ -n "$CHANNEL" ] && [ "$CHANNEL" != "--list" ] && [ -z "${CCE_BASIC_PASS:-}" ]; then
   echo "ERROR: set CCE_BASIC_PASS (the password of ${CCE_BASIC_USER:-openhim-emitter-inbound}) to add the CCE route" >&2; exit 2
 fi

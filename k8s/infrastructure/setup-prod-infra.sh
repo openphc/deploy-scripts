@@ -43,6 +43,7 @@ if ! command -v psql &>/dev/null; then
     echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
         sudo tee /etc/apt/sources.list.d/pgdg.list
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/postgresql.gpg
+    sudo chmod 644 /etc/apt/trusted.gpg.d/postgresql.gpg   # apt verifies as _apt; under a restrictive umask gpg writes 0600
     sudo apt-get update -qq
     sudo apt-get install -y -qq postgresql-${POSTGRES_VERSION}
     echo "  PostgreSQL ${POSTGRES_VERSION} installed."
@@ -61,12 +62,13 @@ PG_CONF="/etc/postgresql/${POSTGRES_VERSION}/main/postgresql.conf"
 sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "${PG_CONF}"
 sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/" "${PG_CONF}"
 
-# Add k3s pod network to pg_hba if not already present
-if ! grep -q "10.42.0.0/16" "${PG_HBA}"; then
-    echo "# Allow k3s pods to connect" | sudo tee -a "${PG_HBA}"
-    echo "host    all    all    10.42.0.0/16    md5" | sudo tee -a "${PG_HBA}"
-    echo "host    all    all    10.43.0.0/16    md5" | sudo tee -a "${PG_HBA}"
-fi
+# Add the k3s pod and service networks to pg_hba if not already present (K3S_CLUSTER_CIDR / K3S_SERVICE_CIDR when the cluster
+# was created with other ranges; defaults are k3s's own).
+for cidr in "${K3S_CLUSTER_CIDR:-10.42.0.0/16}" "${K3S_SERVICE_CIDR:-10.43.0.0/16}"; do
+    if ! grep -qE "^host[[:space:]]+all[[:space:]]+all[[:space:]]+${cidr//./\\.}[[:space:]]" "${PG_HBA}"; then
+        echo "host    all    all    ${cidr}    md5   # k3s pods/services" | sudo tee -a "${PG_HBA}"
+    fi
+done
 
 # Restart PostgreSQL to apply config
 sudo systemctl restart postgresql
@@ -75,6 +77,9 @@ sudo systemctl enable postgresql
 # Create database and user
 sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${POSTGRES_USER}'" | grep -q 1 || \
     sudo -u postgres psql -c "CREATE USER ${POSTGRES_USER} WITH PASSWORD '${POSTGRES_PASSWORD}' CREATEDB;"
+# Every run, re-apply the password so PostgreSQL follows POSTGRES_PASSWORD (what the services are given): it was only set on
+# create, so rotating it left the services locked out. Passed as a psql variable on stdin (quoted by psql, not in argv).
+printf "ALTER USER %s WITH PASSWORD :'pw';\n" "${POSTGRES_USER}" | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -v pw="${POSTGRES_PASSWORD}" >/dev/null
 
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${POSTGRES_DB}'" | grep -q 1 || \
     sudo -u postgres psql -c "CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};"
@@ -132,8 +137,9 @@ kafka_fetch() {
 }
 
 # The installed version, from the broker jar's name (libs/kafka_2.13-<version>.jar); empty when there is none.
+# "|| true": with no Kafka yet, ls exits 2, and under set -e + pipefail that killed every fresh install right here.
 kafka_installed_version() {
-    ls "${KAFKA_HOME}"/libs/kafka_*.jar 2>/dev/null | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1
+    { ls "${KAFKA_HOME}"/libs/kafka_*.jar 2>/dev/null || true; } | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1
 }
 
 KAFKA_CURRENT="$(kafka_installed_version)"
@@ -278,4 +284,4 @@ echo "  Status:   sudo systemctl status kafka"
 echo "  Port:     ${KAFKA_PORT}"
 echo "  Topics:   ${KAFKA_HOME}/bin/kafka-topics.sh --list --bootstrap-server localhost:${KAFKA_PORT}"
 echo ""
-echo "Firewall: Ensure ports ${POSTGRES_PORT} and ${KAFKA_PORT} are accessible from k3s pod network (10.42.0.0/16)"
+echo "Firewall: Ensure ports ${POSTGRES_PORT} and ${KAFKA_PORT} are accessible from k3s pod network (${K3S_CLUSTER_CIDR:-10.42.0.0/16})"

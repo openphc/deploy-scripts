@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# one-click-installer/lib/grafana-redeploy.sh <uat|prod>
+# one-click-installer/lib/grafana-redeploy.sh <envcode>
 #
 # Redeploy Grafana dashboard updates: rebuild the `grafana-dashboards` ConfigMap from
 # grafana/dashboards/*.json (+ the data-pipeline pipeline-health dashboard), rewriting the dangling
@@ -8,10 +8,10 @@
 #
 # Dashboards are STATIC JSON, so (unlike redeploy.sh) this needs NO Infisical secrets — just kubectl.
 # It globs ALL dashboards under grafana/dashboards/, so dropping a new .json there and re-running is
-# all it takes to ship it (matches what 03/05-k8s-deploy.sh's [5/5] step does).
+# all it takes to ship it (matches what 05-k8s-deploy.sh's [5/5] step does).
 #
-#   sudo bash rw/<env>/grafana-redeploy.sh                 # rebuild dashboards configmap + restart grafana
-#   sudo DRY_RUN=1 bash rw/<env>/grafana-redeploy.sh       # list dashboards that would deploy, change nothing
+#   sudo bash one-click-installer/lib/grafana-redeploy.sh <envcode>             # rebuild dashboards configmap + restart grafana
+#   sudo DRY_RUN=1 bash one-click-installer/lib/grafana-redeploy.sh <envcode>   # list dashboards that would deploy, change nothing
 # NOTE: env vars MUST come AFTER `sudo` (sudo resets the environment — `VAR=1 sudo bash …` is dropped).
 #
 # Datasources (Prometheus/ClickHouse/PostgreSQL) are provisioned separately by the grafana-datasources

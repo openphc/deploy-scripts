@@ -6,8 +6,8 @@
 # Unknown keys are reported (a typo like IS_CLOUD_DEPLOYEMENT would otherwise be silently ignored) — IMAGE_* keys are free-form.
 CCE_CONFIG_KEYS=" ENVCODE OVERLAY_NAME OVERLAY_TEMPLATE INGRESS_HOST ACME_EMAIL IS_CLOUD_DEPLOYMENT SSH_ALLOWED_CIDR UFW_EXTRA_ALLOW
  K3S_CLUSTER_CIDR K3S_SERVICE_CIDR USE_LOCAL_INFISICAL LOCAL_INFISICAL_RUNTIME INFISICAL_CORE_VERSION INFISICAL_DOMAIN SEED_ENV_FILE CCE_INFISICAL_CREDS_DIR
- K3S_VERSION INFISICAL_CLI_VERSION CLICKHOUSE_VERSION POSTGRES_VERSION KAFKA_VERSION DEBEZIUM_VERSION KAFKA_PORT
- ENABLE_PG_STAT_STATEMENTS LOG_CONNECTIONS EXPORTER_RUNTIME POSTGRES_EXPORTER_VERSION POSTGRES_EXPORTER_SHA256 KAFKA_EXPORTER_VERSION KAFKA_EXPORTER_SHA256 PORTAINER_ENABLED PORTAINER_VERSION PORTAINER_SHA256 KEYCLOAK_THEME_DIR DATA_PIPELINE_REF DATA_PIPELINE_REPO IMAGE_REGISTRY IMAGE_TAG_DEFAULT PROTOCOL_FILE PROTOCOL_LOAD_URL ASSUME_YES SKIP_PREREQS "
+ K3S_VERSION INFISICAL_CLI_VERSION CLICKHOUSE_VERSION POSTGRES_VERSION KAFKA_VERSION DEBEZIUM_VERSION
+ ENABLE_PG_STAT_STATEMENTS LOG_CONNECTIONS EXPORTER_RUNTIME POSTGRES_EXPORTER_VERSION POSTGRES_EXPORTER_SHA256 KAFKA_EXPORTER_VERSION KAFKA_EXPORTER_SHA256 PORTAINER_ENABLED PORTAINER_VERSION PORTAINER_SHA256 KEYCLOAK_THEME_DIR EMITTER_ADAPTOR DATA_PIPELINE_REF DATA_PIPELINE_REPO IMAGE_REGISTRY IMAGE_TAG_DEFAULT PROTOCOL_FILE PROTOCOL_LOAD_URL ASSUME_YES SKIP_PREREQS "
 
 cce_load_config() {
   local file="$1" line key val unknown=()
@@ -28,6 +28,9 @@ cce_load_config() {
     if [ -z "${!key+x}" ]; then export "$key=$val"; else export "$key"; fi   # environment wins
   done < "$file"
   [ "${#unknown[@]}" -gt 0 ] && echo "WARNING: unknown config key(s) — typo? ${unknown[*]}" >&2
+  # Defaults that must agree everywhere (example.env and the README document these). setup-prod-infra.sh's own Kafka default
+  # stays 3.7.0 for callers that pass no version; the one-click installer always passes this one.
+  export USE_LOCAL_INFISICAL="${USE_LOCAL_INFISICAL:-true}" KAFKA_VERSION="${KAFKA_VERSION:-3.9.2}"
   return 0
 }
 
@@ -37,7 +40,7 @@ cce_validate_config() {
   [ -n "${ENVCODE:-}" ] || { echo "CONFIG: ENVCODE is required" >&2; bad=1; }
   [[ "${ENVCODE:-x}" =~ ^[a-z0-9]+$ ]] || { echo "CONFIG: ENVCODE must be lowercase letters/digits (got '${ENVCODE:-}')" >&2; bad=1; }
   case "${IS_CLOUD_DEPLOYMENT:-}" in true|false) ;; *) echo "CONFIG: IS_CLOUD_DEPLOYMENT must be true or false (got '${IS_CLOUD_DEPLOYMENT:-}')" >&2; bad=1;; esac
-  case "${USE_LOCAL_INFISICAL:-false}" in true|false) ;; *) echo "CONFIG: USE_LOCAL_INFISICAL must be true or false" >&2; bad=1;; esac
+  case "${USE_LOCAL_INFISICAL:-true}" in true|false) ;; *) echo "CONFIG: USE_LOCAL_INFISICAL must be true or false" >&2; bad=1;; esac
   case "${ENABLE_PG_STAT_STATEMENTS:-true}" in true|false) ;; *) echo "CONFIG: ENABLE_PG_STAT_STATEMENTS must be true or false" >&2; bad=1;; esac
   case "${LOG_CONNECTIONS:-true}" in true|false) ;; *) echo "CONFIG: LOG_CONNECTIONS must be true or false" >&2; bad=1;; esac
   case "${LOCAL_INFISICAL_RUNTIME:-native}" in native|docker) ;; *) echo "CONFIG: LOCAL_INFISICAL_RUNTIME must be native or docker" >&2; bad=1;; esac

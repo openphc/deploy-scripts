@@ -6,6 +6,7 @@
 !.infisical.example
 k8s/**/*.rendered
 docs/
+!one-click-installer/docs/
 remote-deployment/
 .vscode/
 .claude/__pycache__/

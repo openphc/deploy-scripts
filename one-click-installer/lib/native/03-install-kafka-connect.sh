@@ -3,9 +3,8 @@
 # Install Kafka Connect (distributed) + the Debezium PostgreSQL connector plugin NATIVELY,
 # reusing the Kafka distribution installed at /opt/kafka by 01-install-postgres-kafka.sh.
 #
-# REST port defaults to Kafka Connect's standard 8083 — correct for a dedicated machine. PROD's
-# wrapper overrides to 8086 because the default is held by UAT's docker Kafka Connect on their
-# shared host; not applicable here.
+# REST port defaults to Kafka Connect's standard 8083 — correct for a dedicated machine. CONNECT_REST_PORT overrides it
+# (a host shared with another Connect, e.g. 8086).
 set -euo pipefail
 
 ENVCODE="${1:?usage: 03-install-kafka-connect.sh <envcode>}"
@@ -50,13 +49,17 @@ status.storage.topic=connect-status
 status.storage.replication.factor=1
 offset.flush.interval.ms=10000
 
-listeners=HTTP://0.0.0.0:${CONNECT_REST_PORT}
+# Loopback only: the REST API has no authentication, and nothing outside this host needs it (the installer's scripts call
+# localhost; no k3s workload uses Connect). Listening on all interfaces left it to the firewall alone — on a cloud install
+# (no UFW) that is only the security group. Single worker, so no worker-to-worker forwarding needs another address.
+listeners=HTTP://127.0.0.1:${CONNECT_REST_PORT}
+rest.advertised.host.name=127.0.0.1
 plugin.path=${PLUGIN_DIR}
 
 # CVE-2025-27817 / -27818 (Kafka Connect <= 3.9.0): an unauthenticated REST call can create a connector whose
 # producer./consumer./admin.override.* client settings read local files or reach internal URLs. The default policy (All) lets
 # any connector set them; the CCE connector sets none. None = every connector-level client override is refused. Exploited on
-# the old RW UAT (port 8083) on 2026-10-24. Lasting fix: Kafka/Connect >= 3.9.1.
+# a reference deployment's UAT host (port 8083) on 2026-10-24. Lasting fix: Kafka/Connect >= 3.9.1 (the default here: 3.9.2).
 connector.client.config.override.policy=None
 EOF
 sudo chown "${KAFKA_USER}:${KAFKA_USER}" "$PROPS_FILE"

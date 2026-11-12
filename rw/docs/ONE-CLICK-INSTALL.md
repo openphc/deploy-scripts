@@ -103,13 +103,19 @@ in the `cce` realm, `openhim-emitter-inbound`. The gateway, with `BASIC_AUTH_ENA
 `openhim-basic` client and a password grant. It then checks that the token's issuer is `https://<INGRESS_HOST>/auth/realms/cce`,
 and lets the role `gateway-service:EMITTER_INBOUND_WRITE` through (seeded in `api_permissions`).
 
-`k8s/seeds/cce-realm.json` has neither that client nor that role; on RW PROD and UAT they were added by hand. Phase **RW 4b**
-(`rw/lib/keycloak-openhim-basic.sh`) makes sure they exist:
+`k8s/seeds/cce-realm.json` has neither that client nor that role; on the old RW PROD and UAT they were added by hand. The generic
+installer's seed step (`one-click-installer/lib/keycloak-inbound-basic.sh`) creates them, and phase **RW 4b**
+(`rw/lib/keycloak-openhim-basic.sh`) checks them again:
 
 - **Role:** `gateway-service:EMITTER_INBOUND_WRITE`
 - **Client:** `openhim-basic`, with its secret equal to Infisical's `BASIC_AUTH_CLIENT_SECRET`
-- **User:** `OPENHIM_INBOUND_USER` (default `openhim-emitter-inbound`) with that role. A missing user is only created when
-  `OPENHIM_INBOUND_PASSWORD` is set, and it must be the password OpenHIM is configured with.
+- **User:** `EMITTER_INBOUND_USER` (default `openhim-emitter-inbound`) with that role, created with `EMITTER_INBOUND_PASSWORD`.
+  Put the password OpenHIM is configured with in the seed file; without one, the installer generates it (read it with
+  `sudo bash one-click-installer/tools/show-credentials.sh <env> --reveal` and give it to the OpenHIM admins). A seed file with
+  RW's older names `OPENHIM_INBOUND_USER`/`OPENHIM_INBOUND_PASSWORD` still works: the RW installer passes them on.
+- An **existing** user's password is never changed. On an environment installed before these keys existed (UAT .21), a re-run
+  stores a generated `EMITTER_INBOUND_PASSWORD` in Infisical that is **not** the user's real password; replace it in Infisical
+  with the real one if you want `show-credentials.sh` to be right.
 
 RW defaults `BASIC_AUTH_ENABLED=true` and `BASIC_AUTH_CLIENT_ID=openhim-basic`.
 

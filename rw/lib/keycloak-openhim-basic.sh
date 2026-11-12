@@ -8,16 +8,19 @@
 #   - client role gateway-service:EMITTER_INBOUND_WRITE
 #   - client <BASIC_AUTH_CLIENT_ID> (confidential, password grant only), its secret = Infisical's BASIC_AUTH_CLIENT_SECRET
 #     (the gateway is that secret's only consumer, so Keycloak follows Infisical)
-#   - user OPENHIM_INBOUND_USER (default openhim-emitter-inbound) holding the role. A missing user is created only when
-#     OPENHIM_INBOUND_PASSWORD is set — it is OpenHIM's credential, so it has to be the one OpenHIM is configured with.
+#   - user EMITTER_INBOUND_USER (default openhim-emitter-inbound) holding the role. A missing user is created only when
+#     EMITTER_INBOUND_PASSWORD is set — it is OpenHIM's credential, so it has to be the one OpenHIM is configured with.
+#     (RW's older names OPENHIM_INBOUND_USER/OPENHIM_INBOUND_PASSWORD are still read when the new ones are absent.)
 # Idempotent; a no-op when BASIC_AUTH_ENABLED is not true.
+# Since the 2026-11 generic installer, one-click-installer/lib/keycloak-inbound-basic.sh (06-seed.sh) does all of this first,
+# with the same names; this step only re-checks it, and stays for an installer copy that predates that.
 set -euo pipefail
 ENVCODE="${1:?usage: keycloak-openhim-basic.sh <envcode>}"
 NS="cce-${ENVCODE}"
 [ "${BASIC_AUTH_ENABLED:-false}" = true ] || { echo "  BASIC_AUTH_ENABLED is not true — skipping (OpenHIM Basic auth not used)"; exit 0; }
 : "${BASIC_AUTH_CLIENT_ID:?BASIC_AUTH_CLIENT_ID not set}" "${BASIC_AUTH_CLIENT_SECRET:?BASIC_AUTH_CLIENT_SECRET not set}"
 : "${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD not set}"
-INBOUND_USER="${OPENHIM_INBOUND_USER:-openhim-emitter-inbound}"
+INBOUND_USER="${EMITTER_INBOUND_USER:-${OPENHIM_INBOUND_USER:-openhim-emitter-inbound}}"
 ROLE=EMITTER_INBOUND_WRITE
 KUBECTL="${KUBECTL:-k3s kubectl}"
 PORT="${KC_PF_PORT:-18081}"
@@ -81,9 +84,9 @@ user = E["INBOUND_USER"]
 st, us = call("GET", f"{R}/users?username={urllib.parse.quote(user)}&exact=true", token=T)
 u = us[0] if us else None
 if not u:
-    pw = E.get("OPENHIM_INBOUND_PASSWORD", "")
+    pw = E.get("EMITTER_INBOUND_PASSWORD", "") or E.get("OPENHIM_INBOUND_PASSWORD", "")
     if not pw:
-        print(f"  ! user {user} does not exist and OPENHIM_INBOUND_PASSWORD is not set — OpenHIM calls will get 401 until it is"
+        print(f"  ! user {user} does not exist and EMITTER_INBOUND_PASSWORD is not set — OpenHIM calls will get 401 until it is"
               " created with the password OpenHIM is configured with (set it in Infisical and re-run)")
         sys.exit(0)
     st, _ = call("POST", f"{R}/users", {"username": user, "enabled": True, "emailVerified": True,

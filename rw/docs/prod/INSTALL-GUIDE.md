@@ -363,8 +363,8 @@ CCE_INTELLIGENCE_ALERT_EMAIL_TIER3=
 CCE_INTELLIGENCE_ALERT_NAME_TIER3=
 
 # OpenHIM → CCE: so OpenHIM's existing Basic-auth credentials keep working without changing OpenHIM
-OPENHIM_INBOUND_USER=openhim-emitter-inbound
-OPENHIM_INBOUND_PASSWORD=
+EMITTER_INBOUND_USER=openhim-emitter-inbound
+EMITTER_INBOUND_PASSWORD=
 BASIC_AUTH_CLIENT_SECRET=
 
 # CCE → OpenHIM core API (mediator registration), as on the old PROD
@@ -384,8 +384,10 @@ GATEWAY_ALLOWED_ORIGINS=https://cce.moh.gov.rw
 
 Delete any optional line you do not fill in. Take the values from the old PROD's Infisical export, made on 2026-11-11 before
 the wipe and kept by the technical team (after the wipe the old Infisical is gone). The old PROD had no
-`OPENHIM_INBOUND_USER`/`OPENHIM_INBOUND_PASSWORD`: choose them, and give the same pair to the OpenHIM admins for the channel.
-If `OPENHIM_INBOUND_PASSWORD` is missing, the install still finishes, but OpenHIM's calls get 401 until the user is created.
+`EMITTER_INBOUND_USER`/`EMITTER_INBOUND_PASSWORD`: choose them, and give the same pair to the OpenHIM admins for the channel.
+If `EMITTER_INBOUND_PASSWORD` is left out, the installer generates one: read it after the install with
+`sudo bash one-click-installer/tools/show-credentials.sh prod --reveal` and give that to the OpenHIM admins instead.
+(The older names `OPENHIM_INBOUND_USER`/`OPENHIM_INBOUND_PASSWORD` are still accepted.)
 
 What the script uses, for reference: config `rw/config/prod.env` (namespace `cce-prod`, overlay `k8s/overlays/rw-prod`, public
 name `cce.moh.gov.rw`, PROD's replica counts, the same code branches as UAT .21). Details: `../ONE-CLICK-INSTALL.md`.

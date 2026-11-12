@@ -3,23 +3,20 @@
 # (self-hosted). Infisical is the SINGLE SOURCE OF TRUTH for config/secrets; this replaces the
 # old k8s/.env, k8s/.env.prod and data-pipeline/.env files.
 #
-#   Usage:  one-click-installer/lib/infisical-run.sh <prod|uat> <command...>
-#   e.g.:   one-click-installer/lib/infisical-run.sh prod  bash rw/prod/install-all.sh
-#           one-click-installer/lib/infisical-run.sh prod  bash rw/prod/05-k8s-deploy.sh
-#           one-click-installer/lib/infisical-run.sh uat   bash rw/uat/deploy-all.sh
+#   Usage:  one-click-installer/lib/infisical-run.sh <envcode> <command...>
+#   e.g.:   sudo bash one-click-installer/lib/infisical-run.sh <envcode> bash one-click-installer/lib/native/05-k8s-deploy.sh <envcode>
+#           sudo bash one-click-installer/lib/infisical-run.sh <envcode> printenv EMITTER_INBOUND_USER
 #
 # Auth: a per-env Universal Auth machine identity (project-scoped). Its Client ID/Secret live in a
 # 0600 creds file OUTSIDE the repo (the bootstrap "secret zero"); nothing else is stored on disk.
 #
-# Env resolution: "prod"/"uat" are a fast-path (their project IDs are hardcoded below, unchanged
-# since before multi-env support — zero regression risk for the two existing live environments).
-# Any OTHER env code falls back to a per-env metadata file written once by
+# Env resolution: every env code is resolved from a per-env metadata file written once by
 # one-click-installer/lib/infisical-bootstrap.sh (one-click-installer/install.sh's project/identity provisioning step):
 #   $CREDS_DIR/<env>.meta containing PROJECT_ID=... and INFISICAL_ENV_SLUG=...
 # ENVCODE (the CLI arg / namespace suffix, e.g. "dev") and INFISICAL_ENV_SLUG (the environment
 # *within* that project, e.g. Infisical's own default slug "prod") are DIFFERENT axes — a new
 # project has exactly one real environment, so its internal slug need not equal the operator's
-# env code. See one-click-installer/lib/infisical-run.sh's case-switch below vs. the .meta fallback.
+# env code.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

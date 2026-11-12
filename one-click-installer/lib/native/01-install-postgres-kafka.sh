@@ -4,9 +4,7 @@
 # existing k8s/infrastructure/setup-prod-infra.sh, then fix Kafka's advertised listener so k3s
 # pods can reach the broker by host IP.
 #
-# No env-conditional ports here: Postgres (5432) and Kafka (9092) never needed PROD's shifted-port
-# treatment (that only ever applied to ClickHouse/Kafka Connect, to dodge UAT's docker stack on a
-# SHARED host — irrelevant on a dedicated machine, see one-click-installer/lib/native/02/03).
+# Standard ports: Postgres 5432 and Kafka 9092 (a dedicated machine).
 #
 # Requires: POSTGRES_PROD_PASSWORD (or POSTGRES_PASSWORD) and VM_HOST_IP in the env.
 set -euo pipefail
@@ -25,6 +23,7 @@ echo "=== [$ENVCODE] install PostgreSQL + Kafka (KRaft) via setup-prod-infra.sh 
 # every install got the script defaults. A KAFKA_VERSION newer than the installed one upgrades Kafka in place (setup-prod-infra.sh).
 as_root_env "POSTGRES_PROD_PASSWORD=$POSTGRES_PROD_PASSWORD" ${POSTGRES_USER:+"POSTGRES_USER=$POSTGRES_USER"} ${POSTGRES_DB:+"POSTGRES_DB=$POSTGRES_DB"} \
   ${POSTGRES_PORT:+"POSTGRES_PORT=$POSTGRES_PORT"} ${KAFKA_VERSION:+"KAFKA_VERSION=$KAFKA_VERSION"} ${POSTGRES_VERSION:+"POSTGRES_VERSION=$POSTGRES_VERSION"} \
+  ${K3S_CLUSTER_CIDR:+"K3S_CLUSTER_CIDR=$K3S_CLUSTER_CIDR"} ${K3S_SERVICE_CIDR:+"K3S_SERVICE_CIDR=$K3S_SERVICE_CIDR"} \
   -- bash "$REPO/k8s/infrastructure/setup-prod-infra.sh"
 
 echo "=== [$ENVCODE] fix Kafka advertised listener -> ${VM_HOST_IP}:9092 (so k3s pods can connect) ==="
@@ -35,8 +34,7 @@ if [ -f "$KPROPS" ]; then
   echo "  advertised.listeners=$(grep '^advertised.listeners' "$KPROPS")"
 fi
 
-# The k8s keycloak connects to this native PostgreSQL and needs its own database. The UAT
-# docker postgres image auto-creates it; the native install does not, so create it here.
+# The k8s keycloak connects to this native PostgreSQL and needs its own database; a native install has none, so create it here.
 echo "=== [$ENVCODE] ensure 'keycloak' database exists ==="
 sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='keycloak'" 2>/dev/null | grep -q 1 \
   || sudo -u postgres psql -c "CREATE DATABASE keycloak OWNER ${POSTGRES_USER:-admin};"
@@ -62,7 +60,7 @@ if [ "${ENABLE_PG_STAT_STATEMENTS:-true}" = "true" ]; then
 fi
 
 # Connection logging, so access to the databases can be audited afterwards (who connected, from where, as which role). Without
-# it, past access cannot be ruled out after an exposure (the case on the old RW UAT, 2026-10). Only NEW connections are logged,
+# it, past access cannot be ruled out after an exposure (the case on a reference deployment's UAT host, 2026-10). Only NEW connections are logged,
 # and the services use connection pools, so the volume is small. A reload is enough. LOG_CONNECTIONS=false to skip.
 if [ "${LOG_CONNECTIONS:-true}" = "true" ]; then
   if [ "$(sudo -u postgres psql -tAc 'SHOW log_connections' | tr -d '[:space:]')" != on ]; then

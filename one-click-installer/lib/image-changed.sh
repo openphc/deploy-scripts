@@ -36,7 +36,9 @@ ghcr_digest() {
 while IFS=$'\t' read -r name image; do
   [ -z "$name" ] && continue
   [ "$WANT" != "  " ] && case "$WANT" in *" $name "*) : ;; *) continue ;; esac
-  case "$image" in *ghcr.io/openphc/*) : ;; *) continue ;; esac
+  # Only ghcr.io can be asked for the current digest (its anonymous token API). A deployment explicitly named but pulled from
+  # another registry (an IMAGE_REGISTRY mirror) is reported on stderr as not checked, rather than silently treated as unchanged.
+  case "$image" in *ghcr.io/openphc/*) : ;; *) [ "$WANT" != "  " ] && echo "image-changed: $name not checked — $image is not on ghcr.io" >&2; continue ;; esac
   ref="${image#*ghcr.io/}"                                  # openphc/<repo>:<tag>
   case "${ref##*/}" in
     *:*) repo="${ref%:*}"; tag="${ref##*:}" ;;

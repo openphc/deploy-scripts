@@ -38,12 +38,14 @@ confirm() { if [ -n "${ASSUME_YES:-}" ]; then echo "$1 [y/N] y  (--yes)"; return
 phase() { echo; echo "████ $*"; }
 
 # repo assets the deploy needs (a partial copy of the repo was a real failure mode: keycloak-themes/ missing -> no IdP)
-for d in k8s/base "k8s/overlays/$OVERLAY_TEMPLATE" data-pipeline/schema; do
+# data-pipeline/schema only when it is not fetched (DATA_PIPELINE_REF set: sync-data-pipeline.sh brings it in phase 4)
+for d in k8s/base "k8s/overlays/$OVERLAY_TEMPLATE" $( [ -z "${DATA_PIPELINE_REF:-}" ] && echo data-pipeline/schema ); do
   [ -e "$REPO/$d" ] || { echo "ERROR: $REPO/$d is missing — copy the whole repository (see README: 'Getting the code onto the machine')"; exit 1; }
 done
 export KEYCLOAK_THEME_DIR="${KEYCLOAK_THEME_DIR:-keycloak-themes/cce-insights-theme/dev}"
 THEME_PATH="$KEYCLOAK_THEME_DIR"; [ "${THEME_PATH#/}" = "$THEME_PATH" ] && THEME_PATH="$REPO/$THEME_PATH"
 [ -r "$THEME_PATH/login/theme.properties" ] || { echo "ERROR: KEYCLOAK_THEME_DIR=$KEYCLOAK_THEME_DIR has no login/theme.properties — keycloak would have no login page"; exit 1; }
+. "$LIB/emitter-lib.sh"; cce_emitter_conf "${EMITTER_ADAPTOR:-openhim}" || exit 1   # unknown emitter: stop before anything is installed
 
 cat <<SUMMARY
 
@@ -53,11 +55,12 @@ cat <<SUMMARY
  Overlay:            k8s/overlays/$OVERLAY_NAME  (from template: $OVERLAY_TEMPLATE)
  Ingress:            ${INGRESS_HOST:-<none — plain HTTP>}
  Hosting:            $( [ "$IS_CLOUD_DEPLOYMENT" = true ] && echo "cloud (provider firewall is the perimeter; UFW not configured)" || echo "on-prem / direct (UFW host firewall WILL be configured)")
- Infisical:          $( [ "${USE_LOCAL_INFISICAL:-false}" = true ] && echo "local on this machine, ${LOCAL_INFISICAL_RUNTIME:-native} (127.0.0.1:8080)" || echo "${INFISICAL_DOMAIN:-http://localhost:8080}")
+ Infisical:          $( [ "${USE_LOCAL_INFISICAL:-true}" = true ] && echo "local on this machine, ${LOCAL_INFISICAL_RUNTIME:-native} (127.0.0.1:8080)" || echo "${INFISICAL_DOMAIN:-http://localhost:8080}")
  Exporters:          ${EXPORTER_RUNTIME:-systemd}   Portainer: $( [ "${PORTAINER_ENABLED:-true}" = true ] && echo "native ${PORTAINER_VERSION:-2.39.2} (127.0.0.1:9443, SSH tunnel)" || echo "not installed")
  Login theme:        $KEYCLOAK_THEME_DIR
+ Emitter adaptor:    ${EMITTER_ADAPTOR:-openhim}
  Data pipeline:      $( [ -n "${DATA_PIPELINE_REF:-}" ] && echo "${DATA_PIPELINE_REPO:-https://github.com/openphc/cce-data-pipeline.git} @ $DATA_PIPELINE_REF" || echo "vendored data-pipeline/ in this repo")
- Versions:           k3s ${K3S_VERSION:-default}  ClickHouse ${CLICKHOUSE_VERSION:-26.5}  Postgres ${POSTGRES_VERSION:-16}  Kafka ${KAFKA_VERSION:-3.7.0}
+ Versions:           k3s ${K3S_VERSION:-default}  ClickHouse ${CLICKHOUSE_VERSION:-26.5}  Postgres ${POSTGRES_VERSION:-16}  Kafka ${KAFKA_VERSION:-3.9.2}
  Creds dir:          $CREDS_DIR
 ════════════════════════════════════════════════════════════════
 SUMMARY
@@ -71,7 +74,7 @@ phase "2/7 Secrets store: Infisical project + machine identity"
 # A local Infisical runs NATIVELY by default (infisical-native.sh: infisical-core + Redis + a database in the native PostgreSQL);
 # LOCAL_INFISICAL_RUNTIME=docker keeps the older docker-compose one. An existing docker Infisical is moved to native once (same keys,
 # database copied, verified, containers removed — its volume and a dump are kept as a rollback copy).
-if [ "${USE_LOCAL_INFISICAL:-false}" = true ]; then
+if [ "${USE_LOCAL_INFISICAL:-true}" = true ]; then
   if [ "${LOCAL_INFISICAL_RUNTIME:-native}" = docker ]; then
     bash "$LIB/infisical-local.sh" up
   elif command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' | grep -Fx cce-local-infisical-db-1 >/dev/null; then
@@ -103,10 +106,11 @@ SEED_TMP="$(mktemp)"; trap 'rm -f "$SEED_TMP"' EXIT
 [ -n "${ACME_EMAIL:-}" ]   && ! grep -q '^ACME_EMAIL=' "$SEED_TMP"   && echo "ACME_EMAIL=${ACME_EMAIL}"     >> "$SEED_TMP"
 bash "$LIB/infisical-run.sh" "$ENVCODE" bash "$LIB/infisical-seed.sh" "$ENVCODE" "$SEED_TMP"
 
-phase "4/7 Kubernetes overlay k8s/overlays/$OVERLAY_NAME + image versions + data pipeline version"
+phase "4/7 Kubernetes overlay k8s/overlays/$OVERLAY_NAME + emitter adaptor + image versions + data pipeline version"
 if [ -d "$OVERLAY" ]; then echo "  exists — reusing (delete it to regenerate from '$OVERLAY_TEMPLATE')"
 else bash "$LIB/generate-overlay.sh" "$ENVCODE"; fi
 echo "  image versions (from the config):"
+bash "$LIB/apply-emitter.sh" "$ENVCODE"
 bash "$LIB/apply-image-pins.sh" "$ENVCODE"
 bash "$LIB/sync-data-pipeline.sh"
 
@@ -130,6 +134,9 @@ phase "7/7 Host hardening"
 bash "$LIB/install-docker-fw.sh"                       # docker-published ports: blocked from the public NIC (always)
 if [ "$IS_CLOUD_DEPLOYMENT" = true ]; then
   echo "  IS_CLOUD_DEPLOYMENT=true — UFW not configured: make sure the cloud firewall/security group allows ONLY 22/80/443 inbound."
+  echo "  It is the only barrier for: Kafka 9092/9094 (no authentication), the exporters 9100/9187/9308, ClickHouse"
+  echo "  8123/9000/9009/9363, PostgreSQL 5432 and the k3s API 6443. (Kafka Connect's REST API and ClickHouse's password-less"
+  echo "  default user are loopback-only.)"
 else
   bash "$LIB/ufw-baseline.sh"
 fi
@@ -138,18 +145,23 @@ echo; echo "████ Result"
 KUBECTL="k3s kubectl"
 $KUBECTL -n "$NS" get pods --no-headers 2>/dev/null | awk '{split($2,a,"/"); t++; if ($3=="Running" && a[1]==a[2]) r++; else print "   not ready: "$1" "$2" "$3} END{printf "   pods ready: %d/%d\n", r, t}'
 # With the default runtimes nothing runs in docker: every service is systemd-managed or in k3s.
-LEFT="$(docker ps -a --format '{{.Names}}' 2>/dev/null | tr '\n' ' ')"
+# Every probe below ends in "|| true": this is a report, and under set -e + pipefail a missing tool or file (no docker on a
+# docker-free host — the default) killed install.sh here, after a successful install, without printing the summary.
+LEFT="$({ docker ps -a --format '{{.Names}}' 2>/dev/null || true; } | tr '\n' ' ')"
 if [ -n "${LEFT// /}" ]; then echo "   docker containers present: $LEFT (expected none unless a docker runtime was chosen)"; else echo "   docker containers: none"; fi
 # Security settings the native steps apply (01/02/03) — reported so drift shows on every run.
-KV="$(ls /opt/kafka/libs/kafka_*.jar 2>/dev/null | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1)"
-OVR="$(grep -h '^connector.client.config.override.policy=' /opt/kafka/config/connect-"$ENVCODE".properties 2>/dev/null | cut -d= -f2)"
-LOGC="$(sudo -u postgres psql -tAc 'SHOW log_connections' 2>/dev/null | tr -d '[:space:]')"
-CHF="$(stat -c '%a' /etc/clickhouse-server/users.d/cce-"$ENVCODE"-users.xml 2>/dev/null)"
+KV="$({ ls /opt/kafka/libs/kafka_*.jar 2>/dev/null || true; } | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1)"
+OVR="$({ grep -h '^connector.client.config.override.policy=' /opt/kafka/config/connect-"$ENVCODE".properties 2>/dev/null || true; } | cut -d= -f2)"
+LOGC="$({ sudo -u postgres psql -tAc 'SHOW log_connections' 2>/dev/null || true; } | tr -d '[:space:]')"
+CHF="$(stat -c '%a' /etc/clickhouse-server/users.d/cce-"$ENVCODE"-users.xml 2>/dev/null || true)"
 echo "   security: Kafka ${KV:-?} · Connect override policy ${OVR:-NOT SET (All)} · Postgres log_connections ${LOGC:-?} · ClickHouse users file ${CHF:-?}"
 cat <<DONE
 
 Done: namespace $NS · Infisical project cce-$ENVCODE · creds $CREDS_DIR/${ENVCODE}.{creds,meta}
   URL:        ${INGRESS_HOST:+https://$INGRESS_HOST/insights/}${INGRESS_HOST:-http://<this-host>/insights/}
+  Inbound:    ${INGRESS_HOST:+https://$INGRESS_HOST}${INGRESS_HOST:-http://<this-host>}/v1/${EMITTER_DEPLOYMENT}/inbound  (${EMITTER_NAME} emitter, HTTP Basic)
+  Logins:     sudo bash $HERE/tools/show-credentials.sh $ENVCODE [--reveal]   (every URL/user/password, incl. the inbound login)
+  Back up:    $CREDS_DIR/${ENVCODE}.{creds,meta}$( { [ -f "$LOCAL_ADMIN" ] && echo ", $LOCAL_ADMIN and .env beside it"; } || true ) — off this machine
   Verify:     sudo bash $HERE/tools/host-ip-check.sh $ENVCODE      (nothing still holds a stale IP)
               sudo bash $HERE/tools/env-fingerprint.sh $ENVCODE > $ENVCODE.fp; python3 $HERE/tools/env-parity.py <reference.fp> $ENVCODE.fp
               nmap -Pn <public-ip> from OUTSIDE the network — only 22/80/443 should be open
