@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # rw/lib/install-cron-backups.sh <envcode> — install the daily backup cron (root crontab) + logrotate for an environment installed
-# by rw/one-click-install.sh. Same as rw/prod/install-cron-backups.sh, for the generic Infisical wrapper. Idempotent.
+# by rw/one-click-install.sh, run under one-click-installer/lib/infisical-run.sh. Idempotent.
 #   SCHEDULE (default "0 2 * * *"), BACKUP_DIR (default /var/backups/cce-<envcode>), RETENTION_DAYS (default 10)
 set -euo pipefail
 ENVCODE="${1:?usage: install-cron-backups.sh <envcode>}"

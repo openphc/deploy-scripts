@@ -4,11 +4,12 @@
 **built on that machine from the RW-MOH GitLab** (`repository.moh.gov.rw/cce/*`). This is the stopgap until GitLab CI/CD builds and
 publishes the images.
 
-It is in use for **RW UAT on 102.215.10.21** (config `rw/config/uat.env`). RW PROD on 102.215.10.20 still runs the original GHCR
-setup. It is to be cleaned up and set up again with this installer (`OPERATIONS-RUNBOOK.md` §2). Hostnames on these VMs are
-misleading, so always go by IP.
+It is in use for **RW UAT on 102.215.10.21** (config `rw/config/uat.env`). **RW PROD on 102.215.10.20** is to be wiped and set
+up with it too (config `rw/config/prod.env`, step-by-step guide `prod/INSTALL-GUIDE.md`). Hostnames on these VMs are misleading,
+so always go by IP.
 
-Day-to-day operation of an environment set up this way (get new code, build, deploy) is in `OPERATIONS-RUNBOOK.md` §1.
+Day-to-day operation (get new code, build, deploy, back up, protocols): `uat/OPERATIONS-RUNBOOK.md`. Security:
+`uat/SECURITY.md`. The PROD equivalents will follow once PROD is installed.
 
 ## The scripts at a glance
 
@@ -31,9 +32,8 @@ Phases of `rw/one-click-install.sh`:
 | RW 5/5 Backups | daily cron + a first backup | `rw/lib/install-cron-backups.sh`, `rw/lib/backup-db.sh` |
 | (end) | TLS certificate check, "no containers" check, versions deployed | `rw/lib/tls-check.sh` |
 
-> Earlier versions of this installer pulled GHCR images and used `rw/lib`. They are kept at
-> `rw/bkp/one-click-install.sh.pre-gitlab-build-2026-11-04` and `rw/bkp/ONE-CLICK-INSTALL.md.pre-gitlab-build-2026-11-04`.
-> `rw/prod` and `rw/uat` still use `rw/lib`. This installer does not touch it.
+> Earlier versions of this installer pulled GHCR images. The scripts of the old shared-VM setup on 102.215.10.20 (`rw/prod`,
+> `rw/uat`, most of the old `rw/lib`) were removed from `rw/` on 2026-11-12; a copy is kept outside the repository.
 
 ## What you get
 
@@ -82,18 +82,18 @@ How the images get to k3s:
    ```
 
    (Repository path as expected once mirrored. Until then, copy the branch's files over instead.) Later updates: the same
-   `env … git -C /home/cceadmin/deploy-scripts pull`. Never copy `rw/bkp/` or `rw/docs/ACCESS-CREDENTIALS.md` onto a server.
+   `env … git -C /home/cceadmin/deploy-scripts pull`. Never copy `rw/bkp/` onto a server.
 2. **Store the GitLab token**, readable by root only. It needs `read_repository`:
    `sudo install -m 600 /dev/null /root/.cce-gitlab.token`, then put the token in that file.
-3. **Write the seed file** `/root/cce-uat-seed.env` (chmod 600). Without these keys the intelligence-service won't start:
+3. **Write the seed file** `/root/cce-<env>-seed.env` (chmod 600; `SEED_ENV_FILE` in the config). Without these keys the intelligence-service won't start:
    - `CCE_INTELLIGENCE_SMTP_HOST`, `CCE_INTELLIGENCE_SMTP_USERNAME`, `CCE_INTELLIGENCE_SMTP_PASSWORD`
    - `CCE_INTELLIGENCE_ALERT_EMAIL_TIER1..3`
    - `CCE_INTELLIGENCE_ALERT_NAME_TIER1..3`
 
    Optional: `OPENHIM_*`, `FACILITY_FILTER_IDS`, and any password you want instead of a generated one.
-4. **Check the repos:** `sudo bash rw/one-click-install.sh --config rw/config/uat.env --check-only`. This lists every repo and
+4. **Check the repos:** `sudo bash rw/one-click-install.sh --config rw/config/<env>.env --check-only`. This lists every repo and
    branch, and says whether it is reachable, empty or missing that branch. Nothing is installed.
-5. **Install:** `sudo bash rw/one-click-install.sh --config rw/config/uat.env` (add `--yes` to answer the prompts). The first run
+5. **Install:** `sudo bash rw/one-click-install.sh --config rw/config/<env>.env` (add `--yes` to answer the prompts). The first run
    takes about an hour, mostly on Gradle and buildpack downloads. If it stops part-way, re-run the same command and it resumes.
 
 ## OpenHIM authentication (Keycloak)
@@ -209,7 +209,7 @@ The installer's last phase sets up the same daily backup PROD has:
 - **What:** `rw/lib/backup-db.sh` dumps `ccedb` and `keycloak` with `pg_dump`, and exports the ClickHouse `cce_analytics` base tables
 - **Where:** `/var/backups/cce-<envcode>/<YYYYMMDD>/`, kept for 10 days. Logs rotate weekly.
 
-It also runs one backup straight away to prove the setup works. `UAT_OPERATIONS_RUNBOOK.md` §7 covers restore; the files are laid out
+It also runs one backup straight away to prove the setup works. `uat/OPERATIONS-RUNBOOK.md` §7 covers restore; the files are laid out
 as on PROD, but with this env's paths. To change the defaults, re-run with your own values:
 
 ```sh
@@ -221,10 +221,8 @@ As on PROD, the backups stay on this machine. Copy them somewhere else, or they 
 ## Configuration (`rw/config/<env>.env`)
 
 - **`SRC_<REPO>_REPO` / `SRC_<REPO>_BRANCH`:** the URL and branch for each repo. The branch can also be a tag, or a full
-  40-character commit SHA to pin an exact commit; that image is tagged `commit-<sha10>`. As of 2026-11-04, `cce-common-util` and
-  `cce-protocol-service` are pinned to their 2026-10-22 commits. The reason is in `uat.env`: matcher's CCE-135 PR
-  openphc/cce-matcher-service#24 isn't merged yet. `<REPO>` is the repo name upper-cased,
-  with `-` replaced by `_`. Point one at another URL or branch, then re-run.
+  40-character commit SHA to pin an exact commit; that image is tagged `commit-<sha10>`. Write the reason for a pin as a comment
+  above it. No repo is pinned as of 2026-11-12. `<REPO>` is the repo name upper-cased, with `-` replaced by `_`. Point one at another URL or branch, then re-run.
 - **`GIT_TOKEN_FILE`:** where the token is stored. You can also export `GIT_TOKEN` instead. The token is sent only to the repo's
   host, as a request header, and never appears in process arguments or in `.git/config`.
 - **`SOURCE_DIR`** (`/opt/cce-src`) holds the clones, one directory per repo (`/opt/cce-src/<repo>`), each a shallow checkout of
@@ -233,12 +231,14 @@ As on PROD, the backups stay on this machine. Copy them somewhere else, or they 
   URL, which means `<page origin>/auth`.
 - **Platform keys** (`ENVCODE`, `OVERLAY_NAME`, `INGRESS_HOST`, `IS_CLOUD_DEPLOYMENT`, the versions, …) work as in
   `one-click-installer/config/example.env`.
-- **`OVERLAY_NAME`** must not be `prod` or `uat`. Those are the shared-host overlays of 102.215.10.20, and the generator would
-  reuse them. UAT uses `rw-uat`.
-- **`INGRESS_HOST`** + **`ACME_EMAIL`:** the public name, `cceuat.moh.gov.rw` on .21 (DNS switched to .21 on 2026-11-04). Empty
+- **`OVERLAY_NAME`** must not be `prod` or `uat`. Those are the shared-host overlays of the old 102.215.10.20 setup, and the
+  generator would reuse them. UAT uses `rw-uat`, PROD `rw-prod`.
+- **`INGRESS_HOST`** + **`ACME_EMAIL`:** the public name: `cceuat.moh.gov.rw` for UAT on .21 (DNS switched to .21 on
+  2026-11-04), `cce.moh.gov.rw` for PROD on .20. Empty
   means plain HTTP on the IP. Let's Encrypt can only issue the certificate once DNS points at the machine; see "TLS after a DNS change".
-- **`HPA_REPLICAS`** (UAT: `1`, so min = max = 1) and **`CPU_LIMIT_OVERRIDES`** (`<deployment>=<limit>,…`; UAT:
-  `cce-protocol-service=800m`): this machine's deviations from PROD's sizing, applied to the overlay on every run.
+- **`HPA_REPLICAS`** (UAT: `1`, so min = max = 1; PROD: empty, PROD's own HPAs) and **`CPU_LIMIT_OVERRIDES`**
+  (`<deployment>=<limit>,…`; both: `cce-protocol-service=800m,cce-step-sla-service=800m`): a machine's deviations from PROD's
+  sizing, applied to the overlay on every run.
 - **Adding a repo** takes more than a config line: it also needs a row in `rw/lib/source-services.sh` (how to build it), and a
   deployment for it in the k8s overlay.
 
@@ -254,7 +254,7 @@ sudo bash rw/redeploy-from-source.sh --config rw/config/uat.env --deploy-only --
 
 Pull + build fetches each branch and rebuilds what changed. Deploy pins the new tags in `k8s/overlays/<OVERLAY_NAME>` and
 re-applies the overlay, so only changed services roll. Schema and CDC changes in `cce-data-pipeline` need a full
-`rw/one-click-install.sh` re-run. Details, and the scripts that do *not* apply here (`rw/prod/*`, `rw/uat/*`): `OPERATIONS-RUNBOOK.md` §1.
+`rw/one-click-install.sh` re-run. Details: `uat/OPERATIONS-RUNBOOK.md` §5.
 
 ## Where things are
 
@@ -277,7 +277,7 @@ Elsewhere:
 | `/home/cceadmin/.cce-infisical/<env>.{creds,meta}` | the machine identity the scripts use to read Infisical |
 | `/opt/cce-local-infisical/` | the local Infisical's keys (`.env`) and admin login (`admin.env`) |
 | `/var/backups/cce-<env>/` | daily backups |
-| `k8s/overlays/<OVERLAY_NAME>/` | the generated overlay (`rw-uat` on .21) |
+| `k8s/overlays/<OVERLAY_NAME>/` | the generated overlay (`rw-uat` on .21, `rw-prod` on .20) |
 
 ## Troubleshooting
 

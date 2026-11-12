@@ -1,0 +1,468 @@
+{
+  "resourceType": "PlanDefinition",
+  "id": "emr-service-protocol",
+  "url": "http://openphc.org/PlanDefinition/emr-service-protocol",
+  "version": "1.0.0",
+  "name": "RwandaHealthCenterServiceProtocol",
+  "title": "Rwanda Health Center Patient Journey",
+  "status": "active",
+  "date": "2026-11-05",
+  "description": "The service protocol for Rwanda's 550+ health centers. It tracks each outpatient visit as a step group, whichever health center EMR records it. A visit starts at nursing-station check-in (VISIT_ENCOUNTER) and holds vitals and one or more clinical consultations (CONSULTATION_ENCOUNTER). Each consultation holds chief complaints, history, laboratory order and results, diagnosis, treatment and referral. Mandatory: vitals one day after check-in, a consultation one day after vitals, and a diagnosis one day after each consultation. Its triggers match FHIR R4 resources.",
+  "action": [
+    {
+      "id": "outpatient-visit",
+      "title": "Outpatient Visit",
+      "description": "One outpatient visit. It repeats by entry step: each VISIT_ENCOUNTER (nursing-station check-in) starts a new visit, and every other event joins the latest visit. A visit therefore spans the days its lab results and diagnosis take.",
+      "type": {
+        "coding": [
+          {
+            "system": "http://openphc.org/fhir/CodeSystem/action-type",
+            "code": "step"
+          }
+        ]
+      },
+      "groupingBehavior": "logical-group",
+      "extension": [
+        {
+          "url": "http://openphc.org/fhir/StructureDefinition/cycle-boundary",
+          "valueCode": "calendar-day"
+        }
+      ],
+      "action": [
+        {
+          "id": "visit-encounter",
+          "title": "Patient Visit",
+          "description": "Nursing-station check-in, and the entry step of the visit group: each one starts a new visit. Matches Encounter with type display VISIT_ENCOUNTER (display-only coding: an EMR may send no code in type[]). Optional, so a visit whose check-in is missing is not backfilled with one.",
+          "type": {
+            "coding": [
+              {
+                "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                "code": "step"
+              }
+            ]
+          },
+          "requiredBehavior": "could",
+          "trigger": [
+            {
+              "data": [
+                {
+                  "type": "Encounter",
+                  "codeFilter": [
+                    {
+                      "code": [
+                        {
+                          "display": "VISIT_ENCOUNTER"
+                        }
+                      ],
+                      "path": "type"
+                    }
+                  ]
+                }
+              ],
+              "name": "visit-encounter-trigger",
+              "type": "named-event"
+            }
+          ]
+        },
+        {
+          "id": "vitals-recording",
+          "title": "Vitals Recording",
+          "description": "Nursing station vitals observation. Matches Observation with LOINC code 8716-3 (Vital signs). Payload includes BP, HR, RR, SpO2, temp, weight, height, BMI, blood glucose as components.",
+          "type": {
+            "coding": [
+              {
+                "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                "code": "step"
+              }
+            ]
+          },
+          "requiredBehavior": "must",
+          "extension": [
+            {
+              "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
+              "valueInteger": 1
+            }
+          ],
+          "trigger": [
+            {
+              "data": [
+                {
+                  "type": "Observation",
+                  "codeFilter": [
+                    {
+                      "code": [
+                        {
+                          "code": "8716-3",
+                          "system": "http://loinc.org",
+                          "display": "Vital signs"
+                        }
+                      ],
+                      "path": "code"
+                    }
+                  ]
+                }
+              ],
+              "name": "vitals-trigger",
+              "type": "named-event"
+            }
+          ],
+          "relatedAction": [
+            {
+              "actionId": "visit-encounter",
+              "relationship": "after-end",
+              "offsetDuration": {
+                "value": 1,
+                "unit": "d",
+                "system": "http://unitsofmeasure.org",
+                "code": "d"
+              }
+            }
+          ]
+        },
+        {
+          "id": "consultation",
+          "title": "Clinical Consultation",
+          "description": "Clinical consultation encounter, and the entry step of the consultation group. Matches Encounter with type display CONSULTATION_ENCOUNTER. Expected one day after vitals; missed one day after that.",
+          "type": {
+            "coding": [
+              {
+                "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                "code": "step"
+              }
+            ]
+          },
+          "requiredBehavior": "must",
+          "extension": [
+            {
+              "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
+              "valueInteger": 1
+            }
+          ],
+          "trigger": [
+            {
+              "data": [
+                {
+                  "type": "Encounter",
+                  "codeFilter": [
+                    {
+                      "code": [
+                        {
+                          "display": "CONSULTATION_ENCOUNTER"
+                        }
+                      ],
+                      "path": "type"
+                    }
+                  ]
+                }
+              ],
+              "name": "consultation-trigger",
+              "type": "named-event"
+            }
+          ],
+          "relatedAction": [
+            {
+              "actionId": "vitals-recording",
+              "relationship": "after-end",
+              "offsetDuration": {
+                "value": 1,
+                "unit": "d",
+                "system": "http://unitsofmeasure.org",
+                "code": "d"
+              }
+            }
+          ],
+          "action": [
+            {
+              "id": "chief-complaints",
+              "title": "Chief Complaints",
+              "description": "Clinical consultation - chief complaints recording. Matches Observation with LOINC code 33747-0 (Chief Complaints).",
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                    "code": "step"
+                  }
+                ]
+              },
+              "requiredBehavior": "could",
+              "trigger": [
+                {
+                  "data": [
+                    {
+                      "type": "Observation",
+                      "codeFilter": [
+                        {
+                          "code": [
+                            {
+                              "code": "33747-0",
+                              "system": "http://loinc.org",
+                              "display": "Chief Complaints"
+                            }
+                          ],
+                          "path": "code"
+                        }
+                      ]
+                    }
+                  ],
+                  "name": "chief-complaints-trigger",
+                  "type": "named-event"
+                }
+              ],
+              "relatedAction": [
+                {
+                  "actionId": "consultation",
+                  "relationship": "after-end"
+                }
+              ]
+            },
+            {
+              "id": "history-assessment",
+              "title": "History of Present Illness",
+              "description": "Clinical consultation - history recording. Matches Observation with LOINC code 10164-2 (History of Present illness Narrative).",
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                    "code": "step"
+                  }
+                ]
+              },
+              "requiredBehavior": "could",
+              "trigger": [
+                {
+                  "data": [
+                    {
+                      "type": "Observation",
+                      "codeFilter": [
+                        {
+                          "code": [
+                            {
+                              "code": "10164-2",
+                              "system": "http://loinc.org",
+                              "display": "History of Present illness Narrative"
+                            }
+                          ],
+                          "path": "code"
+                        }
+                      ]
+                    }
+                  ],
+                  "name": "history-trigger",
+                  "type": "named-event"
+                }
+              ],
+              "relatedAction": [
+                {
+                  "actionId": "chief-complaints",
+                  "relationship": "after-end"
+                }
+              ]
+            },
+            {
+              "id": "lab-order",
+              "title": "Laboratory Order",
+              "description": "Lab test ordered by clinician. Matches any ServiceRequest (F1 scenario). An EMR may send a non-standard category structure (an object instead of an array), so only resource-type matching is used.",
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                    "code": "step"
+                  }
+                ]
+              },
+              "requiredBehavior": "could",
+              "trigger": [
+                {
+                  "data": [
+                    {
+                      "type": "ServiceRequest"
+                    }
+                  ],
+                  "name": "lab-order-trigger",
+                  "type": "named-event"
+                }
+              ],
+              "relatedAction": [
+                {
+                  "actionId": "consultation",
+                  "relationship": "after-end"
+                }
+              ],
+              "action": [
+                {
+                  "id": "lab-results",
+                  "title": "Laboratory Results",
+                  "description": "Lab results returned. Matches Observation with category laboratory. Uses category-path codeFilter to distinguish from vital-signs and survey observations. Nested under lab-order, so the journey shows it as lab-order's sub-step. Nesting is layout only: it is a step of the consultation group like the others.",
+                  "type": {
+                    "coding": [
+                      {
+                        "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                        "code": "step"
+                      }
+                    ]
+                  },
+                  "requiredBehavior": "could",
+                  "trigger": [
+                    {
+                      "data": [
+                        {
+                          "type": "Observation",
+                          "codeFilter": [
+                            {
+                              "code": [
+                                {
+                                  "code": "laboratory",
+                                  "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                                  "display": "Laboratory"
+                                }
+                              ],
+                              "path": "category"
+                            }
+                          ]
+                        }
+                      ],
+                      "name": "lab-results-trigger",
+                      "type": "named-event"
+                    }
+                  ],
+                  "relatedAction": [
+                    {
+                      "actionId": "lab-order",
+                      "relationship": "after-end"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "diagnosis",
+              "title": "Clinical Diagnosis",
+              "description": "Diagnosis recorded. Matches Condition with clinicalStatus active. Expected one day after the consultation; missed one day after that. It follows the consultation, not the lab results, so it is expected in every consultation, with or without a lab test.",
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                    "code": "step"
+                  }
+                ]
+              },
+              "requiredBehavior": "must",
+              "extension": [
+                {
+                  "url": "http://openphc.org/fhir/StructureDefinition/tolerance-days",
+                  "valueInteger": 1
+                }
+              ],
+              "trigger": [
+                {
+                  "data": [
+                    {
+                      "type": "Condition",
+                      "codeFilter": [
+                        {
+                          "code": [
+                            {
+                              "code": "active",
+                              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical"
+                            }
+                          ],
+                          "path": "clinicalStatus"
+                        }
+                      ]
+                    }
+                  ],
+                  "name": "diagnosis-trigger",
+                  "type": "named-event"
+                }
+              ],
+              "relatedAction": [
+                {
+                  "actionId": "consultation",
+                  "relationship": "after-end",
+                  "offsetDuration": {
+                    "value": 1,
+                    "unit": "d",
+                    "system": "http://unitsofmeasure.org",
+                    "code": "d"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "treatment",
+              "title": "Treatment Prescription",
+              "description": "Medication prescribed. Matches any MedicationRequest (F1 scenario). An EMR may send medicationCodeableConcept, which is not in the standard extraction paths, so only resource-type matching is used. Expected medications: CAPTOPRIL 25MG (C09AA0101E), METFORMIN 500MG (A10BA0201E).",
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                    "code": "step"
+                  }
+                ]
+              },
+              "requiredBehavior": "could",
+              "trigger": [
+                {
+                  "data": [
+                    {
+                      "type": "MedicationRequest"
+                    }
+                  ],
+                  "name": "treatment-trigger",
+                  "type": "named-event"
+                }
+              ],
+              "relatedAction": [
+                {
+                  "actionId": "diagnosis",
+                  "relationship": "after-end"
+                }
+              ]
+            },
+            {
+              "id": "referral",
+              "title": "Referral",
+              "description": "Patient referral/transfer to another facility. Matches Encounter with type display TRANSFER_ENCOUNTER.",
+              "type": {
+                "coding": [
+                  {
+                    "system": "http://openphc.org/fhir/CodeSystem/action-type",
+                    "code": "step"
+                  }
+                ]
+              },
+              "requiredBehavior": "could",
+              "trigger": [
+                {
+                  "data": [
+                    {
+                      "type": "Encounter",
+                      "codeFilter": [
+                        {
+                          "code": [
+                            {
+                              "display": "TRANSFER_ENCOUNTER"
+                            }
+                          ],
+                          "path": "type"
+                        }
+                      ]
+                    }
+                  ],
+                  "name": "referral-trigger",
+                  "type": "named-event"
+                }
+              ],
+              "relatedAction": [
+                {
+                  "actionId": "treatment",
+                  "relationship": "after-end"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

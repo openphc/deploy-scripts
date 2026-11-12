@@ -1,0 +1,27 @@
+name: Mirror to GitLab
+
+# Mirrors ONLY the deploy-scripts-rw branch to the RW-MOH GitLab (repository.moh.gov.rw/cce/deploy-scripts), where the RW
+# servers clone it from. The other branches of deploy-scripts carry other countries' setups and are not mirrored.
+# Needs the repository secret RWANDA_GITLAB_TOKEN (a GitLab token with write_repository on cce/deploy-scripts).
+
+on:
+  push:
+    branches: ['deploy-scripts-rw']
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          ref: deploy-scripts-rw
+          fetch-depth: 0
+
+      - name: Push deploy-scripts-rw to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.RWANDA_GITLAB_TOKEN }}
+        run: |
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@repository.moh.gov.rw/cce/deploy-scripts.git"
+          git push --force gitlab 'HEAD:refs/heads/deploy-scripts-rw'

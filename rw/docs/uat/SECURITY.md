@@ -1,8 +1,8 @@
 # RW CCE UAT — Security (102.215.10.21)
 
 How RW UAT on **102.215.10.21** is secured. This is the environment set up by `rw/one-click-install.sh`, with the CCE services built
-from the RW-MOH GitLab. It has the same sections as `SECURITY.md` (PROD, the shared .20 VM), written for this machine.
-Operations: `UAT_OPERATIONS_RUNBOOK.md`. Facts below were checked on the machine on **2026-11-06** unless dated otherwise.
+from the RW-MOH GitLab. Operations: [`OPERATIONS-RUNBOOK.md`](OPERATIONS-RUNBOOK.md). Facts below were checked on the machine on
+**2026-11-12** unless dated otherwise.
 
 > The VM's hostname is `cce-prod`, but 102.215.10.21 is **UAT**. Always go by IP.
 
@@ -59,7 +59,7 @@ this order. `R` below = `sudo bash rw/redeploy-from-source.sh --config rw/config
 | `OPENHIM_PASSWORD`, `CCE_INTELLIGENCE_SMTP_PASSWORD`, `CCE_COLLECTOR_AUTH_TOKEN` | change at the other system first, then Infisical → `R` |
 | Infisical machine identity (`uat.creds`) | Infisical UI → the `cce-uat` machine identity → Universal Auth → create a client secret → write it to `uat.creds` → check with the health check → revoke the old secret |
 | Infisical org admin (`admin.env`) | change in the Infisical UI, then update `/opt/cce-local-infisical/admin.env` |
-| GitLab token | `UAT_OPERATIONS_RUNBOOK.md` §6 |
+| GitLab token | `OPERATIONS-RUNBOOK.md` §6 |
 
 After any rotation, run the health check (runbook §3) and confirm OpenHIM calls are still authorized (runbook §8).
 
@@ -87,6 +87,9 @@ allow:       22/tcp  80/tcp  443/tcp                           # SSH, app (+ ACM
 8080 (Infisical), 8083 (Kafka Connect), 8123 / 9000 / 9363 (ClickHouse), 9092 / 9093 (Kafka), 9001 (Portainer agent),
 9100 / 9187 / 9308 (exporters), 9443 (Portainer), 10250 (kubelet). Re-check after any change, from off the network:
 `nmap -Pn 102.215.10.21`. Don't trust `ufw status` alone.
+
+Two more listen on all interfaces (seen on the machine on 2026-11-12, not part of that scan), so they too rely on UFW: 9009
+(ClickHouse interserver) and 9094 (the Kafka KRaft controller). Nothing listens on 9093. Include them in the next scan.
 
 What the closed ports rely on:
 - **UFW only:** PostgreSQL (`*`), ClickHouse (`0.0.0.0`), Kafka Connect (`0.0.0.0:8083`, no authentication) and Kafka listen on
@@ -159,7 +162,7 @@ Cancel it with `sudo systemctl stop ufw-deadman.timer` once you're still connect
   | `openhim-basic` | confidential, direct-access grant only, for the Basic → token exchange |
 
   The realm (users, password hashes, client secrets and signing keys) was **copied from the old UAT on .20** on 2026-11-04, so
-  OpenHIM's credentials kept working after the DNS switch. The `cce` realm has 6 users.
+  OpenHIM's credentials kept working after the DNS switch. The `cce` realm has 5 users (2026-11-12).
 - **Gateway:** it validates JWTs (issuer `https://cceuat.moh.gov.rw/auth/realms/cce`, keys fetched in-cluster) and authorizes
   each route from the `api_permissions` table (15 rows) against the token's `gateway-service` client roles. Every external API
   path goes through the gateway.
@@ -167,8 +170,9 @@ Cancel it with `sudo systemctl stop ufw-deadman.timer` once you're still connect
   credentials for a token through `openhim-basic`, then applies the normal checks. The user is `openhim-emitter-inbound`, with
   client role `gateway-service:EMITTER_INBOUND_WRITE`. `rw/lib/keycloak-openhim-basic.sh` makes sure the client, role and user
   exist.
-- **Emitter source check:** after authentication, the emitter accepts events only from the OpenHIM client ID in Infisical
-  `EBUZIMA_CLIENT_ID` (`ebuzima`), sent as `X-OpenHIM-ClientID`. Others get 200 "ignored" and nothing is stored.
+- **Emitter source check:** after authentication, the emitter accepts events only from the OpenHIM client ID
+  `EBUZIMA_CLIENT_ID` (`ebuzima`, fixed in `k8s/base/services/openhim-emitter-adaptor.yaml`, not in Infisical), sent as
+  `X-OpenHIM-ClientID`. Others get 200 "ignored" and nothing is stored.
 - **Least privilege:** Insights UI users get only `INSIGHTS_READ`, the OpenHIM user only `EMITTER_INBOUND_WRITE`. Grant the
   minimum client roles needed.
 
@@ -211,9 +215,13 @@ The same limits as PROD, enforced at the ingress before authentication. Each API
 
 - **Secrets live in Infisical.** The files on disk are the ones listed in §1, all root-only.
 - **None of them is in git.** The `deploy-scripts-rw` branch allow-lists the `rw/` files it tracks, so credentials
-  (`ACCESS-CREDENTIALS.md`, `rw/bkp/`) cannot be committed by accident. Neither is present on this machine.
+  (`rw/bkp/`, which holds the access-credentials notes, Infisical exports and database dumps) cannot be committed by accident.
+  `rw/bkp/` is not present on this machine.
+- **No credentials in `rw/tools/`.** The OpenHIM tools take the OpenHIM login and the inbound user's password as arguments or
+  environment variables only.
 - **Keep copies of these offsite, encrypted:** `/opt/cce-local-infisical/` (the Infisical keys), `uat.creds`/`uat.meta`, the seed
-  file, and the backups. Treat the `keycloak` and `ccedb` dumps as confidential.
+  file, and the backups. Treat the `keycloak` and `ccedb` dumps as confidential. The full list, and how to export Infisical's
+  values: [`DISASTER-RECOVERY.md`](DISASTER-RECOVERY.md) §3.
 - **Send credentials separately** from the docs, over a secure channel.
 
 ## 9. Open items
@@ -250,10 +258,11 @@ CCE needs to know *that* a clinical step happened, when, for whom and where, not
   built from source here, not pinned to the .20 GHCR digest, so check redaction after every rebuild of the emitter:
 
   ```bash
-  sudo k3s kubectl -n cce-uat logs deploy/openhim-emitter-adaptor --all-pods=true --tail=2000 | grep "redaction ACTIVE"
+  sudo k3s kubectl -n cce-uat logs deploy/openhim-emitter-adaptor --all-pods=true | grep "redaction ACTIVE"
   ```
 
-  No line, or a `DISABLED` warning, means clinical payloads are being stored. `REDACTION_ENABLED=false` is the kill-switch;
+  The line is logged once, at startup, so search the whole log (no `--tail`). No line, or a `DISABLED` warning, means clinical
+  payloads are being stored. `REDACTION_ENABLED=false` is the kill-switch;
   never leave it set.
 - **Spot-check** stored events:
 
@@ -263,6 +272,6 @@ CCE needs to know *that* a clinical step happened, when, for whom and where, not
   ```
 
   It must return 0.
-- **Unlike PROD,** this environment started empty (2026-11-04) and has only received redacted events (3 in `inbound_event_log`
-  at the time of writing), so it holds no pre-redaction clinical data. The Keycloak data copied from .20 carries no clinical
-  content.
+- **Unlike the old PROD,** this environment started empty (2026-11-04) and has only received redacted events (1,821 in
+  `inbound_event_log` on 2026-11-12), so it holds no pre-redaction clinical data. The Keycloak data copied from .20 carries no
+  clinical content.

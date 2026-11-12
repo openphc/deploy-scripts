@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # rw/lib/backup-db.sh <envcode> — daily backup of an environment installed by rw/one-click-install.sh (dedicated machine, native
-# data stores). Same dumps, layout and retention as rw/prod/backup-prod-db.sh, so rw/docs/BACKUP-RESTORE.md applies unchanged:
+# data stores). Restore steps: rw/docs/uat/OPERATIONS-RUNBOOK.md §7.
 #   PostgreSQL  ccedb + keycloak  -> $BACKUP_DIR/<YYYYMMDD>/pg-<db>-<stamp>.sql.gz
 #   ClickHouse  cce_analytics base tables (Native, base64) -> clickhouse-cce_analytics-<stamp>.sql.gz  (rebuildable from CDC)
 # Run under the Infisical wrapper so CLICKHOUSE_USER/PASSWORD are set (rw/lib/install-cron-backups.sh wires the cron that way):
