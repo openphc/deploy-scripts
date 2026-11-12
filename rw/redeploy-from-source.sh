@@ -44,7 +44,7 @@ fi
 . "$GLIB/load-config.sh"
 CCE_CONFIG_KEYS="$CCE_CONFIG_KEYS$(rw_config_keys)"
 cce_load_config "$CONFIG"
-export OVERLAY_NAME="${OVERLAY_NAME:-$ENVCODE}" KEYCLOAK_THEME_DIR="${KEYCLOAK_THEME_DIR:-keycloak-themes/cce-insights-theme/dev}"
+export OVERLAY_NAME="${OVERLAY_NAME:-$ENVCODE}" KEYCLOAK_THEME_DIR="${KEYCLOAK_THEME_DIR:-keycloak-themes/insights-ui-theme}"   # RW branded login theme
 export STATE_DIR="/var/lib/cce-rw/$ENVCODE" SOURCE_DIR="${SOURCE_DIR:-/opt/cce-src}" LOCAL_IMAGE_REGISTRY="${LOCAL_IMAGE_REGISTRY:-cce.local/rw}"
 [ -s "$STATE_DIR/pins.env" ] && [ -d "$REPO/k8s/overlays/$OVERLAY_NAME" ] \
   || { echo "ERROR: $ENVCODE was never installed on this machine — run rw/one-click-install.sh first"; exit 1; }
