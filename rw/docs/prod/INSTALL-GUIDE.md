@@ -66,7 +66,8 @@ hostname -I
 
 This deletes the old CCE system: its services, its databases and its data. **Only start once you have item 1 (the backup
 files) and item 2 (the go-ahead).** The old CCE PROD website stops working here. Each box can be pasted again if it stopped
-part-way: everything in it skips what is already gone.
+part-way, and the whole step can be repeated: everything in it skips what is already gone. (It also removes a failed or
+earlier install made with this guide, if you ever need to start over.)
 
 Type the `cceadmin` password whenever `sudo` asks for it.
 
@@ -75,27 +76,38 @@ Kafka and ClickHouse, the old secret store (Infisical), Portainer and the export
 
 ```sh
 cd /tmp
-[ -x /usr/local/bin/k3s-uninstall.sh ] && sudo /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1; echo "k3s removed"
+[ -x /usr/local/bin/k3s-uninstall.sh ] && sudo /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1
+sudo rm -rf /etc/rancher /var/lib/rancher; echo "k3s removed"     # the uninstaller keeps the node password
 command -v docker >/dev/null && sudo docker ps -aq | xargs -r sudo docker rm -f >/dev/null; echo "containers removed"
 sudo systemctl disable --now cce-docker-fw docker.socket docker containerd 2>/dev/null
-sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq docker.io containerd >/dev/null; echo "docker removed"
-sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /opt/containerd \
-  /usr/local/sbin/cce-docker-fw.sh /etc/systemd/system/cce-docker-fw.service
+P=$(dpkg-query -W -f='${Package} ${db:Status-Status}\n' docker.io docker-buildx docker-compose-v2 containerd runc 2>/dev/null | awk '$2=="installed"{print $1}')
+[ -z "$P" ] || sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq $P >/dev/null; echo "docker removed"
+sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /opt/containerd /etc/systemd/system/docker.service.d \
+  /usr/local/bin/docker-compose /usr/local/sbin/cce-docker-fw.sh /etc/systemd/system/cce-docker-fw.service
+sudo systemctl daemon-reload
 ```
 
 **You should see** `k3s removed`, `containers removed` and `docker removed`.
 
-**2b.** Remove the old PostgreSQL, Kafka, Kafka Connect and ClickHouse (installed directly on the server), and their data:
+**2b.** Remove PostgreSQL, Kafka, Kafka Connect, ClickHouse and the other services installed directly on the server, and their
+data:
 
 ```sh
 cd /tmp
-sudo systemctl disable --now kafka-connect kafka clickhouse-server postgresql 2>/dev/null
-sudo rm -f /etc/systemd/system/kafka.service /etc/systemd/system/kafka-connect.service
-sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq clickhouse-server clickhouse-client clickhouse-common-static \
-  postgresql-16 postgresql-client-16 postgresql-common postgresql-client-common infisical >/dev/null; echo "packages removed"
+sudo systemctl disable --now kafka-connect kafka clickhouse-server postgresql redis-server infisical-runsvdir \
+  cce-postgres-exporter cce-kafka-exporter cce-portainer 2>/dev/null
+sudo rm -f /etc/systemd/system/{kafka,kafka-connect,cce-postgres-exporter,cce-kafka-exporter,cce-portainer}.service
+P=$(dpkg-query -W -f='${Package} ${db:Status-Status}\n' clickhouse-server clickhouse-client clickhouse-common-static \
+  postgresql-16 postgresql-client-16 postgresql-common postgresql-client-common infisical infisical-core redis-server redis-tools \
+  2>/dev/null | awk '$2=="installed"{print $1}')
+[ -z "$P" ] || sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq --allow-change-held-packages $P >/dev/null
+echo "packages removed"
 sudo rm -rf /opt/kafka /var/lib/kafka /var/log/kafka /tmp/kafka-logs /tmp/connect.offsets \
   /var/lib/clickhouse /etc/clickhouse-server /etc/clickhouse-client /var/log/clickhouse-server /var/log/clickhouse-keeper \
-  /var/lib/postgresql /etc/postgresql /var/log/postgresql
+  /var/lib/postgresql /etc/postgresql /var/log/postgresql /var/lib/redis /etc/redis /var/log/redis /etc/clickhouse-keeper \
+  /opt/cce-local-infisical /opt/infisical-core /etc/infisical /var/log/infisical /var/log/infisical-core /etc/cce-exporters /usr/local/bin/postgres_exporter /usr/local/bin/kafka_exporter \
+  /opt/portainer /opt/portainer-* /var/lib/portainer /opt/cce-src /var/lib/cce-rw /etc/logrotate.d/cce-* \
+  /etc/systemd/system/redis.service
 sudo systemctl daemon-reload
 ```
 
@@ -107,19 +119,21 @@ scripts are kept until the technical team decides to delete them.
 ```sh
 cd /tmp
 sudo sh -c 'crontab -l 2>/dev/null | grep -v "cce-prod daily backup" | crontab -'
-[ -d /var/backups/cce-prod ] && sudo mv /var/backups/cce-prod /var/backups/cce-prod-old-1.x
-mkdir -p -m 700 ~/old-cce-1.x
+B=/var/backups/cce-prod-old-1.x; [ -e $B ] && B=/var/backups/cce-prod-old-$(date +%Y%m%d-%H%M)
+[ -d /var/backups/cce-prod ] && sudo mv /var/backups/cce-prod $B
+D=~/old-cce-1.x; [ -e $D ] && D=~/old-cce-$(date +%Y%m%d-%H%M)
 for f in deploy-scripts deploy-scripts.stale.20260616-061144 .cce-infisical .infisical .kube infisical \
          .env-removed-20260622-062250 api_permissions_clean.sql cce-realm-clean.json prod.fp prod.fp.err; do
-  [ -e ~/"$f" ] && mv ~/"$f" ~/old-cce-1.x/
+  [ -e ~/"$f" ] && { mkdir -p -m 700 $D; mv ~/"$f" $D/; }
 done
-sudo rm -rf /root/.infisical /root/.kube /root/infisical-keyring
+sudo rm -rf /root/.infisical /root/.kube /root/.docker /root/.gradle /root/infisical-keyring
 find ~ -maxdepth 1 -type f -empty -name '*@*' -delete   # a stray empty file
 ls -A ~
 ```
 
-**You should see** a short list: `old-cce-1.x`, `incident-2026-10-24-connect-exploit` (leave it: the technical team keeps it)
-and a few files starting with a dot (`.bashrc`, `.profile`, `.ssh`, …).
+**You should see** a short list: `old-cce-1.x` (and `old-cce-<date>` if you repeated the step),
+`incident-2026-10-24-connect-exploit` (leave it: the technical team keeps it) and a few files starting with a dot (`.bashrc`,
+`.profile`, `.ssh`, …).
 
 The firewall (UFW) is left on: SSH, the website ports and the internal networks stay allowed, and the install sets it up
 again in its step 4/5.
@@ -130,10 +144,13 @@ again in its step 4/5.
 lsb_release -ds
 df -h / | tail -1
 echo "--- leftovers (should be empty) ---"
-command -v k3s docker psql clickhouse-server
+command -v k3s docker psql clickhouse-server redis-server infisical
 ls -d /opt/kafka /var/lib/kafka /var/lib/clickhouse /var/lib/postgresql /var/lib/docker /var/lib/rancher /etc/rancher \
-  ~/deploy-scripts ~/.cce-infisical /var/backups/cce-prod /opt/cce-src /var/lib/cce-rw /opt/cce-local-infisical 2>/dev/null
-systemctl list-units --all --no-legend 'kafka*' 'clickhouse*' 'postgresql*' 'docker*' 'k3s*' 'containerd*' | grep -v not-found
+  ~/deploy-scripts ~/.cce-infisical /var/backups/cce-prod /opt/cce-src /var/lib/cce-rw /opt/cce-local-infisical \
+  /opt/portainer /opt/infisical-core /etc/cce-exporters /etc/systemd/system/docker.service.d /usr/local/bin/docker-compose 2>/dev/null
+systemctl list-units --all --no-legend 'kafka*' 'clickhouse*' 'postgresql*' 'docker*' 'k3s*' 'containerd*' 'redis*' \
+  'infisical*' 'cce-*' | grep -v not-found
+sudo crontab -l 2>/dev/null | grep cce
 sudo ss -ltnp | grep -vE ':22 |:53 ' | awk 'NR>1'
 echo "--- end ---"
 ```
@@ -324,7 +341,7 @@ sudo k3s kubectl -n cce-prod get pods
 ```
 
 **You should see** about 15 to 20 lines, each with `Running` in the STATUS column, and the READY column showing the same number on
-both sides (for example `1/1`).
+both sides (for example `1/1`). A RESTARTS count of 1 or 2 is normal: some services start before the ones they need.
 **If some show `ContainerCreating` or `0/1`:** wait 5 more minutes and run it again. Still not ready after 15 minutes, or
 showing `CrashLoopBackOff` / `Error`: send the screen to the technical team.
 
@@ -378,7 +395,7 @@ cd /tmp
 sudo install -m 600 ~/prod-facility-2026-11-11.sql ~/prod-keycloak-20261111-020004.sql.gz /root/ \
   && rm ~/prod-facility-2026-11-11.sql ~/prod-keycloak-20261111-020004.sql.gz
 sudo sed -E '/^INSERT INTO public.facility /s/\);$/) ON CONFLICT (facility_id) DO UPDATE SET facility_name = EXCLUDED.facility_name, district_name = EXCLUDED.district_name, expected_patients_per_day = EXCLUDED.expected_patients_per_day;/' \
-  /root/prod-facility-2026-11-11.sql | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -d ccedb && echo "FACILITIES OK"
+  /root/prod-facility-2026-11-11.sql | sudo -u postgres psql -q -o /dev/null -v ON_ERROR_STOP=1 -d ccedb && echo "FACILITIES OK"
 sudo -u postgres psql -qtA -d ccedb -c "select count(*) || ' facilities' from facility"
 ```
 
@@ -392,7 +409,7 @@ cd /tmp
 sudo k3s kubectl -n cce-prod scale deploy/keycloak --replicas=0
 while sudo k3s kubectl -n cce-prod get pods --no-headers | grep -q '^keycloak-'; do sleep 5; done
 sudo sh -c 'gunzip -c /root/prod-keycloak-20261111-020004.sql.gz' \
-  | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -d keycloak -c 'SET ROLE admin' -f - && echo "RESTORE OK"
+  | sudo -u postgres psql -q -o /dev/null -v ON_ERROR_STOP=1 -d keycloak -c 'SET ROLE admin' -f - && echo "RESTORE OK"
 sudo k3s kubectl -n cce-prod scale deploy/keycloak --replicas=1
 sudo k3s kubectl -n cce-prod rollout status deploy/keycloak --timeout=600s
 ```
@@ -437,8 +454,8 @@ The technical team then finishes these items, which are **not** part of your job
 - put OpenHIM's real password into Infisical as `EMITTER_INBOUND_PASSWORD` once known; until then Infisical holds a generated
   value that is not the password (`show-credentials.sh` shows that one)
 - confirm that OpenHIM traffic is arriving, and that Insights lists the facilities
-- decide when to delete the old system's leftovers: `/var/backups/cce-prod-old-1.x` (it holds the old, unredacted clinical
-  database dumps) and `~/old-cce-1.x`
+- decide when to delete the old system's leftovers: `/var/backups/cce-prod-old-*` (it holds the old, unredacted clinical
+  database dumps) and `~/old-cce-*`
 - from now on, run PROD the way UAT is run (`rw/docs/uat/OPERATIONS-RUNBOOK.md`, with `rw/config/prod.env` and namespace
   `cce-prod`), until PROD's own runbook is written
 
