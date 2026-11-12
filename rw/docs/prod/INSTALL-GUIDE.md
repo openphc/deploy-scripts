@@ -1,9 +1,11 @@
 # Installing CCE on the RW PROD server (102.215.10.20): step-by-step guide
 
-This guide installs the complete CCE system on the Rwanda **PROD** server, **102.215.10.20**, after the server has been
-**wiped clean and Ubuntu freshly installed**. Nothing from the old system is left on it. One script does almost all the work. Your job is to prepare a few things, start the script, and check the result.
+This guide replaces the old CCE system (1.x) on the Rwanda **PROD** server, **102.215.10.20**, with a fresh CCE 2.0 install.
+The server keeps its Ubuntu, its users and its SSH login; step 2 removes everything of the old CCE system from it. One script
+then does almost all the work. Your job is to prepare a few things, start the script, check the result, and put back the old
+facilities and logins.
 
-- **Time needed:** about 2 hours: about 20 minutes of your work, plus 1 to 1½ hours while the script runs.
+- **Time needed:** about 2½ hours: about 45 minutes of your work, plus 1 to 1½ hours while the script runs.
 - **Skills needed:** logging in to a server with SSH, and copying and pasting commands. Nothing else.
 - **How to use this guide:** do the steps in order. Each step tells you **what to type**, **what you should see**, and
   **what to do if you see something else**. If a step does not give the result it describes, stop and contact the technical
@@ -13,8 +15,9 @@ This guide installs the complete CCE system on the Rwanda **PROD** server, **102
 > - Only ever run this on **102.215.10.20**. Never on 102.215.10.21 (that is UAT, which is already installed).
 > - Copy commands exactly: the easiest way is to copy the whole grey box and paste it. Lines starting with `#` are notes;
 >   pasting them is harmless.
-> - Never send the GitLab token or the seed file by e-mail or chat, and never paste them anywhere except where this guide says.
-> - If you are unsure, stop. Nothing is lost by pausing; the script can be started again later.
+> - Never send the GitLab token, the seed file or the backup files by e-mail or chat, and never paste them anywhere except
+>   where this guide says.
+> - If you are unsure, stop. Before step 2 nothing has changed; after it, the script can be started again later.
 
 ---
 
@@ -24,14 +27,12 @@ Tick each one off. Do not start until you have all of them.
 
 | # | What | Why |
 |---|---|---|
-| 1 | Confirmation that **the old PROD data was backed up and copied off the server before the wipe** | The wipe erased everything on the server; the backup is the only copy |
-| 2 | Confirmation that **the wipe is done**: Ubuntu **26.04 LTS** freshly installed, the server still has the address **102.215.10.20**, and a user **`cceadmin`** exists that may use `sudo` | This guide is written for exactly that (the old PROD also ran Ubuntu 26.04 LTS) |
-| 3 | Confirmation that a **maintenance window** has been agreed | CCE PROD is unavailable until the install finishes |
-| 4 | The **SSH login** for `cceadmin@102.215.10.20` (the password set during the fresh install) | To log in |
-| 5 | A **GitLab token** (a long text, starting with `glpat-`) with *read_repository* access to `repository.moh.gov.rw/cce` | The script downloads the CCE code with it |
-| 6 | The **seed file content**: a block of `NAME=value` lines (the Appendix shows what it looks like) | E-mail settings, the OpenHIM connection, and the passwords that must stay the same |
-| 7 | The **install scripts**: the branch **`deploy-scripts-rw`** of the deploy-scripts repository. Either its GitLab address (expected: `https://repository.moh.gov.rw/cce/deploy-scripts.git`) or a copy of that branch you bring yourself | Step 4 puts them on the server |
-| 8 | Whether **the old PROD Keycloak database will be restored** (recommended; step 9), and if so the dump file itself, `prod-keycloak-20261111-020004.sql.gz` (kept by the technical team) | It decides what goes in the seed file (Appendix) |
+| 1 | The two **backup files from 2026-11-11**: `prod-keycloak-20261111-020004.sql.gz` (the old logins) and `prod-facility-2026-11-11.sql` (the facilities) | Step 2 deletes the old databases; step 9 puts these back. They are the only copy |
+| 2 | Confirmation that **the old system may be removed now**, in an agreed **maintenance window** | CCE PROD is down from step 2 until step 9 |
+| 3 | The **SSH login** for `cceadmin@102.215.10.20` (the existing one) | To log in |
+| 4 | A **GitLab token** (a long text, starting with `glpat-`) with *read_repository* access to `repository.moh.gov.rw/cce` | To download the install scripts and the CCE code |
+| 5 | The **seed file content**: a block of `NAME=value` lines (the Appendix shows what it looks like) | E-mail settings, the OpenHIM connection, and the passwords that must stay the same |
+| 6 | The **GitLab address of the install scripts**, with the branch `deploy-scripts-rw` in it. Expected: `https://repository.moh.gov.rw/cce/deploy-scripts.git` | Step 4 downloads them from there |
 
 ---
 
@@ -43,20 +44,9 @@ On your computer, open a terminal (Windows: *PowerShell*; Mac/Linux: *Terminal*)
 ssh cceadmin@102.215.10.20
 ```
 
-Type the password when asked (nothing appears on screen while you type; that is normal) and press Enter.
-
-Because the server was freshly installed, it has a new identity, and your computer may react in one of two ways:
-
-- **It asks** `Are you sure you want to continue connecting (yes/no)?` Type `yes` and press Enter.
-- **It refuses** with a large warning, `REMOTE HOST IDENTIFICATION HAS CHANGED!`. This is expected after a wipe **only
-  if the technical team confirmed the wipe** (item 2). Then, on your computer, type the line below, press Enter, and run
-  the `ssh` command again:
-
-  ```sh
-  ssh-keygen -R 102.215.10.20
-  ```
-
-  If you were **not** told the server was wiped, do not do this: stop and tell the technical team.
+Type the password when asked (nothing appears on screen while you type; that is normal) and press Enter. If your computer
+asks `Are you sure you want to continue connecting (yes/no)?`, type `yes` and press Enter. **If it refuses** with a large
+warning, `REMOTE HOST IDENTIFICATION HAS CHANGED!`, stop and tell the technical team: the server should not have changed.
 
 **Check you are on the right server:**
 
@@ -67,39 +57,102 @@ hostname -I
 **You should see** a line that contains `102.215.10.20`.
 **If not:** you are on the wrong server. Type `exit` and log in again with the right address.
 
-> The server's *name* (shown in the prompt after `cceadmin@`) does not matter; before the wipe it was even misleadingly
-> called `cce-uat`. Only the address 102.215.10.20 counts.
+> The server's *name* (shown in the prompt after `cceadmin@`) does not matter; it is even misleadingly `cce-uat`. Only the
+> address 102.215.10.20 counts.
 
 ---
 
-## Step 2. Check the server is ready
+## Step 2. Remove the old CCE system
 
-Copy and paste this whole box:
+This deletes the old CCE system: its services, its databases and its data. **Only start once you have item 1 (the backup
+files) and item 2 (the go-ahead).** The old CCE PROD website stops working here. Each box can be pasted again if it stopped
+part-way: everything in it skips what is already gone.
+
+Type the `cceadmin` password whenever `sudo` asks for it.
+
+**2a.** Remove Kubernetes (k3s) and Docker, with everything that runs in them: the old CCE services, the old UAT's database,
+Kafka and ClickHouse, the old secret store (Infisical), Portainer and the exporters:
+
+```sh
+cd /tmp
+[ -x /usr/local/bin/k3s-uninstall.sh ] && sudo /usr/local/bin/k3s-uninstall.sh >/dev/null 2>&1; echo "k3s removed"
+command -v docker >/dev/null && sudo docker ps -aq | xargs -r sudo docker rm -f >/dev/null; echo "containers removed"
+sudo systemctl disable --now cce-docker-fw docker.socket docker containerd 2>/dev/null
+sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq docker.io containerd >/dev/null; echo "docker removed"
+sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /opt/containerd \
+  /usr/local/sbin/cce-docker-fw.sh /etc/systemd/system/cce-docker-fw.service
+```
+
+**You should see** `k3s removed`, `containers removed` and `docker removed`.
+
+**2b.** Remove the old PostgreSQL, Kafka, Kafka Connect and ClickHouse (installed directly on the server), and their data:
+
+```sh
+cd /tmp
+sudo systemctl disable --now kafka-connect kafka clickhouse-server postgresql 2>/dev/null
+sudo rm -f /etc/systemd/system/kafka.service /etc/systemd/system/kafka-connect.service
+sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq clickhouse-server clickhouse-client clickhouse-common-static \
+  postgresql-16 postgresql-client-16 postgresql-common postgresql-client-common infisical >/dev/null; echo "packages removed"
+sudo rm -rf /opt/kafka /var/lib/kafka /var/log/kafka /tmp/kafka-logs /tmp/connect.offsets \
+  /var/lib/clickhouse /etc/clickhouse-server /etc/clickhouse-client /var/log/clickhouse-server /var/log/clickhouse-keeper \
+  /var/lib/postgresql /etc/postgresql /var/log/postgresql
+sudo systemctl daemon-reload
+```
+
+**You should see** `packages removed`.
+
+**2c.** Remove the old backup job, and move the old files out of the way. Nothing here is deleted: the old backups and the old
+scripts are kept until the technical team decides to delete them.
+
+```sh
+cd /tmp
+sudo sh -c 'crontab -l 2>/dev/null | grep -v "cce-prod daily backup" | crontab -'
+[ -d /var/backups/cce-prod ] && sudo mv /var/backups/cce-prod /var/backups/cce-prod-old-1.x
+mkdir -p -m 700 ~/old-cce-1.x
+for f in deploy-scripts deploy-scripts.stale.20260616-061144 .cce-infisical .infisical .kube infisical \
+         .env-removed-20260622-062250 api_permissions_clean.sql cce-realm-clean.json prod.fp prod.fp.err; do
+  [ -e ~/"$f" ] && mv ~/"$f" ~/old-cce-1.x/
+done
+sudo rm -rf /root/.infisical /root/.kube /root/infisical-keyring
+find ~ -maxdepth 1 -type f -empty -name '*@*' -delete   # a stray empty file
+ls -A ~
+```
+
+**You should see** a short list: `old-cce-1.x`, `incident-2026-10-24-connect-exploit` (leave it: the technical team keeps it)
+and a few files starting with a dot (`.bashrc`, `.profile`, `.ssh`, …).
+
+The firewall (UFW) is left on: SSH, the website ports and the internal networks stay allowed, and the install sets it up
+again in its step 4/5.
+
+**2d.** Check that nothing of the old system is left. Paste this whole box:
 
 ```sh
 lsb_release -ds
 df -h / | tail -1
 echo "--- leftovers (should be empty) ---"
-command -v k3s psql clickhouse-server
-ls -d /opt/kafka /opt/cce-src /var/lib/cce-rw /opt/cce-local-infisical 2>/dev/null
+command -v k3s docker psql clickhouse-server
+ls -d /opt/kafka /var/lib/kafka /var/lib/clickhouse /var/lib/postgresql /var/lib/docker /var/lib/rancher /etc/rancher \
+  ~/deploy-scripts ~/.cce-infisical /var/backups/cce-prod /opt/cce-src /var/lib/cce-rw /opt/cce-local-infisical 2>/dev/null
+systemctl list-units --all --no-legend 'kafka*' 'clickhouse*' 'postgresql*' 'docker*' 'k3s*' 'containerd*' | grep -v not-found
+sudo ss -ltnp | grep -vE ':22 |:53 ' | awk 'NR>1'
 echo "--- end ---"
 ```
 
 **You should see:**
 - `Ubuntu 26.04 LTS`
-- a line about the disk where the 4th number (free space) is **at least 100G** (after a wipe it is usually several hundred)
+- a line about the disk where the 4th number (free space) is **at least 100G**
 - **nothing** between `--- leftovers ---` and `--- end ---`
 
-**If the Ubuntu version is different, or something is listed between the two lines**, the server was not wiped as expected.
-**Stop** and send what you see to the technical team.
+**If something is listed between the two lines**, paste the box of 2a, 2b or 2c that removes it again, then repeat 2d. If it
+is still listed, stop and send what you see to the technical team.
 
-Now install two small tools the next steps use:
+Now install three small tools the next steps use:
 
 ```sh
 sudo apt-get update -qq && sudo apt-get install -y -qq git tmux nano
 ```
 
-Type the `cceadmin` password if asked. **You should see** the command finish without the word `E:` or `error`.
+**You should see** the command finish without the word `E:` or `error`.
 
 ---
 
@@ -133,12 +186,9 @@ sudo wc -c /root/.cce-gitlab.token
 
 ---
 
-## Step 4. Put the install scripts on the server
+## Step 4. Download the install scripts
 
-They must end up in **`/home/cceadmin/deploy-scripts`**, and must be the **whole `deploy-scripts-rw` branch** (not only its
-`rw/` folder, and not another branch: the others have no `rw/`). Use **A** when the branch is in the RW GitLab, otherwise **B**.
-
-**A. From the RW GitLab.** Paste this whole box (it uses the token from step 3; the token is not shown on screen):
+Paste this whole box (it uses the token from step 3; the token is not shown on screen):
 
 ```sh
 cd ~
@@ -146,39 +196,21 @@ sudo env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://repository.moh.gov.rw/
   GIT_CONFIG_VALUE_0="Authorization: Basic $(sudo sh -c 'printf "oauth2:%s" "$(tr -d "[:space:]" < /root/.cce-gitlab.token)"' | base64 -w0)" \
   git clone -b deploy-scripts-rw https://repository.moh.gov.rw/cce/deploy-scripts.git /home/cceadmin/deploy-scripts
 sudo chown -R cceadmin: /home/cceadmin/deploy-scripts
-ls ~/deploy-scripts
+cd ~/deploy-scripts && git branch --show-current && ls
 ```
 
-**You should see** a list that includes `k8s`, `one-click-installer` and `rw`.
+**You should see** `deploy-scripts-rw`, then a list that includes `k8s`, `keycloak-themes`, `one-click-installer` and `rw`.
 
 **If you see** `not found`, `Authentication failed` or `could not read`: the token or the address is wrong. Send the message to the
-technical team. (If the technical team gave you a different address in item 7, use that one in the `git clone` line.)
-
-**B. A copy from your computer.** On **your computer** (not the server), get the branch and send it over. If you already have a
-copy of the branch, skip the `git clone` line and use your copy's folder:
-
-```sh
-git clone --depth 1 -b deploy-scripts-rw https://github.com/openphc/deploy-scripts.git deploy-scripts
-tar czf deploy-scripts.tgz deploy-scripts
-scp deploy-scripts.tgz cceadmin@102.215.10.20:
-```
-
-Then, **on the server**:
-
-```sh
-tar xzf ~/deploy-scripts.tgz -C ~ && rm ~/deploy-scripts.tgz
-cd ~/deploy-scripts && git branch --show-current 2>/dev/null; ls ~/deploy-scripts
-```
-
-**You should see** `deploy-scripts-rw` (only if the copy came with git), then a list that includes `k8s`, `keycloak-themes`,
-`one-click-installer` and `rw`. **If `rw` or `one-click-installer` is missing:** it is the wrong branch or an incomplete copy.
+technical team. (If the technical team gave you a different address in item 6, use that one in the `git clone` line.)
+**If you see** `already exists and is not an empty directory`: step 2c did not move the old scripts; repeat 2c.
 
 ---
 
 ## Step 5. Create the seed file
 
 The seed file gives the install the settings that must not be invented: the e-mail server, alert recipients, the OpenHIM
-login and some passwords. The technical team sends you its content (item 6).
+login and some passwords. The technical team sends you its content (item 5).
 
 **5a.** Create the empty, protected file and open it:
 
@@ -323,23 +355,40 @@ sudo ls /var/backups/cce-prod/
 
 ---
 
-## Step 9. Restore the old Keycloak (only if item 8 says so)
+## Step 9. Put back the old facilities and logins
 
-The old PROD's Keycloak database holds OpenHIM's login (`openhim-emitter-inbound`, with its password) and the Insights users.
-Restoring it means nobody, OpenHIM included, has to change a password. **Do it right after step 8:** until then, OpenHIM's
-calls get `401`. It replaces the new, empty Keycloak data; the install's first backup (step 8d) keeps a copy of that.
+This restores two things from the 2026-11-11 backups (item 1):
+- the **facilities** (86, with their names, districts and expected patients per day), into the new database
+- the **Keycloak logins**: OpenHIM's login (`openhim-emitter-inbound`, with its password) and the Insights users, so nobody,
+  OpenHIM included, has to change a password
 
-**9a.** On **your computer**, copy the dump to the server (it holds password hashes: never by e-mail or chat):
+**Do it right after step 8:** until it is done, OpenHIM's calls get `401` and no new events arrive. The Keycloak restore replaces
+the new, empty Keycloak data; the install's first backup (step 8d) keeps a copy of that.
+
+**9a.** On **your computer**, copy both files to the server (they hold password hashes: never by e-mail or chat):
 
 ```sh
-scp prod-keycloak-20261111-020004.sql.gz cceadmin@102.215.10.20:
+scp prod-keycloak-20261111-020004.sql.gz prod-facility-2026-11-11.sql cceadmin@102.215.10.20:
 ```
 
-**9b.** On the server, paste this whole box:
+**9b.** On the server, put the facilities back. Paste this whole box:
 
 ```sh
 cd /tmp
-sudo install -m 600 ~/prod-keycloak-20261111-020004.sql.gz /root/ && rm ~/prod-keycloak-20261111-020004.sql.gz
+sudo install -m 600 ~/prod-facility-2026-11-11.sql ~/prod-keycloak-20261111-020004.sql.gz /root/ \
+  && rm ~/prod-facility-2026-11-11.sql ~/prod-keycloak-20261111-020004.sql.gz
+sudo sed -E '/^INSERT INTO public.facility /s/\);$/) ON CONFLICT (facility_id) DO UPDATE SET facility_name = EXCLUDED.facility_name, district_name = EXCLUDED.district_name, expected_patients_per_day = EXCLUDED.expected_patients_per_day;/' \
+  /root/prod-facility-2026-11-11.sql | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -d ccedb && echo "FACILITIES OK"
+sudo -u postgres psql -qtA -d ccedb -c "select count(*) || ' facilities' from facility"
+```
+
+**You should see** `FACILITIES OK`, then `86 facilities` (a few more is fine: a facility that sent an event since step 7).
+Pasting the box again is harmless: a facility already there is updated, not added twice.
+
+**9c.** Put the Keycloak logins back. Paste this whole box:
+
+```sh
+cd /tmp
 sudo k3s kubectl -n cce-prod scale deploy/keycloak --replicas=0
 while sudo k3s kubectl -n cce-prod get pods --no-headers | grep -q '^keycloak-'; do sleep 5; done
 sudo sh -c 'gunzip -c /root/prod-keycloak-20261111-020004.sql.gz' \
@@ -352,7 +401,7 @@ sudo k3s kubectl -n cce-prod rollout status deploy/keycloak --timeout=600s
 (`SET ROLE admin` makes the restored tables belong to `admin`, the user Keycloak connects as. Without it they belong to
 `postgres` and Keycloak cannot read them.)
 
-**9c.** Check the OpenHIM client and user against the server's secret store:
+**9d.** Check the OpenHIM client and user against the server's secret store:
 
 ```sh
 cd ~/deploy-scripts && sudo bash one-click-installer/lib/infisical-run.sh prod bash rw/lib/keycloak-openhim-basic.sh prod 2>&1 \
@@ -363,7 +412,11 @@ cd ~/deploy-scripts && sudo bash one-click-installer/lib/infisical-run.sh prod b
 `user openhim-emitter-inbound: has EMITTER_INBOUND_WRITE`. **If you see an error about the admin login or a token:** the seed
 file did not have the old `KEYCLOAK_ADMIN_USER`/`KEYCLOAK_ADMIN_PASSWORD` (Appendix). Tell the technical team.
 
-Then delete the dump from the server: `sudo rm /root/prod-keycloak-20261111-020004.sql.gz`.
+**9e.** Delete the backup files from the server:
+
+```sh
+sudo rm /root/prod-facility-2026-11-11.sql /root/prod-keycloak-20261111-020004.sql.gz
+```
 
 ---
 
@@ -373,7 +426,7 @@ Close the safe window (type `exit` inside tmux), then tell the technical team th
 
 1. **The log file.** It is on the server in `/home/cceadmin/`, named `prod-install-<date>-<time>.log`. To see its exact name:
    `ls ~/prod-install-*.log`
-2. **The results of steps 8 and 9** (a screenshot of 8a and of 9c is enough).
+2. **The results of steps 8 and 9** (a screenshot of 8a, 9b and 9d is enough).
 
 The technical team then finishes these items, which are **not** part of your job:
 
@@ -381,11 +434,11 @@ The technical team then finishes these items, which are **not** part of your job
   `/home/cceadmin/.cce-infisical/prod.*`); without them the passwords cannot be recovered
 - load the clinical protocol: `rw/protocols/emr-service-protocol.json`, the same definition UAT .21 runs (how:
   `rw/docs/uat/OPERATIONS-RUNBOOK.md` §12, with namespace `cce-prod`)
-- if step 9 was skipped: create the Insights users in Keycloak (`rw/docs/uat/OPERATIONS-RUNBOOK.md` §13, with `cce-prod`),
-  and give the OpenHIM admins the inbound login (`sudo bash one-click-installer/tools/show-credentials.sh prod --reveal`)
-- if step 9 was done: put OpenHIM's real password into Infisical as `EMITTER_INBOUND_PASSWORD` once known; until then
-  Infisical holds a generated value that is not the password (`show-credentials.sh` shows that one)
-- confirm that OpenHIM traffic is arriving
+- put OpenHIM's real password into Infisical as `EMITTER_INBOUND_PASSWORD` once known; until then Infisical holds a generated
+  value that is not the password (`show-credentials.sh` shows that one)
+- confirm that OpenHIM traffic is arriving, and that Insights lists the facilities
+- decide when to delete the old system's leftovers: `/var/backups/cce-prod-old-1.x` (it holds the old, unredacted clinical
+  database dumps) and `~/old-cce-1.x`
 - from now on, run PROD the way UAT is run (`rw/docs/uat/OPERATIONS-RUNBOOK.md`, with `rw/config/prod.env` and namespace
   `cce-prod`), until PROD's own runbook is written
 
@@ -397,8 +450,9 @@ Finally, log out of the server: `exit`.
 
 | What you see | What it means | What to do |
 |---|---|---|
-| `Permission denied` when logging in | wrong password or user | check the login from item 4 (the password changed with the wipe) |
-| `REMOTE HOST IDENTIFICATION HAS CHANGED!` | expected after the wipe | step 1 |
+| `Permission denied` when logging in | wrong password or user | check the login from item 3 |
+| `REMOTE HOST IDENTIFICATION HAS CHANGED!` | the server is not the one expected | stop; tell the technical team |
+| Something still listed in step 2d | part of the old system is left | step 2d says what to do |
 | `ERROR: run as root` | `sudo` is missing at the start of the command | copy the command again, completely |
 | `GIT_TOKEN_FILE … not readable` | the token file is missing | repeat step 3 |
 | `SEED_ENV_FILE not readable` or `Fix the config above` | the seed file is missing or wrong | repeat step 5; send the message to the technical team |
@@ -407,8 +461,9 @@ Finally, log out of the server: `exit`.
 | `no sessions` after `tmux attach -t install` | the install window was closed | check whether it finished: `tail -20 ~/prod-install-*.log`. If it did not finish, run step 7a and 7b again |
 | An `ERROR` line during step 7 | one part failed | run step 7b again once; if the same error comes back, send the log |
 | Browser shows a certificate warning | the certificate is still being issued | step 8b |
-| No `RESTORE OK` in step 9b | the Keycloak restore stopped | run step 9b again from its first line; Keycloak stays at 0 until it succeeds. If it fails again, send the screen |
-| OpenHIM's calls get `401` after the install | the old Keycloak is not restored yet, or OpenHIM uses another password | step 9; otherwise tell the technical team |
+| No `FACILITIES OK` in step 9b | the facility load stopped | paste the `sudo sed` and the last line of 9b again (the files are already in `/root`); if it fails again, send the screen |
+| No `RESTORE OK` in step 9c | the Keycloak restore stopped | run step 9c again from its first line; Keycloak stays at 0 until it succeeds. If it fails again, send the screen |
+| OpenHIM's calls get `401` after step 9 | OpenHIM uses another password, or the client secret differs | tell the technical team, with the output of 9d |
 
 **Do not**, under any circumstances: edit files in `/opt/cce-src` or `~/deploy-scripts`, use `rw/config/uat.env` on this
 server, or run anything on 102.215.10.21.
@@ -433,8 +488,8 @@ CCE_INTELLIGENCE_ALERT_NAME_TIER2=
 CCE_INTELLIGENCE_ALERT_EMAIL_TIER3=
 CCE_INTELLIGENCE_ALERT_NAME_TIER3=
 
-# Keycloak: REQUIRED when the old Keycloak is restored (step 9). They must be the old PROD's values, because the restored
-# database brings the old Keycloak admin and the old openhim-basic client with it.
+# REQUIRED: Keycloak. Must be the old PROD's values: the restored Keycloak (step 9) brings the old Keycloak admin and the
+# old openhim-basic client with it, and the install has to log in to it with these.
 KEYCLOAK_ADMIN_USER=
 KEYCLOAK_ADMIN_PASSWORD=
 BASIC_AUTH_CLIENT_SECRET=
@@ -452,16 +507,12 @@ GRAFANA_ADMIN_PASSWORD=
 GATEWAY_ALLOWED_ORIGINS=https://cce.moh.gov.rw
 ```
 
-Take every value from the old PROD's Infisical export, made on 2026-11-11 before the wipe and kept by the technical team (after
-the wipe the old Infisical is gone); all of these keys are in it. Delete any optional line you do not fill in.
+Take every value from the old PROD's Infisical export, made on 2026-11-11 and kept by the technical team (step 2 removes the
+old Infisical); all of these keys are in it. Delete any optional line you do not fill in.
 
-**OpenHIM's login** (`EMITTER_INBOUND_USER`/`EMITTER_INBOUND_PASSWORD`) is **not** in that export: its password exists only in
-the old Keycloak database (as a hash) and in OpenHIM's channel.
-- **Old Keycloak restored (step 9):** leave both out. The restore brings OpenHIM's user back with its password, so OpenHIM
-  keeps working unchanged.
-- **Not restored:** add `EMITTER_INBOUND_USER=openhim-emitter-inbound` and `EMITTER_INBOUND_PASSWORD=<new password>`, and
-  give that pair to the OpenHIM admins for the channel. The three Keycloak lines above may then be left out (generated).
-  (RW's older names `OPENHIM_INBOUND_USER`/`OPENHIM_INBOUND_PASSWORD` are still accepted.)
+**Not in the seed file: OpenHIM's login** (`EMITTER_INBOUND_USER`/`EMITTER_INBOUND_PASSWORD`). Its password is not in the
+export; it exists only in the old Keycloak database (as a hash) and in OpenHIM's channel, and the step 9 restore brings it back
+unchanged. The install stores a generated `EMITTER_INBOUND_PASSWORD` in Infisical, which is not that password (step 10).
 
 What the script uses, for reference: config `rw/config/prod.env` (namespace `cce-prod`, overlay `k8s/overlays/rw-prod`, public
 name `cce.moh.gov.rw`, PROD's replica counts, the same code branches as UAT .21). Details: `../ONE-CLICK-INSTALL.md`.

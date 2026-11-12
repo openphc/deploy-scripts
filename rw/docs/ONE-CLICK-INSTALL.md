@@ -4,7 +4,7 @@
 **built on that machine from the RW-MOH GitLab** (`repository.moh.gov.rw/cce/*`). This is the stopgap until GitLab CI/CD builds and
 publishes the images.
 
-It is in use for **RW UAT on 102.215.10.21** (config `rw/config/uat.env`). **RW PROD on 102.215.10.20** is to be wiped and set
+It is in use for **RW UAT on 102.215.10.21** (config `rw/config/uat.env`). **RW PROD on 102.215.10.20** is to be cleared of its old system and set
 up with it too (config `rw/config/prod.env`, step-by-step guide `prod/INSTALL-GUIDE.md`). Hostnames on these VMs are misleading,
 so always go by IP.
 
