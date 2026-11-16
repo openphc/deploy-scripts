@@ -357,8 +357,14 @@ services:
       KEYCLOAK_REALM: ${KEYCLOAK_REALM}
       KEYCLOAK_TARGET_REALM: ${KEYCLOAK_TARGET_REALM}
       KEYCLOAK_ADMIN_CLIENT_ID: ${KEYCLOAK_ADMIN_CLIENT_ID}
-      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # The Keycloak admin user and password are no longer given to the gateway.
+      # They were used only by the permission sync (POST /api/permissions/sync-to-keycloak),
+      # which creates and deletes realm roles. CCE does not call it, so it stays off.
+      # To turn it on: create a service-account client in the realm with the "manage-realm"
+      # role, then set KEYCLOAK_ADMIN_CLIENT_ID, KEYCLOAK_ADMIN_CLIENT_SECRET and
+      # PERMISSION_SYNC_ENABLED=true in .env.
+      KEYCLOAK_ADMIN_CLIENT_SECRET: ${KEYCLOAK_ADMIN_CLIENT_SECRET:-}
+      PERMISSION_SYNC_ENABLED: ${PERMISSION_SYNC_ENABLED:-false}
       # Inbound HTTP Basic auth (tibERbu only sends Basic, never a Bearer token itself) — the
       # gateway exchanges it for a Keycloak token via this dedicated confidential client before
       # running the normal JWT validation/authorization pipeline. See gateway-service's own
@@ -399,6 +405,9 @@ services:
       OPENHIM_USERNAME: ${OPENHIM_USERNAME}
       OPENHIM_PASSWORD: ${OPENHIM_PASSWORD}
       CCE_COLLECTOR_URL: ${CCE_COLLECTOR_URL}
+      # Must stay longer than the collector's Kafka publish time (3 s + 10 s).
+      # See CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS on cce-collector-service.
+      CCE_COLLECTOR_TIMEOUT: ${CCE_COLLECTOR_TIMEOUT:-15000}
       CCE_COLLECTOR_AUTH_TOKEN: ${CCE_COLLECTOR_AUTH_TOKEN}
       EBUZIMA_CLIENT_ID: ${EBUZIMA_CLIENT_ID}
       SPICE_CLIENT_ID: ${SPICE_CLIENT_ID}
@@ -441,6 +450,9 @@ services:
       # the two adaptors can be rotated/repointed independently later without touching each other
       CCE_COLLECTOR_URL: ${TIBERBU_CCE_COLLECTOR_URL:-http://cce-collector-service:8080}
       CCE_COLLECTOR_EVENTS_PATH: ${TIBERBU_CCE_COLLECTOR_EVENTS_PATH:-/v1/events}
+      # Must stay longer than the collector's Kafka publish time (3 s + 10 s).
+      # See CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS on cce-collector-service.
+      CCE_COLLECTOR_TIMEOUT: ${TIBERBU_CCE_COLLECTOR_TIMEOUT:-15000}
       CCE_COLLECTOR_AUTH_TOKEN: ${TIBERBU_CCE_COLLECTOR_AUTH_TOKEN}
       # Facility allowlist — empty/unset means every facility passes through unfiltered
       FACILITY_FILTER_IDS: ${TIBERBU_FACILITY_FILTER_IDS:-}
@@ -480,7 +492,15 @@ services:
       # 2.0.0 collector reads CCE_KAFKA_TOPICS_INBOUND_EVENTS (1.x read CCE_COLLECTOR_KAFKA_TOPICS_INBOUND)
       CCE_KAFKA_TOPICS_INBOUND_EVENTS: ${CCE_KAFKA_TOPICS_INBOUND_EVENTS:-cce.events.inbound}
       CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER: ${CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER:-cce.deadletter}
-      CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS: ${CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS:-30}
+      # The emitters' CCE_COLLECTOR_TIMEOUT (15 s) must stay longer than
+      # KAFKA_MAX_BLOCK_MS + this value (3 s + 10 s). If not, an emitter retries
+      # while the collector is still publishing.
+      CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS: ${CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS:-10}
+      KAFKA_MAX_BLOCK_MS: ${KAFKA_MAX_BLOCK_MS:-3000}
+      # Tries again the stored events that were rejected because the collector failed
+      # (REJECTED with KAFKA_PUBLISH_FAILURE or INTERNAL_ERROR). Off by default.
+      # Example: set it to "true" after a Kafka outage, until those events are published.
+      CCE_COLLECTOR_REPUBLISH_ENABLED: ${CCE_COLLECTOR_REPUBLISH_ENABLED:-false}
       # Actuator / Prometheus metrics
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
       MANAGEMENT_METRICS_TAGS_APPLICATION: cce-collector-service
