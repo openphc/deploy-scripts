@@ -80,6 +80,12 @@ spec:
               value: "10"
             - name: KAFKA_MAX_BLOCK_MS
               value: "3000"
+            # Tries again the stored events that were rejected because the collector failed
+            # (REJECTED with KAFKA_PUBLISH_FAILURE or INTERNAL_ERROR). Off by default in the
+            # collector. On here, to publish the events that are already stored as REJECTED.
+            # Set it to "false" when no such event is left.
+            - name: CCE_COLLECTOR_REPUBLISH_ENABLED
+              value: "true"
             - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
               value: "health,info,prometheus,metrics"
             - name: MANAGEMENT_METRICS_TAGS_APPLICATION
