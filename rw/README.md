@@ -6,7 +6,7 @@ machine per environment, CCE services built on that machine from the RW-MOH GitL
 | Environment | Machine | Public name | Config | Status |
 |---|---|---|---|---|
 | UAT | 102.215.10.21 | `cceuat.moh.gov.rw` | `config/uat.env` | installed 2026-11-04, in use |
-| PROD | 102.215.10.20 | `cce.moh.gov.rw` | `config/prod.env` | to be wiped and installed with `docs/prod/INSTALL-GUIDE.md` |
+| PROD | 102.215.10.20 | `cce.moh.gov.rw` | `config/prod.env` | old 1.x system to be removed, then installed with `docs/prod/INSTALL-GUIDE.md` |
 
 The machines' hostnames are misleading (.21 is called `cce-prod`). Always go by IP.
 

@@ -73,8 +73,13 @@ spec:
               value: "cce.events.inbound"
             - name: CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER
               value: "cce.deadletter"
+            # The emitter's CCE_COLLECTOR_TIMEOUT (15 s) must stay longer than
+            # KAFKA_MAX_BLOCK_MS + this value (3 s + 10 s). If not, the emitter retries
+            # while the collector is still publishing.
             - name: CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS
-              value: "30"
+              value: "10"
+            - name: KAFKA_MAX_BLOCK_MS
+              value: "3000"
             - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
               value: "health,info,prometheus,metrics"
             - name: MANAGEMENT_METRICS_TAGS_APPLICATION

@@ -92,10 +92,17 @@ from Postgres. If the replication slot shows `lost` (§14), drop `cce_analytics`
 4. **Restore the data:**
 
    ```bash
-   sudo k3s kubectl -n cce-uat scale deploy --all --replicas=0
-   gunzip -c pg-keycloak-<stamp>.sql.gz | sudo -u postgres psql -q -d keycloak
+   cd /tmp; sudo k3s kubectl -n cce-uat scale deploy --all --replicas=0
+   gunzip -c pg-keycloak-<stamp>.sql.gz | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -d keycloak -c 'SET ROLE admin' -f -
    gunzip -c pg-ccedb-<stamp>.sql.gz   | sudo -u postgres psql -q -d ccedb
    ```
+
+   The dumps are made with `--no-owner`. `SET ROLE admin` makes the restored Keycloak tables belong to `admin`, the user
+   Keycloak connects as; restored as `postgres` they are unreadable to it (tested 2026-11-12 on the PROD dump, over a fresh
+   Keycloak schema too). **The `ccedb` line has the same ownership problem, and is not resolved yet:** the CDC publication
+   `cce_analytics_pub` belongs to `postgres`, so a restore as `admin` cannot add the re-created tables back to it. After a
+   `ccedb` restore, check `select tableowner, count(*) from pg_tables where schemaname='public' group by 1` shows only
+   `admin`, and ask the technical team before relying on it.
 
    The Keycloak dump needs the same Keycloak version or newer (26.5.4 on 2026-11-12); Keycloak upgrades its database when it
    starts, never the other way.
