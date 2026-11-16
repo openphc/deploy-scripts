@@ -152,13 +152,8 @@ spec:
             - name: KEYCLOAK_ADMIN_CLIENT_ID
               value: "admin-cli"
             # The Keycloak admin user and password are no longer given to the gateway.
-            # They were used only by the permission sync (POST /api/permissions/sync-to-keycloak),
-            # which creates and deletes realm roles. CCE does not call it, so it stays off.
-            # To turn it on later: create a service-account client in the "cce" realm with the
-            # "manage-realm" role, then set KEYCLOAK_ADMIN_CLIENT_ID, KEYCLOAK_ADMIN_CLIENT_SECRET
-            # (from cce-secrets) and PERMISSION_SYNC_ENABLED=true.
-            - name: PERMISSION_SYNC_ENABLED
-              value: "false"
+            # Only the permission sync endpoints (/api/permissions/...) used them. CCE does not
+            # call those endpoints, and they are removed from the gateway.
             # ---- Authorization ----
             - name: AUTHORIZATION_ENABLED
               value: "true"
