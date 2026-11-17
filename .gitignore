@@ -6,11 +6,11 @@
 !.infisical.example
 k8s/**/*.rendered
 docs/
-remote-deployment/
+!one-click-installer/docs/
 .vscode/
-.claude/__pycache__/
-*.pyc
-
-# RW-specific deployment scripts/data — not for the shared repo
-rw/
 .claude/
+*.pyc
+__pycache__/
+# Real installer configs (one-click-installer/config/<env>.env) are ignored by one-click-installer/config/.gitignore.
+# data-pipeline/ is fetched by the installer from cce-data-pipeline at DATA_PIPELINE_REF (one-click-installer/config) on every run
+data-pipeline/

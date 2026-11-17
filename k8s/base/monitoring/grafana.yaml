@@ -70,8 +70,11 @@ spec:
               mountPath: /etc/grafana/provisioning/datasources
             - name: grafana-dashboards-provisioning
               mountPath: /etc/grafana/provisioning/dashboards
+            # Data-pipeline alert rules (ConfigMap grafana-alerting, monitoring/grafana-alerting.yaml).
+            - name: grafana-alerting
+              mountPath: /etc/grafana/provisioning/alerting
             # Dashboard JSONs (provisioned). Created from grafana/dashboards/ by the deploy
-            # step (rw/uat/03, rw/prod/05) with the datasource uid rewritten to "prometheus".
+            # step (one-click-installer 05-k8s-deploy.sh, lib/grafana-redeploy.sh) with the datasource uid rewritten to "prometheus".
             - name: grafana-dashboards
               mountPath: /var/lib/grafana/dashboards
           resources:
@@ -91,6 +94,9 @@ spec:
         - name: grafana-dashboards-provisioning
           configMap:
             name: grafana-dashboards-provisioning
+        - name: grafana-alerting
+          configMap:
+            name: grafana-alerting
         - name: grafana-dashboards
           configMap:
             name: grafana-dashboards

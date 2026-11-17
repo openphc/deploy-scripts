@@ -91,17 +91,19 @@ spec:
               port: 9000
             periodSeconds: 15
           volumeMounts:
-            - name: insights-ui-theme
-              mountPath: /opt/keycloak/themes/insights-ui-theme
+            # Mounted as the theme NAME cce-insights-theme (k8s/seeds/cce-realm.json loginTheme). Which files are served is
+            # chosen by the hostPath below (05-k8s-deploy.sh rewrites it to KEYCLOAK_THEME_DIR).
+            - name: cce-insights-theme
+              mountPath: /opt/keycloak/themes/cce-insights-theme
               readOnly: true
       # hostPath: single-node k3s cluster, repo checked out at /home/cceadmin/deploy-scripts on
       # every environment. Mirrors the ./keycloak-themes bind mount in docker-compose.yml — a
       # ConfigMap can't be used here since ConfigMap volumes flatten keys and lose the theme's
       # nested login/resources/css directory structure.
       volumes:
-        - name: insights-ui-theme
+        - name: cce-insights-theme
           hostPath:
-            path: /home/cceadmin/deploy-scripts/keycloak-themes/insights-ui-theme
+            path: /home/cceadmin/deploy-scripts/keycloak-themes/cce-insights-theme/dev
             type: Directory
 ---
 apiVersion: v1

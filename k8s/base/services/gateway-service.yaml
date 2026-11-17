@@ -110,12 +110,14 @@ spec:
               value: "Path=/v1/events/**"
             - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_0_FILTERS_0_NAME
               value: "JwtValidationFilter"
+            # CCE 2.0.0: the PlanDefinition / ActionDefinition API moved from the retired 1.x
+            # compliance service (/v1/compliance/**) to the protocol service.
             - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_ID
-              value: "cce-compliance-service"
+              value: "cce-protocol-service"
             - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_URI
-              value: "http://cce-compliance-service:8080"
+              value: "http://cce-protocol-service:8080"
             - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_PREDICATES_0
-              value: "Path=/v1/compliance/**"
+              value: "Path=/v1/protocol/**"
             - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_1_FILTERS_0_NAME
               value: "JwtValidationFilter"
             - name: SPRING_CLOUD_GATEWAY_SERVER_WEBFLUX_ROUTES_2_ID
@@ -149,16 +151,14 @@ spec:
               value: "cce"
             - name: KEYCLOAK_ADMIN_CLIENT_ID
               value: "admin-cli"
-            - name: KEYCLOAK_ADMIN_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: cce-secrets
-                  key: KEYCLOAK_ADMIN_USER
-            - name: KEYCLOAK_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: cce-secrets
-                  key: KEYCLOAK_ADMIN_PASSWORD
+            # The Keycloak admin user and password are no longer given to the gateway.
+            # They were used only by the permission sync (POST /api/permissions/sync-to-keycloak),
+            # which creates and deletes realm roles. CCE does not call it, so it stays off.
+            # To turn it on later: create a service-account client in the "cce" realm with the
+            # "manage-realm" role, then set KEYCLOAK_ADMIN_CLIENT_ID, KEYCLOAK_ADMIN_CLIENT_SECRET
+            # (from cce-secrets) and PERMISSION_SYNC_ENABLED=true.
+            - name: PERMISSION_SYNC_ENABLED
+              value: "false"
             # ---- Authorization ----
             - name: AUTHORIZATION_ENABLED
               value: "true"

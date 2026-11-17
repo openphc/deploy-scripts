@@ -59,6 +59,10 @@ spec:
                   key: OPENHIM_PASSWORD
             - name: CCE_COLLECTOR_URL
               value: "http://cce-collector-service:8080"
+            # Must stay longer than the collector's Kafka publish time (3 s + 10 s).
+            # See CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS in cce-collector-service.yaml.
+            - name: CCE_COLLECTOR_TIMEOUT
+              value: "15000"
             - name: CCE_COLLECTOR_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
