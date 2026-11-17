@@ -62,12 +62,12 @@ else
     --data-binary @"$REPO/k8s/seeds/cce-realm.json")
   echo "  realm import HTTP=$code"
 fi
-# Select the login theme: the theme mounted as "insights-ui-theme" (05-k8s-deploy.sh: KEYCLOAK_THEME_DIR). cce-realm.json now
-# selects it on import too; this also covers a realm imported before that, which showed Keycloak's stock page. PUT is a
-# partial update — only loginTheme changes. Re-run safe.
+# Select the login theme: the theme mounted as "cce-insights-theme" (05-k8s-deploy.sh: KEYCLOAK_THEME_DIR). cce-realm.json
+# selects it on import too; this also moves a realm imported earlier (no theme, or the old name insights-ui-theme, which is
+# no longer mounted) onto it. PUT is a partial update — only loginTheme changes. Re-run safe.
 code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
-  -X PUT "$KC/admin/realms/cce" -d '{"loginTheme":"insights-ui-theme"}')
-echo "  login theme insights-ui-theme (from ${KEYCLOAK_THEME_DIR:-keycloak-themes/cce-insights-theme/dev}) HTTP=$code"
+  -X PUT "$KC/admin/realms/cce" -d '{"loginTheme":"cce-insights-theme"}')
+echo "  login theme cce-insights-theme (from ${KEYCLOAK_THEME_DIR:-keycloak-themes/cce-insights-theme/dev}) HTTP=$code"
 # The emitter's inbound HTTP Basic auth: client role, the gateway's password-grant client and the inbound user.
 bash "$HERE/../keycloak-inbound-basic.sh" "$ENVCODE"
 

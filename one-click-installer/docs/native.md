@@ -434,8 +434,8 @@ realm, its login theme, the emitter's inbound Basic authentication, and optional
    "No permission mappings configured").
 2. Waits up to 10 minutes for the `keycloak` rollout. Port-forwards `svc/keycloak` to `localhost:18080` (log
    `/tmp/kc-pf-<env>.log`), gets an admin token, imports `cce-realm.json` if realm `cce` does not exist (the file sets
-   `loginTheme: insights-ui-theme`), then sets the realm's `loginTheme` to `insights-ui-theme` again (this covers a realm
-   imported before the file had it), and runs [keycloak-inbound-basic.sh](lib-install.md#keycloak-inbound-basicsh).
+   `loginTheme: cce-insights-theme`), then sets the realm's `loginTheme` to `cce-insights-theme` again (this covers a
+   realm imported before the file had it, or with the old theme name `insights-ui-theme`), and runs [keycloak-inbound-basic.sh](lib-install.md#keycloak-inbound-basicsh).
 3. If `PROTOCOL_FILE` and `PROTOCOL_LOAD_URL` are both set: reads the PlanDefinition's `url` and `version`, lists the
    loaded protocols (`GET <PROTOCOL_LOAD_URL>?size=500`). If that `url|version` is already loaded, prints
    `already loaded (<status>) — not posted again`. Otherwise wraps the file as
