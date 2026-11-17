@@ -14,6 +14,7 @@ The machines' hostnames are misleading (.21 is called `cce-prod`). Always go by 
 
 | I want to… | Read |
 |---|---|
+| understand what CCE is, how it is built and secured, and how it is deployed here | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | understand how the installer works | [`docs/ONE-CLICK-INSTALL.md`](docs/ONE-CLICK-INSTALL.md) |
 | operate UAT: deploy new code, back up, change config, load a protocol | [`docs/uat/OPERATIONS-RUNBOOK.md`](docs/uat/OPERATIONS-RUNBOOK.md) |
 | know how UAT is secured, rotate a credential | [`docs/uat/SECURITY.md`](docs/uat/SECURITY.md) |
