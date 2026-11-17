@@ -47,7 +47,7 @@ cce_fill_host_defaults() {
   _cce_default VM_HOST_IP   "$ip"
   _cce_default VM_HOST_CIDR "${VM_HOST_IP}/32"
   _cce_default POSTGRES_HOST "$VM_HOST_IP"
-  # One-click installs are dedicated machines with the standard ports; Kafka always listens on 9092 (setup-prod-infra.sh).
+  # One-click installs are dedicated machines with the standard ports; Kafka always listens on 9092 (setup-postgres-kafka.sh).
   _cce_default KAFKA_BOOTSTRAP_SERVERS "${VM_HOST_IP}:9092"
   _cce_default CLICKHOUSE_HOST "$VM_HOST_IP"
   # The address users and the gateway reach this environment at — Keycloak's token issuer is built from it, and the gateway

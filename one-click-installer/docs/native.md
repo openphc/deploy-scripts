@@ -13,7 +13,7 @@ The step files are numbered by history, not by run order. `install-all.sh` runs 
 
 | # | Script | What |
 |---|---|---|
-| 1 | [01-install-postgres-kafka.sh](#01-install-postgres-kafkash) | PostgreSQL + Kafka (KRaft) |
+| 1 | [01-install-postgres-kafka.sh](#01-install-postgres-kafkash) → [setup-postgres-kafka.sh](../lib/native/setup-postgres-kafka.sh) | PostgreSQL + Kafka (KRaft) |
 | 2 | [02-install-clickhouse.sh](#02-install-clickhousesh) | ClickHouse |
 | 3 | [03-install-kafka-connect.sh](#03-install-kafka-connectsh) | Kafka Connect + Debezium plugin |
 | 3b | [07-monitoring-exporters.sh](#07-monitoring-exporterssh) | postgres_exporter, kafka_exporter |
@@ -25,7 +25,7 @@ The step files are numbered by history, not by run order. `install-all.sh` runs 
 (Step 5 in the script's output is only a message: the `ccedb` tables are created by the CCE services themselves when
 they first start. Step 6 waits for them.)
 
-**Re-running phase 6 restarts data services.** Every run restarts PostgreSQL (setup-prod-infra.sh), Kafka (01),
+**Re-running phase 6 restarts data services.** Every run restarts PostgreSQL (setup-postgres-kafka.sh), Kafka (01),
 ClickHouse (02), Kafka Connect (03) and the exporters (07). On a live environment, a re-run of install.sh means a short
 interruption. Plan it.
 
@@ -86,7 +86,7 @@ apply (Kafka version, Connect override policy, PostgreSQL `log_connections`, Cli
 [`lib/native/01-install-postgres-kafka.sh`](../lib/native/01-install-postgres-kafka.sh)
 
 **Purpose.** Installs PostgreSQL and Kafka (KRaft, no ZooKeeper) as systemd services by running
-[`k8s/infrastructure/setup-prod-infra.sh`](../../k8s/infrastructure/setup-prod-infra.sh), then adapts them for this
+[`setup-postgres-kafka.sh`](../lib/native/setup-postgres-kafka.sh) (in the same folder), then adapts them for this
 machine.
 
 **Called by / when to run.** Step 1 of [install-all.sh](#install-allsh).
@@ -96,11 +96,11 @@ machine.
 **Reads.** `POSTGRES_PASSWORD` (or `POSTGRES_PROD_PASSWORD`), `VM_HOST_IP` (required). `POSTGRES_USER` (default
 `admin`), `POSTGRES_DB` (default `ccedb`), `KAFKA_VERSION`, `POSTGRES_VERSION`, `K3S_CLUSTER_CIDR`,
 `K3S_SERVICE_CIDR`, `ENABLE_PG_STAT_STATEMENTS` (default true), `LOG_CONNECTIONS` (default true). All of these are
-passed to setup-prod-infra.sh with `env VAR=…` (never `sudo -E`).
+passed to setup-postgres-kafka.sh with `env VAR=…` (never `sudo -E`).
 
 **Changes.**
 
-By setup-prod-infra.sh:
+By setup-postgres-kafka.sh:
 - If `psql` is absent: adds the PGDG apt repository (keyring made readable, mode 644) and installs
   `postgresql-<version>`.
 - `postgresql.conf`: `listen_addresses = '*'`. `pg_hba.conf`: appends `host all all <cidr> md5` for the k3s pod and

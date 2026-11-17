@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # one-click-installer/lib/native/01-install-postgres-kafka.sh <envcode>
-# Install PostgreSQL 16 and Kafka (KRaft mode) NATIVELY on the host via systemd, by running the
-# existing k8s/infrastructure/setup-prod-infra.sh, then fix Kafka's advertised listener so k3s
+# Install PostgreSQL 16 and Kafka (KRaft mode) NATIVELY on the host via systemd, by running
+# setup-postgres-kafka.sh (next to this script), then fix Kafka's advertised listener so k3s
 # pods can reach the broker by host IP.
 #
 # Standard ports: Postgres 5432 and Kafka 9092 (a dedicated machine).
@@ -17,14 +17,14 @@ REPO="$(cd "$HERE/../../.." && pwd)"
 export POSTGRES_PROD_PASSWORD="${POSTGRES_PROD_PASSWORD:-${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD or POSTGRES_PROD_PASSWORD}}"
 : "${VM_HOST_IP:?set VM_HOST_IP — needed for Kafka advertised listener}"
 
-echo "=== [$ENVCODE] install PostgreSQL + Kafka (KRaft) via setup-prod-infra.sh ==="
+echo "=== [$ENVCODE] install PostgreSQL + Kafka (KRaft) via setup-postgres-kafka.sh ==="
 # NOT `sudo -E`: sudo-rs (Ubuntu 26.04) ignores -E and drops the variables below (see one-click-installer/lib/sudo-compat.sh).
 # KAFKA_VERSION / POSTGRES_VERSION must be passed too: before 2026-11-06 they were not, so the config keys were silently ignored and
-# every install got the script defaults. A KAFKA_VERSION newer than the installed one upgrades Kafka in place (setup-prod-infra.sh).
+# every install got the script defaults. A KAFKA_VERSION newer than the installed one upgrades Kafka in place (setup-postgres-kafka.sh).
 as_root_env "POSTGRES_PROD_PASSWORD=$POSTGRES_PROD_PASSWORD" ${POSTGRES_USER:+"POSTGRES_USER=$POSTGRES_USER"} ${POSTGRES_DB:+"POSTGRES_DB=$POSTGRES_DB"} \
   ${POSTGRES_PORT:+"POSTGRES_PORT=$POSTGRES_PORT"} ${KAFKA_VERSION:+"KAFKA_VERSION=$KAFKA_VERSION"} ${POSTGRES_VERSION:+"POSTGRES_VERSION=$POSTGRES_VERSION"} \
   ${K3S_CLUSTER_CIDR:+"K3S_CLUSTER_CIDR=$K3S_CLUSTER_CIDR"} ${K3S_SERVICE_CIDR:+"K3S_SERVICE_CIDR=$K3S_SERVICE_CIDR"} \
-  -- bash "$REPO/k8s/infrastructure/setup-prod-infra.sh"
+  -- bash "$HERE/setup-postgres-kafka.sh"
 
 echo "=== [$ENVCODE] fix Kafka advertised listener -> ${VM_HOST_IP}:9092 (so k3s pods can connect) ==="
 KPROPS="/opt/kafka/config/kraft/server.properties"

@@ -12,7 +12,7 @@
 #
 # INFISICAL_CORE_VERSION pins the package (default 0.162.24-1: there is no native 0.161.x, and a database written by the v0.161.0
 # image must not go backwards — the server only migrates forward). Redis: Ubuntu's redis-server (6.x/7.x supported), loopback only.
-# PostgreSQL: installed here only if absent, from PGDG exactly like k8s/infrastructure/setup-prod-infra.sh (which later finds it
+# PostgreSQL: installed here only if absent, from PGDG exactly like one-click-installer/lib/native/setup-postgres-kafka.sh (which later finds it
 # and configures it for CCE). Infisical connects over 127.0.0.1 with its own role.
 set -euo pipefail
 CMD="${1:-status}"
@@ -54,7 +54,7 @@ ensure_redis() {
 
 ensure_postgres() {
   if ! command -v psql >/dev/null; then
-    log "installing PostgreSQL ${PG_VER} (PGDG — same source as setup-prod-infra.sh)"
+    log "installing PostgreSQL ${PG_VER} (PGDG — same source as setup-postgres-kafka.sh)"
     apt_q gnupg2 lsb-release
     echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
     curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/postgresql.gpg
