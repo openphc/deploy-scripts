@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: cce-insights-ui
-          image: ghcr.io/openphc/cce-insights-ui:demo
+          image: ghcr.io/openphc/cce-insights-ui:demo-dev-latest
           ports:
             - containerPort: 3001
           resources:

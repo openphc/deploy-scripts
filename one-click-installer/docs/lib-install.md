@@ -358,8 +358,8 @@ image the template does not have, such as a non-openhim emitter) no tag at all, 
 
 **Notes.**
 - `template` means the template overlay's value. Clearing a key, or `IMAGE_REGISTRY`, reverts to it.
-- It prints `NOTE: … still use the template's Rwanda build (demo-rw-…)` while any image uses a `demo-rw` tag (the
-  template's insights images do). Pin those services to your own builds.
+- It prints `NOTE: … use the Rwanda build (demo-rw-…)` while any image uses a `demo-rw` tag (the
+  Rwanda build; the template uses `demo-dev-latest`). Pin those services to your own builds.
 - With more than one `*-cce-emitter-adaptor` image in the overlay, `IMAGE_CCE_EMITTER_ADAPTOR` stops the script with
   an error unless every emitter has its own key.
 - The overlay must have a top-level `images:` block, or the script exits with an error.

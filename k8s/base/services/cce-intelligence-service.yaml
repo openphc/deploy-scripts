@@ -18,15 +18,10 @@ spec:
     spec:
       containers:
         - name: cce-intelligence-service
-          # RI-63: deploys the demo-rw branch's build — a minimal, fresh service scoped to the
-          # ops-alerting engine only (that repo's docs/architecture-overview.md). No clinical
-          # FHIR pipeline here, unlike the demo/main branch's image, and schema is Flyway-managed
-          # (that repo owns real migrations), not Hibernate `ddl-auto`. KAFKA_BOOTSTRAP_SERVERS
-          # below is currently unused (no spring-kafka dependency on this branch) but kept wired.
-          # Image tag below is an inert placeholder — the real deployed image is set by a manual
-          # digest-based redeploy step outside this repo, not by this tag or kustomize's images:
-          # transformer in the overlays.
-          image: ghcr.io/openphc/cce-intelligence-service:release-1.0.0
+          # Built from the cce-intelligence-service demo branch (CI pushes v<N> and latest). Schema is
+          # Flyway-managed by the service itself. The overlay's images: entry (IMAGE_CCE_INTELLIGENCE_SERVICE)
+          # sets the tag or digest that actually runs.
+          image: ghcr.io/openphc/cce-intelligence-service:latest
           ports:
             - containerPort: 8085
           env:
@@ -210,9 +205,7 @@ spec:
             # own default when a property is entirely absent, not when it's present-but-empty.
             # Wiring one needs a `:=` default added to deploy-uat.sh/deploy-prod.sh first,
             # matching that app default, so envsubst never actually sees it unset.
-            # Unused by the demo-rw branch's code today (no spring-kafka dependency) — kept
-            # wired rather than removed, matching the other services here that do use it, so
-            # nothing needs to change here if a Kafka dependency is ever reintroduced.
+            # Used by the demo branch build (spring-kafka).
             - name: KAFKA_BOOTSTRAP_SERVERS
               valueFrom:
                 configMapKeyRef:

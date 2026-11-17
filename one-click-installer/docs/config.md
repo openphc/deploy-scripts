@@ -351,9 +351,9 @@ Keys in `example.env`: `IMAGE_CCE_COLLECTOR_SERVICE`, `IMAGE_CCE_PROTOCOL_SERVIC
   the image names in the overlay's `images:` block, whatever the registry, so `IMAGE_REGISTRY` mirrors work.
   [image-changed.sh](lib-day2.md#image-changedsh) can only check ghcr.io; a mirrored deployment named explicitly is
   reported as "not checked".
-- The template overlay's own tags are mutable (`latest`, and for the insights images `demo-rw-latest`, a build of the
-  first implementation). apply-image-pins.sh prints a `NOTE` while any image still uses a `demo-rw` tag. Pin every
-  service for a real deployment.
+- The template overlay's own tags are mutable: `latest`, and `demo-dev-latest` for the two insights images. The
+  repository README's "Images" table lists the branch each one is built from. apply-image-pins.sh prints a `NOTE`
+  while any image uses a `demo-rw` tag (the Rwanda build). Pin every service for a real deployment.
 - **Insights builds.** `example.env` sets `IMAGE_CCE_INSIGHTS_SERVICE` and `IMAGE_CCE_INSIGHTS_UI` to `demo-dev-latest`:
   the unbranded `demo-dev` branch build, with step groups. It reads ClickHouse's `step_group_instances`, which
   cce-data-pipeline `demo-v2` creates, and needs Matcher migration V8. For a

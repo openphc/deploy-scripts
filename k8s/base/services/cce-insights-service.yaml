@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: cce-insights-service
-          image: ghcr.io/openphc/cce-insights-service:demo
+          image: ghcr.io/openphc/cce-insights-service:demo-dev-latest
           ports:
             - containerPort: 8084
           env:

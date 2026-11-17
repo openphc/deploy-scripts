@@ -80,7 +80,7 @@ for e in entries:
     print(f"  {base:32} {new_name}{shown:<20}  ({src})")
 rw = [l.split("newTag:")[1].strip() for l in out if "newTag:" in l and "demo-rw" in l]
 if rw:
-    print("  NOTE: %d image(s) still use the template's Rwanda build (%s). Pin IMAGE_CCE_INSIGHTS_SERVICE / IMAGE_CCE_INSIGHTS_UI"
+    print("  NOTE: %d image(s) use the Rwanda build (%s). Pin IMAGE_CCE_INSIGHTS_SERVICE / IMAGE_CCE_INSIGHTS_UI"
           " (and any other) to your implementation's build in the config." % (len(rw), ", ".join(sorted(set(rw)))))
 lines[start:end] = out + [""]
 open(path, "w").write("\n".join(lines).rstrip("\n") + "\n")

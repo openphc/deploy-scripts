@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: cce-collector-service
-          image: ghcr.io/openphc/cce-collector-service:release-1.0.0
+          image: ghcr.io/openphc/cce-collector-service:latest
           ports:
             - containerPort: 8080
           env:
