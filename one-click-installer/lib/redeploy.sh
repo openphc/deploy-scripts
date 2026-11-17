@@ -3,7 +3,7 @@
 #
 # Use it after EITHER (or both):
 #   - an env-variable value changed in Infisical, and/or
-#   - a new CCE service image was pushed to GHCR (mutable :latest / :demo-rw-latest tag).
+#   - a new CCE service image was pushed to GHCR (mutable :latest / :demo-dev-latest tag).
 #
 # What it does:
 #   1. (REFRESH_ENV=1, default) re-pull config/secrets from Infisical — re-render the overlay and

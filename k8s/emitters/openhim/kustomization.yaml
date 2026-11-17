@@ -1,0 +1,7 @@
+# OpenHIM emitter adaptor (https://github.com/openphc/openhim-cce-emitter-adaptor), for implementations whose source system
+# reaches CCE through OpenHIM. Each environment deploys exactly ONE emitter from k8s/emitters/: the overlay lists it in
+# resources (one-click installer: EMITTER_ADAPTOR, written by one-click-installer/lib/apply-emitter.sh).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - openhim-emitter-adaptor.yaml

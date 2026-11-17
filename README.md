@@ -14,12 +14,36 @@ the history of `main`.
 | [`one-click-installer/`](one-click-installer/) | The installer: `install.sh`, its `lib/` and `tools/` scripts, `config/example.env` and the detailed [docs](one-click-installer/docs/README.md) |
 | `k8s/base/` | Kubernetes manifests of every CCE service, Keycloak and monitoring |
 | `k8s/overlays/prod/` | The template the installer copies into `k8s/overlays/<env>/` for a new environment |
-| `k8s/emitters/` | Emitter adaptors other than the built-in OpenHIM one (e.g. `tiberbu`), chosen with `EMITTER_ADAPTOR` |
+| `k8s/emitters/` | The emitter adaptors (`openhim`, `tiberbu`): each environment deploys exactly one, chosen with `EMITTER_ADAPTOR` |
 | `k8s/seeds/` | Keycloak `cce` realm and gateway `api_permissions` |
-| `k8s/infrastructure/setup-prod-infra.sh` | Native PostgreSQL + Kafka install, run by the installer |
 | (`data-pipeline/`) | Not in git: the installer fetches ClickHouse schema, CDC SQL and the Debezium connector from `cce-data-pipeline` at `DATA_PIPELINE_REF` (default `demo-v2`: step groups, 200-day retention) on every run |
 | `grafana/dashboards/` | Grafana dashboards the installer loads |
 | `keycloak-themes/cce-insights-theme/` | The unbranded Insights login theme (default). Point `KEYCLOAK_THEME_DIR` at a branded copy to brand it |
+
+## Images
+
+What this branch deploys by default: the template overlay `k8s/overlays/prod/` pins each image to the tag below. Each
+tag is mutable and moves with every CI build of its source branch; every build also gets a fixed `v<N>` tag
+(`demo-dev-v<N>` for insights). Set `IMAGE_*` in your config to pin a tested `v<N>` or `sha256:` digest per environment.
+
+| Image (`ghcr.io/openphc/…`) | Source repository | Branch | Tag |
+|---|---|---|---|
+| `openhim-cce-emitter-adaptor` | [openhim-cce-emitter-adaptor](https://github.com/openphc/openhim-cce-emitter-adaptor) | `release-1.0.0` | `latest` |
+| `gateway-service` | [gateway-service](https://github.com/openphc/gateway-service) | `main` | `latest` |
+| `cce-collector-service` | [cce-collector-service](https://github.com/openphc/cce-collector-service) | `release-2.0.0` | `latest` |
+| `cce-protocol-service` | [cce-protocol-service](https://github.com/openphc/cce-protocol-service) | `release-2.0.0` | `latest` |
+| `cce-matcher-service` | [cce-matcher-service](https://github.com/openphc/cce-matcher-service) | `release-2.0.0` | `latest` |
+| `cce-step-sla-service` | [cce-step-sla-service](https://github.com/openphc/cce-step-sla-service) | `release-2.0.0` | `latest` |
+| `cce-intelligence-service` | [cce-intelligence-service](https://github.com/openphc/cce-intelligence-service) | `demo` | `latest` |
+| `cce-insights-service` | [cce-insights-service](https://github.com/openphc/cce-insights-service) | `demo-dev` | `demo-dev-latest` |
+| `cce-insights-ui` | [cce-insights-ui](https://github.com/openphc/cce-insights-ui) | `demo-dev` | `demo-dev-latest` |
+
+Not images, but part of the same release:
+
+- [cce-common-util](https://github.com/openphc/cce-common-util) `release-2.0.0` is the shared library compiled into
+  collector, protocol, matcher and step-sla. A push to it rebuilds those four services' `latest`.
+- [cce-data-pipeline](https://github.com/openphc/cce-data-pipeline) `demo-v2` is fetched by the installer
+  (`DATA_PIPELINE_REF`).
 
 ## Install or update an environment
 

@@ -152,7 +152,7 @@ Each key below has a **Change later** line. The answers are:
   site's own network.
 - **Default:** unset = `10.42.0.0/16` and `10.43.0.0/16` (k3s defaults).
 - **Read by:** [prereqs.sh](lib-install.md#prereqssh) (passes `--cluster-cidr`, `--service-cidr` and `--cluster-dns`
-  = the 10th address of the service range to the k3s installer), setup-prod-infra.sh through
+  = the 10th address of the service range to the k3s installer), setup-postgres-kafka.sh through
   [01](native.md#01-install-postgres-kafkash) (`pg_hba.conf` lines), [ufw-baseline.sh](lib-install.md#ufw-baselinesh)
   (allowed sources) and [portainer.sh](lib-install.md#portainersh) (`IPAddressAllow` in the `cce-portainer` unit).
 - **Change later:** first install only, for k3s. An existing cluster keeps its networks; prereqs prints a note when they
@@ -267,17 +267,16 @@ Each key below has a **Change later** line. The answers are:
 
 ### `POSTGRES_VERSION`
 - **Default:** `16`.
-- **Read by:** `k8s/infrastructure/setup-prod-infra.sh` (through [01](native.md#01-install-postgres-kafkash)) and
+- **Read by:** `one-click-installer/lib/native/setup-postgres-kafka.sh` (through [01](native.md#01-install-postgres-kafkash)) and
   [infisical-native.sh](lib-infisical.md#infisical-nativesh).
 - **Change later:** do not change it on an existing machine. PostgreSQL is installed only when `psql` is absent, and
-  setup-prod-infra.sh edits `/etc/postgresql/<version>/main/…`, which would not exist for a new value.
+  setup-postgres-kafka.sh edits `/etc/postgresql/<version>/main/…`, which would not exist for a new value.
 
 ### `KAFKA_VERSION`
 - **Meaning:** Kafka and Kafka Connect version (they share `/opt/kafka`).
 - **Default:** `3.9.2` (fixes CVE-2025-27817 / -27818 in Connect), also when the key is missing: load-config.sh exports
-  it. (setup-prod-infra.sh's own default stays `3.7.0` for callers outside the installer; the installer always passes
-  the value.)
-- **Read by:** setup-prod-infra.sh (through [01](native.md#01-install-postgres-kafkash)), [prereqs.sh](lib-install.md#prereqssh).
+  it. (setup-postgres-kafka.sh has the same default; the installer always passes the value.)
+- **Read by:** setup-postgres-kafka.sh (through [01](native.md#01-install-postgres-kafkash)), [prereqs.sh](lib-install.md#prereqssh).
 - **Change later:** re-run install.sh. A **newer** value upgrades Kafka in place: the old install is moved to
   `/opt/kafka-<old>` as a rollback copy, `config/`, `.cluster-id` and `connect-plugins/` are carried over, and the
   data directory `/var/lib/kafka/data` is not touched. Kafka and Connect are down for about a minute. An **older** value
@@ -352,9 +351,9 @@ Keys in `example.env`: `IMAGE_CCE_COLLECTOR_SERVICE`, `IMAGE_CCE_PROTOCOL_SERVIC
   the image names in the overlay's `images:` block, whatever the registry, so `IMAGE_REGISTRY` mirrors work.
   [image-changed.sh](lib-day2.md#image-changedsh) can only check ghcr.io; a mirrored deployment named explicitly is
   reported as "not checked".
-- The template overlay's own tags are mutable (`latest`, and for the insights images `demo-rw-latest`, a build of the
-  first implementation). apply-image-pins.sh prints a `NOTE` while any image still uses a `demo-rw` tag. Pin every
-  service for a real deployment.
+- The template overlay's own tags are mutable: `latest`, and `demo-dev-latest` for the two insights images. The
+  repository README's "Images" table lists the branch each one is built from. apply-image-pins.sh prints a `NOTE`
+  while any image uses a `demo-rw` tag (the Rwanda build). Pin every service for a real deployment.
 - **Insights builds.** `example.env` sets `IMAGE_CCE_INSIGHTS_SERVICE` and `IMAGE_CCE_INSIGHTS_UI` to `demo-dev-latest`:
   the unbranded `demo-dev` branch build, with step groups. It reads ClickHouse's `step_group_instances`, which
   cce-data-pipeline `demo-v2` creates, and needs Matcher migration V8. For a
@@ -371,8 +370,8 @@ Each implementation runs one emitter adaptor: the one for its source system. It 
 clinical findings, and forwards them to the collector.
 
 ### `EMITTER_ADAPTOR`
-- **Meaning:** which `<system>-cce-emitter-adaptor` to deploy. `openhim` is built into `k8s/base`; any other is a
-  directory `k8s/emitters/<name>/` (a kustomization plus `emitter.conf`). Available today: `openhim`, `tiberbu`.
+- **Meaning:** which `<system>-cce-emitter-adaptor` to deploy. Each is a directory `k8s/emitters/<name>/` (a
+  kustomization plus `emitter.conf`); `k8s/base` has none, and the overlay lists exactly one. Available today: `openhim`, `tiberbu`.
 - **Default:** `openhim`.
 - **Read by:** `install.sh` (validates it before anything is installed, and prints it in the summary),
   [apply-emitter.sh](lib-install.md#apply-emittersh) (rewrites the overlay), and
