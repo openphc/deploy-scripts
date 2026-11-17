@@ -40,7 +40,8 @@ phase() { echo; echo "████ $*"; }
 # repo assets the deploy needs (a partial copy of the repo was a real failure mode: keycloak-themes/ missing -> no IdP)
 # data-pipeline/schema only when it is not fetched (DATA_PIPELINE_REF set: sync-data-pipeline.sh brings it in phase 4)
 for d in k8s/base "k8s/overlays/$OVERLAY_TEMPLATE" $( [ -z "${DATA_PIPELINE_REF:-}" ] && echo data-pipeline/schema ); do
-  [ -e "$REPO/$d" ] || { echo "ERROR: $REPO/$d is missing — copy the whole repository (see README: 'Getting the code onto the machine')"; exit 1; }
+  [ -e "$REPO/$d" ] || { [ "$d" = data-pipeline/schema ] && { echo "ERROR: this repository has no data-pipeline/ — set DATA_PIPELINE_REF (e.g. demo-v2) in the config"; exit 1; }
+                        echo "ERROR: $REPO/$d is missing — copy the whole repository (see README: 'Getting the code onto the machine')"; exit 1; }
 done
 export KEYCLOAK_THEME_DIR="${KEYCLOAK_THEME_DIR:-keycloak-themes/cce-insights-theme/dev}"
 THEME_PATH="$KEYCLOAK_THEME_DIR"; [ "${THEME_PATH#/}" = "$THEME_PATH" ] && THEME_PATH="$REPO/$THEME_PATH"
@@ -59,7 +60,7 @@ cat <<SUMMARY
  Exporters:          ${EXPORTER_RUNTIME:-systemd}   Portainer: $( [ "${PORTAINER_ENABLED:-true}" = true ] && echo "native ${PORTAINER_VERSION:-2.39.2} (127.0.0.1:9443, SSH tunnel)" || echo "not installed")
  Login theme:        $KEYCLOAK_THEME_DIR
  Emitter adaptor:    ${EMITTER_ADAPTOR:-openhim}
- Data pipeline:      $( [ -n "${DATA_PIPELINE_REF:-}" ] && echo "${DATA_PIPELINE_REPO:-https://github.com/openphc/cce-data-pipeline.git} @ $DATA_PIPELINE_REF" || echo "vendored data-pipeline/ in this repo")
+ Data pipeline:      $( [ -n "${DATA_PIPELINE_REF:-}" ] && echo "${DATA_PIPELINE_REPO:-https://github.com/openphc/cce-data-pipeline.git} @ $DATA_PIPELINE_REF" || echo "data-pipeline/ in this repo")
  Versions:           k3s ${K3S_VERSION:-default}  ClickHouse ${CLICKHOUSE_VERSION:-26.5}  Postgres ${POSTGRES_VERSION:-16}  Kafka ${KAFKA_VERSION:-3.9.2}
  Creds dir:          $CREDS_DIR
 ════════════════════════════════════════════════════════════════

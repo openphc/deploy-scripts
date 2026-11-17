@@ -17,7 +17,7 @@ the history of `main`.
 | `k8s/emitters/` | Emitter adaptors other than the built-in OpenHIM one (e.g. `tiberbu`), chosen with `EMITTER_ADAPTOR` |
 | `k8s/seeds/` | Keycloak `cce` realm and gateway `api_permissions` |
 | `k8s/infrastructure/setup-prod-infra.sh` | Native PostgreSQL + Kafka install, run by the installer |
-| `data-pipeline/` | ClickHouse schema, CDC SQL and the Debezium connector, from `cce-data-pipeline` `demo-v2` (step groups) with a 200-day hot TTL. `DATA_PIPELINE_REF` deploys another version instead |
+| (`data-pipeline/`) | Not in git: the installer fetches ClickHouse schema, CDC SQL and the Debezium connector from `cce-data-pipeline` at `DATA_PIPELINE_REF` (default `demo-v2`: step groups, 200-day retention) on every run |
 | `grafana/dashboards/` | Grafana dashboards the installer loads |
 | `keycloak-themes/cce-insights-theme/` | The unbranded Insights login theme (default). Point `KEYCLOAK_THEME_DIR` at a branded copy to brand it |
 

@@ -12,3 +12,5 @@ docs/
 *.pyc
 __pycache__/
 # Real installer configs (one-click-installer/config/<env>.env) are ignored by one-click-installer/config/.gitignore.
+# data-pipeline/ is fetched by the installer from cce-data-pipeline at DATA_PIPELINE_REF (one-click-installer/config) on every run
+data-pipeline/
