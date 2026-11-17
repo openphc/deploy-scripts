@@ -21,6 +21,7 @@ resources:
   # Monitoring
   - monitoring/prometheus.yaml
   - monitoring/grafana.yaml
+  - monitoring/grafana-alerting.yaml
   - monitoring/node-exporter.yaml
   # Networking
   - network-policy.yaml
