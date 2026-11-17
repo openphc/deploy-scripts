@@ -378,18 +378,19 @@ dashboards) the environment gets.
 
 **Usage.**
 ```bash
-sudo bash one-click-installer/lib/sync-data-pipeline.sh                                  # vendored copy: does nothing
+sudo bash one-click-installer/lib/sync-data-pipeline.sh                                  # ref empty: use the copy in git
 sudo env DATA_PIPELINE_REF=<branch|tag|sha> bash one-click-installer/lib/sync-data-pipeline.sh
 ```
 
 **Reads.** `DATA_PIPELINE_REF`, `DATA_PIPELINE_REPO` (default `https://github.com/openphc/cce-data-pipeline.git`).
 
 **Changes.**
-- `DATA_PIPELINE_REF` empty: nothing. Prints `data pipeline: vendored copy`.
+- `DATA_PIPELINE_REF` empty: nothing, if the repository has `data-pipeline/schema` (a branch that keeps a copy in
+  git). Prints `data pipeline: copy in this repository`. Without one it stops with an error asking for a ref.
 - Set: shallow-fetches that ref into a temp directory, checks it contains `schema/01-create-tables.sql`,
   `cdc/01-configure-replication.sql` and `connectors/debezium-postgres-source.json`, then **replaces**
-  `data-pipeline/schema`, `cdc`, `connectors` and `infra` with the fetched ones. `data-pipeline/scripts` is copied only
-  if it does not exist yet. Writes `data-pipeline/.deployed-ref` (`<repo> <ref> <short sha>`).
+  `data-pipeline/schema`, `cdc`, `connectors` and `infra` with the fetched ones. `data-pipeline/scripts` is replaced too
+  when git does not track it (a branch without a copy, such as `release-2.0.0`); a tracked one is kept. Writes `data-pipeline/.deployed-ref` (`<repo> <ref> <short sha>`).
 
 **Safe to re-run?** Yes. A re-run with the same ref produces the same files. It overwrites local edits in those four
 directories each time.
@@ -399,9 +400,10 @@ directories each time.
 **Notes.**
 - It only changes files. Applying a schema change to a running ClickHouse is done by
   [redeploy-clickhouse.sh](lib-day2.md#redeploy-clickhousesh).
-- Setting the ref back to empty does not restore the vendored copy. Use `git checkout data-pipeline/`.
-- The vendored copy keeps 200 days of ClickHouse data hot; upstream keeps 90. Syncing a ref takes the upstream value.
-- Commit `data-pipeline/` after a sync, like the overlay.
+- On a branch that keeps a copy in git: setting the ref back to empty does not restore it (use
+  `git checkout data-pipeline/`), and a sync shows in `git status`; commit it like the overlay. On `release-2.0.0`
+  `data-pipeline/` is git-ignored and fetched on every run.
+- ClickHouse retention comes from the ref's `schema/04-create-indexes.sql` (`demo-v2`: 200 days).
 
 ---
 

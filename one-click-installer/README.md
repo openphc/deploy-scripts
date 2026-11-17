@@ -24,7 +24,7 @@ key, and the seed file: what each does, when it runs, what it changes, and how t
 | Data (native, systemd) | PostgreSQL 16 · Kafka 3.9 (KRaft) · ClickHouse 26.5 · Kafka Connect + Debezium | versions pinned in the config |
 | Platform | k3s with its bundled Traefik ingress | k3s version pinned in the config (pins Traefik too); with `INGRESS_HOST`, Traefik gets Let's Encrypt + HTTP→HTTPS ([`k8s/base/traefik/`](../k8s/base/traefik/traefik-helmchartconfig.yaml)) |
 | CCE services | namespace `cce-<envcode>`: gateway, collector, protocol, matcher, step-sla, intelligence, insights service + UI, OpenHIM emitter, Keycloak, Grafana, Prometheus, kafka-ui | sizing / HPAs / rate limits cloned from the reference production overlay |
-| Pipeline | Postgres → Debezium → Kafka → ClickHouse analytics schema | version: vendored `data-pipeline/` or `DATA_PIPELINE_REF`; CDC connector points at `localhost` (survives IP changes) |
+| Pipeline | Postgres → Debezium → Kafka → ClickHouse analytics schema | version: `DATA_PIPELINE_REF` (or a `data-pipeline/` kept in the repo); CDC connector points at `localhost` (survives IP changes) |
 | Monitoring | Prometheus + Grafana (`/grafana`) in the namespace; node-exporter; postgres_exporter + kafka_exporter on the host (systemd services `cce-postgres-exporter` / `cce-kafka-exporter`); ClickHouse's built-in metrics | every CCE service, the host, Postgres, Kafka and ClickHouse scraped; Grafana gets Prometheus/ClickHouse/PostgreSQL datasources + the `data-pipeline/infra/grafana` dashboards |
 | Seed | Keycloak realm `cce` + its login theme, gateway `api_permissions`, optional clinical protocol | |
 | Secrets | Infisical project `cce-<envcode>`; with `USE_LOCAL_INFISICAL=true`, Infisical itself runs natively on 127.0.0.1:8080 (`infisical-core` + Redis + a database in the native PostgreSQL) | generated unless supplied; the host IP is **detected**, never stored |
@@ -50,8 +50,9 @@ same keys and data, and the containers are removed. The docker volumes and an In
 
 ## Getting the code onto the machine
 
-Copy the **whole `deploy-scripts` repository** (git clone or archive) — the installer uses `k8s/`, `data-pipeline/` and
-`keycloak-themes/` from it (`data-pipeline/` is replaced from `cce-data-pipeline` when `DATA_PIPELINE_REF` is set). Do **not** copy local secret files along with it: any `*.env` other than `config/example.env`,
+Copy the **whole `deploy-scripts` repository** (git clone or archive) — the installer uses `k8s/`, `grafana/` and
+`keycloak-themes/` from it. `data-pipeline/` is fetched from `cce-data-pipeline` at `DATA_PIPELINE_REF` (a copy kept in
+the repository is used instead when the key is empty). Do **not** copy local secret files along with it: any `*.env` other than `config/example.env`,
 `data-pipeline/.env`, Infisical exports or `*.creds`. The repository location does not matter (it is not tied to a user or path).
 
 ## Configuration
@@ -66,7 +67,7 @@ Every key is documented in [`config/example.env`](config/example.env). The essen
 | `USE_LOCAL_INFISICAL` | run a self-contained Infisical on the machine, or use an existing one |
 | `IMAGE_<SERVICE>` | per-service image **tag** or **`sha256:` digest**; `IMAGE_CCE_EMITTER_ADAPTOR` for whichever emitter adaptor the overlay uses; `IMAGE_TAG_DEFAULT`, `IMAGE_REGISTRY` for all |
 | `*_VERSION` | k3s, Infisical CLI, ClickHouse, Postgres, Kafka, Debezium |
-| `DATA_PIPELINE_REF` | `cce-data-pipeline` branch/tag/commit to deploy (schema, CDC, connector, dashboards); empty = the vendored `data-pipeline/` |
+| `DATA_PIPELINE_REF` | `cce-data-pipeline` branch/tag/commit to deploy (schema, CDC, connector, dashboards); fetched on every run; empty = use a `data-pipeline/` kept in the repository |
 | `EMITTER_ADAPTOR` | the source system's emitter adaptor: `openhim` (default) or `tiberbu`; it receives events at `/v1/<name>-emitter-adaptor/inbound` with HTTP Basic credentials generated into Infisical |
 | `KEYCLOAK_THEME_DIR` | login page theme; default = unbranded `keycloak-themes/cce-insights-theme/dev`; point at a branded copy to brand it |
 | `SEED_ENV_FILE` | initial values; **must** contain the intelligence-service alert recipients + SMTP login (see `example.env`) |
@@ -93,8 +94,8 @@ in phase 6 can be fixed and the same command re-run.
 
 ## After installing
 
-* Commit `k8s/overlays/<OVERLAY_NAME>/` — it is tracked, and records exactly which image versions are deployed. If you set
-  `DATA_PIPELINE_REF`, commit `data-pipeline/` too (`data-pipeline/.deployed-ref` records the commit).
+* Commit `k8s/overlays/<OVERLAY_NAME>/` — it records exactly which image versions are deployed.
+  `data-pipeline/.deployed-ref` records which data-pipeline commit was deployed.
 * Fill in external-system settings left blank (OpenHIM host/credentials, facility filter) in Infisical, then
   `sudo bash one-click-installer/lib/redeploy.sh cce-<envcode>`.
 * Load this implementation's clinical protocol, if not done at install (`PROTOCOL_FILE`, endpoint
@@ -176,8 +177,7 @@ These were all hit on real fresh installs; the fixes are in the scripts. Listed 
 
 * **Known product-level item:** `k8s/base/services/openhim-emitter-adaptor.yaml` sets `EBUZIMA_CLIENT_ID=ebuzima` — the source
   system of the first implementation. Other implementations configure their own source systems in the emitter.
-* **ClickHouse retention:** the vendored `data-pipeline/schema/04-create-indexes.sql` keeps 200 days hot (upstream
-  `cce-data-pipeline` has 90). At 90 days, a pause in ingestion longer than that empties the dashboards entirely.
-  `DATA_PIPELINE_REF` deploys the upstream value.
+* **ClickHouse retention:** set by the deployed `data-pipeline/schema/04-create-indexes.sql`. Keep it at 200 days
+  (`cce-data-pipeline` `demo-v2`): at 90, a pause in ingestion longer than that empties the dashboards entirely.
 * **Collector Flyway settings** are added by the generated overlay because `k8s/base/services/cce-collector-service.yaml`
   lacks them (`docker-compose.yml` has them). Once the base manifest carries them, that patch is redundant but harmless.
