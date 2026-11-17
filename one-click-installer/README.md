@@ -63,7 +63,7 @@ Every key is documented in [`config/example.env`](config/example.env). The essen
 |---|---|
 | `ENVCODE` | short code → namespace `cce-<ENVCODE>` and Infisical project `cce-<ENVCODE>` |
 | `IS_CLOUD_DEPLOYMENT` | `true` = behind a cloud security group (no host firewall); `false` = on-prem/direct → UFW is configured |
-| `INGRESS_HOST` / `ACME_EMAIL` | DNS name + Let's Encrypt contact for TLS; empty = plain HTTP on the host's IP (open the UI at that address; see [config.md](docs/config.md#ingress_host)) |
+| `INGRESS_HOST` / `ACME_EMAIL` | DNS name + Let's Encrypt contact for TLS. **Needed for Insights sign-in** in a browser (Keycloak's login needs HTTPS). Empty = plain HTTP on the host's IP: APIs and Grafana work, Insights sign-in does not (see [config.md](docs/config.md#ingress_host)) |
 | `USE_LOCAL_INFISICAL` | run a self-contained Infisical on the machine, or use an existing one |
 | `IMAGE_<SERVICE>` | per-service image **tag** or **`sha256:` digest**; `IMAGE_CCE_EMITTER_ADAPTOR` for whichever emitter adaptor the overlay uses; `IMAGE_TAG_DEFAULT`, `IMAGE_REGISTRY` for all |
 | `*_VERSION` | k3s, Infisical CLI, ClickHouse, Postgres, Kafka, Debezium |

@@ -99,11 +99,21 @@ Each key below has a **Change later** line. The answers are:
   the Traefik ACME config, keeps the TLS ingress, and adds a `hostAliases` entry to `gateway-service`; when empty, it
   rewrites the ingress to plain HTTP with [plain-http-ingress.py](lib-install.md#plain-http-ingresspy).
 - **Change later:** re-run install.sh.
+- **Insights sign-in needs HTTPS.** The Insights UI signs in with keycloak-js (Authorization Code + PKCE), which needs
+  the browser's Web Crypto API. Browsers provide it only on HTTPS or `http://localhost`. On plain `http://<IP>` the login
+  fails with "Web Crypto API is not available": the UI then renders without a token and every `/v1/insights` call
+  returns 401. So any environment people use in a browser needs `INGRESS_HOST`. Without DNS of your own,
+  `<ip-with-dashes>.sslip.io` (for example `13-235-174-187.sslip.io`) resolves to the IP and gets a Let's Encrypt
+  certificate. Ports 80 and 443 must be reachable from the internet for the certificate.
 - **Without a name (plain HTTP):** the token issuer is `http://<this host's IP>/auth/realms/cce` (`CCE_PUBLIC_URL`,
-  derived at deploy time by [host-ip.sh](lib-infisical.md#host-ipsh)). The gateway accepts only tokens with that issuer,
-  so server-to-server calls (the emitter's inbound Basic auth) work as they are, but people must open the Insights UI
-  at that same address. On a cloud VM, where users reach a public IP instead, set `CCE_PUBLIC_URL=http://<public IP>`
-  in Infisical `/platform`, or use a DNS name. Keycloak decides a token's issuer from the address used to reach it.
+  derived at deploy time by [host-ip.sh](lib-infisical.md#host-ipsh)). The gateway accepts only tokens with that issuer.
+  Server-to-server calls (the emitter's inbound Basic auth), Grafana and the APIs work; Insights sign-in does not (see
+  above). On a cloud VM, where users reach a public IP instead of the host's
+  private one, set `CCE_PUBLIC_URL=http://<public IP>` in Infisical `/platform`. Keycloak decides a token's issuer from
+  the address used to reach it.
+- **Changing to a name later:** set `INGRESS_HOST` and `ACME_EMAIL` in the config and re-run install.sh. If you had set
+  `CCE_PUBLIC_URL` in Infisical `/platform`, change it to `https://<INGRESS_HOST>` (or delete it): a set value wins over
+  the one derived from `INGRESS_HOST`.
 - **Gotcha:** going back from a name to empty does not clear it. `install.sh` only appends a non-empty value to the
   seed, and the seed never deletes keys. Delete `INGRESS_HOST` (and `ACME_EMAIL`) from Infisical `/platform` by hand,
   then re-run.
