@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS step_instances
     id                    UUID,
     protocol_instance_id  UUID,
     action_id             String,        -- PlanDefinition action.id (e.g. 'anc-visit-2') — VARCHAR in source
+    step_group_instance_id Nullable(UUID), -- the step's group instance (step_group_instances); null outside any group
     repeat_index          Int32,         -- for recurring actions; 0 = first occurrence
     step_status           String,        -- NOT_STARTED | COMPLETED
     sla_status            String,        -- '' (not judged) | OVERDUE | MISSED | MET
@@ -195,6 +196,40 @@ ORDER BY (id)
 SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
+-- Step group instances (Matcher V8). A step group is a set of steps that belong together
+-- clinically, such as one ANC visit; each instance of one for an enrollment is a row here, and a
+-- repeating group has one per cycle. A nested group points to its parent instance; steps point here
+-- through step_instances.step_group_instance_id. Only facts are stored: whether a group instance is
+-- "partly done" is worked out from its steps.
+--   sla_status   '' (not judged) | OVERDUE | MISSED | MET — the group deadline's verdict (Step SLA)
+--   opened_at    clinical event time (UTC) of whatever opened it; a calendar-day cycle's day is
+--                its date in the deployment's time zone (Matcher)
+--   completed_at clinical event time (UTC) the last mandatory member was completed (Matcher)
+--   closed_at    clinical event time (UTC) from which nothing more was expected of it (Matcher)
+CREATE TABLE IF NOT EXISTS step_group_instances
+(
+    id                        UUID,
+    protocol_instance_id      UUID,
+    parent_group_instance_id  Nullable(UUID),   -- null for a top-level group
+    group_action_id           String,           -- the group's PlanDefinition action.id
+    cycle_index               Int32,            -- in the order cycles were opened; 0 for a group that doesn't repeat
+    due_date                  Nullable(DateTime64(6)),
+    sla_status                String,
+    opened_at                 DateTime64(6),
+    completed_at              Nullable(DateTime64(6)),
+    closed_at                 Nullable(DateTime64(6)),
+    created_at                DateTime64(6),
+    updated_at                DateTime64(6),
+
+    _version             UInt64,
+    _is_deleted          UInt8 DEFAULT 0
+)
+ENGINE = ReplacingMergeTree(_version, _is_deleted)
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (id)
+SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
+
+
 -- Each step's SLA schedule: one row per verdict the Step SLA Service is to reach (Matcher inserts,
 -- Step SLA marks processed). New in 2.0.0.
 --   DUE_DATE_REACHED       process_by = the step's due date                → OVERDUE on a breach
@@ -203,10 +238,14 @@ SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 -- Mandatory ('must') steps only. process_by is the clinical threshold, which is why this table is
 -- captured: it is the only place a MISSED deviation's occurrence date survives (1.x kept it on
 -- step_instance as missed_date). Mutable (is_processed / attempts / next_attempt_at are updated).
+-- A row belongs to a step or, for a group with its own deadline, to a group instance: exactly one
+-- of step_instance_id and step_group_instance_id is set. Step-level queries join on
+-- step_instance_id, which leaves group rows out.
 CREATE TABLE IF NOT EXISTS step_sla_state_transitions
 (
     id                UUID,
-    step_instance_id  UUID,
+    step_instance_id  Nullable(UUID),          -- null for a group's row
+    step_group_instance_id Nullable(UUID),     -- set only for a group's row
     transition_type   String,        -- DUE_DATE_REACHED | MISSED_DATE_REACHED | MET_CONDITION_REACHED
     process_by        DateTime64(6), -- the threshold itself (clinical time)
     is_processed      UInt8,
@@ -274,10 +313,12 @@ SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 -- Types: OVERDUE | MISSED (Step SLA Service) | ORDER_VIOLATION (Matcher)
 -- At most one row per (step_instance_id, deviation_type) — unique in the source.
 -- 2.0.0 dropped protocol_instance_id (Matcher V2 §8): reach it through step_instances.
+-- A deviation belongs to a step or to a group instance, as step_sla_state_transitions rows do.
 CREATE TABLE IF NOT EXISTS deviations
 (
     id                    UUID,
-    step_instance_id      UUID,
+    step_instance_id      Nullable(UUID),   -- null for a group's deviation
+    step_group_instance_id Nullable(UUID),  -- set only for a group's deviation
     deviation_type        String,    -- OVERDUE | MISSED | ORDER_VIOLATION
     detected_at           DateTime64(6),
     intelligence_event_id Nullable(UUID),  -- links to the published intelligence event
@@ -351,11 +392,12 @@ CREATE TABLE IF NOT EXISTS intelligence_event_logs
     action_definition_id     UUID,
     protocol_instance_id     UUID,
     step_instance_id         Nullable(UUID),  -- null for protocol-level actions
+    step_group_instance_id   Nullable(UUID),  -- set for an event about a group instance
     deviation_id             Nullable(UUID),  -- null for completion triggers
     subject                  String,    -- patient UPID (denormalized)
     action_type              String,    -- CommunicationRequest | Task | ServiceRequest
     intelligence_destination String,
-    step_status              String,    -- not-started | completed
+    step_status              String,    -- not-started | completed; '' for a group event
     sla_status               String,    -- '' | overdue | missed | met
     trigger_reason           String,    -- missed | order_violation | completion
     step_action_id           String,    -- PlanDefinition intelligence action ID that fired

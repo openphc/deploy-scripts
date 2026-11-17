@@ -34,12 +34,13 @@ BEGIN
     END IF;
 END $$;
 
--- Step 4: Grant SELECT on all 15 CDC source tables
+-- Step 4: Grant SELECT on all 16 CDC source tables
 GRANT USAGE ON SCHEMA public TO cce_cdc_user;
 GRANT SELECT ON TABLE
     protocol_definition,
     protocol_instance,
     step_instance,
+    step_group_instance,
     step_sla_state_transition,
     deviation,
     inbound_event_log,
@@ -54,7 +55,7 @@ GRANT SELECT ON TABLE
     step_instance_history
 TO cce_cdc_user;
 
--- Step 5: REPLICA IDENTITY FULL on all 15 CDC tables (uniform)
+-- Step 5: REPLICA IDENTITY FULL on all 16 CDC tables (uniform)
 -- Required by Debezium so UPDATE/DELETE events include the full old-row image
 -- (and so ReselectColumns / TOAST reconstruction can recover unchanged large values).
 -- Without this, only the primary key is available in the WAL for changed rows.
@@ -70,9 +71,14 @@ TO cce_cdc_user;
 --     (process_by), which 1.x kept on step_instance as overdue_date / missed_date.
 --   * trigger_index (Protocol V1) is deliberately NOT captured: it is a derived matching index,
 --     rebuilt from protocol_definition on every load, and no analytics reads it.
+--
+-- Step groups (Matcher V8) add step_group_instance, one row per instance of a step group, which
+-- makes 16 tables. Matcher V8 also adds step_group_instance_id to step_instance, deviation,
+-- step_sla_state_transition and intelligence_event_log; new columns need nothing here.
 ALTER TABLE protocol_definition          REPLICA IDENTITY FULL;
 ALTER TABLE protocol_instance            REPLICA IDENTITY FULL;
 ALTER TABLE step_instance                REPLICA IDENTITY FULL;
+ALTER TABLE step_group_instance          REPLICA IDENTITY FULL;
 ALTER TABLE step_sla_state_transition    REPLICA IDENTITY FULL;
 ALTER TABLE deviation                    REPLICA IDENTITY FULL;
 ALTER TABLE inbound_event_log            REPLICA IDENTITY FULL;
@@ -86,12 +92,13 @@ ALTER TABLE facility                     REPLICA IDENTITY FULL;
 ALTER TABLE protocol_instance_history    REPLICA IDENTITY FULL;
 ALTER TABLE step_instance_history        REPLICA IDENTITY FULL;
 
--- Step 6: Create publication for all 15 CDC tables
+-- Step 6: Create publication for all 16 CDC tables
 DROP PUBLICATION IF EXISTS cce_analytics_pub;
 CREATE PUBLICATION cce_analytics_pub FOR TABLE
     protocol_definition,
     protocol_instance,
     step_instance,
+    step_group_instance,
     step_sla_state_transition,
     deviation,
     inbound_event_log,

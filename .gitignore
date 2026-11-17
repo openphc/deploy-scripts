@@ -6,6 +6,7 @@
 !.infisical.example
 k8s/**/*.rendered
 docs/
+!one-click-installer/docs/
 remote-deployment/
 .vscode/
 .claude/__pycache__/
@@ -14,3 +15,5 @@ remote-deployment/
 # RW-specific deployment scripts/data — not for the shared repo
 rw/
 .claude/
+
+scripts/*

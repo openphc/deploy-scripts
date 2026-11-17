@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tiberbu-emitter-adaptor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tiberbu-emitter-adaptor
+  template:
+    metadata:
+      labels:
+        app: tiberbu-emitter-adaptor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: tiberbu-emitter-adaptor
+          # CI (release-1.0.0 branch) pushes v<N> and latest; pin a version with IMAGE_CCE_EMITTER_ADAPTOR.
+          image: ghcr.io/openphc/tiberbu-cce-emitter-adaptor:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: EMITTER_SOURCE
+              value: "tiberbu"
+            # Calls the collector directly inside the namespace, with the same static token as the other emitters.
+            - name: CCE_COLLECTOR_URL
+              value: "http://cce-collector-service:8080"
+            - name: CCE_COLLECTOR_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: CCE_COLLECTOR_AUTH_TOKEN
+            - name: FACILITY_FILTER_IDS
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: FACILITY_FILTER_IDS
+            # REDACTION_ENABLED is left at the image default (true): clinical findings never reach CCE.
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              value: "health,info,prometheus,metrics"
+            - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+              value: "tiberbu-emitter-adaptor"
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 768Mi
+              cpu: 500m
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tiberbu-emitter-adaptor
+spec:
+  selector:
+    app: tiberbu-emitter-adaptor
+  ports:
+    - port: 8080
+      targetPort: 8080

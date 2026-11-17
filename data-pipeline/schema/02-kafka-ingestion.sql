@@ -127,6 +127,7 @@ SELECT
     toUUID(JSONExtractString(payload, 'id'))                                       AS id,
     toUUID(JSONExtractString(payload, 'protocol_instance_id'))                    AS protocol_instance_id,
     JSONExtractString(payload, 'action_id')                                       AS action_id,
+    toUUIDOrNull(JSONExtractString(payload, 'step_group_instance_id'))            AS step_group_instance_id,
     JSONExtractInt(payload, 'repeat_index')                                       AS repeat_index,
     JSONExtractString(payload, 'step_status')                                     AS step_status,
     JSONExtractString(payload, 'sla_status')                                      AS sla_status,     -- null → ''
@@ -140,6 +141,38 @@ SELECT
     JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                         AS _version,
     if(op = 'd', 1, 0)                                                            AS _is_deleted
 FROM step_instances_queue
+WHERE op IN ('c', 'u', 'r', 'd');
+
+-- ============================================================
+-- step_group_instances  (Matcher V8)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS step_group_instances_queue (raw String)
+ENGINE = Kafka(cce_kafka) SETTINGS
+    kafka_topic_list  = 'cce.public.step_group_instance',
+    kafka_group_name  = 'clickhouse_step_group_instances',
+    kafka_format      = 'JSONAsString',
+    kafka_num_consumers = 1;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS step_group_instances_mv TO step_group_instances AS
+WITH
+    JSONExtractString(raw, 'op') AS op,
+    if(op = 'd', JSONExtractRaw(raw, 'before'), JSONExtractRaw(raw, 'after')) AS payload
+SELECT
+    toUUID(JSONExtractString(payload, 'id'))                                        AS id,
+    toUUID(JSONExtractString(payload, 'protocol_instance_id'))                     AS protocol_instance_id,
+    toUUIDOrNull(JSONExtractString(payload, 'parent_group_instance_id'))           AS parent_group_instance_id,
+    JSONExtractString(payload, 'group_action_id')                                  AS group_action_id,
+    JSONExtractInt(payload, 'cycle_index')                                         AS cycle_index,
+    parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'due_date'), 6)     AS due_date,
+    JSONExtractString(payload, 'sla_status')                                       AS sla_status,     -- null → ''
+    parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'opened_at'), 6)    AS opened_at,
+    parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'completed_at'), 6) AS completed_at,
+    parseDateTime64BestEffortOrNull(JSONExtractString(payload, 'closed_at'), 6)    AS closed_at,
+    parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'created_at'), 6)   AS created_at,
+    parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'updated_at'), 6)   AS updated_at,
+    JSONExtractUInt(JSONExtractRaw(raw, 'source'), 'lsn')                          AS _version,
+    if(op = 'd', 1, 0)                                                             AS _is_deleted
+FROM step_group_instances_queue
 WHERE op IN ('c', 'u', 'r', 'd');
 
 -- ============================================================
@@ -158,7 +191,9 @@ WITH
     if(op = 'd', JSONExtractRaw(raw, 'before'), JSONExtractRaw(raw, 'after')) AS payload
 SELECT
     toUUID(JSONExtractString(payload, 'id'))                                          AS id,
-    toUUID(JSONExtractString(payload, 'step_instance_id'))                            AS step_instance_id,
+    -- OrNull: a group's row has no step (Matcher V8). toUUID would throw on it and stop the consumer.
+    toUUIDOrNull(JSONExtractString(payload, 'step_instance_id'))                      AS step_instance_id,
+    toUUIDOrNull(JSONExtractString(payload, 'step_group_instance_id'))                AS step_group_instance_id,
     JSONExtractString(payload, 'transition_type')                                     AS transition_type,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'process_by'), 6)      AS process_by,
     JSONExtractBool(payload, 'is_processed')                                          AS is_processed,
@@ -235,7 +270,9 @@ WITH
     if(op = 'd', JSONExtractRaw(raw, 'before'), JSONExtractRaw(raw, 'after')) AS payload
 SELECT
     toUUID(JSONExtractString(payload, 'id'))                                       AS id,
-    toUUID(JSONExtractString(payload, 'step_instance_id'))                       AS step_instance_id,
+    -- OrNull: a group's deviation has no step (Matcher V8). toUUID would throw on it and stop the consumer.
+    toUUIDOrNull(JSONExtractString(payload, 'step_instance_id'))                 AS step_instance_id,
+    toUUIDOrNull(JSONExtractString(payload, 'step_group_instance_id'))           AS step_group_instance_id,
     JSONExtractString(payload, 'deviation_type')                                 AS deviation_type,
     parseDateTime64BestEffortOrZero(JSONExtractString(payload, 'detected_at'), 6) AS detected_at,
     toUUIDOrNull(JSONExtractString(payload, 'intelligence_event_id'))             AS intelligence_event_id,
@@ -323,6 +360,7 @@ SELECT
     toUUID(JSONExtractString(payload, 'action_definition_id'))                   AS action_definition_id,
     toUUID(JSONExtractString(payload, 'protocol_instance_id'))                    AS protocol_instance_id,
     toUUIDOrNull(JSONExtractString(payload, 'step_instance_id'))                  AS step_instance_id,
+    toUUIDOrNull(JSONExtractString(payload, 'step_group_instance_id'))            AS step_group_instance_id,
     toUUIDOrNull(JSONExtractString(payload, 'deviation_id'))                      AS deviation_id,
     JSONExtractString(payload, 'subject')                                         AS subject,
     JSONExtractString(payload, 'action_type')                                     AS action_type,

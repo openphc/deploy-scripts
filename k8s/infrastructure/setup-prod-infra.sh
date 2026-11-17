@@ -16,13 +16,13 @@ echo ""
 # --- Configuration ---
 # POSTGRES_DB/POSTGRES_USER are a fixed platform convention (same on every environment) —
 # overridable via env for flexibility, but not meant to vary per env in practice.
-POSTGRES_VERSION=16
+POSTGRES_VERSION="${POSTGRES_VERSION:-16}"   # overridable (one-click config)
 POSTGRES_DB="${POSTGRES_DB:-ccedb}"
 POSTGRES_USER="${POSTGRES_USER:-admin}"
 POSTGRES_PASSWORD="${POSTGRES_PROD_PASSWORD:?set POSTGRES_PROD_PASSWORD in the environment}"
 POSTGRES_PORT=5432
 
-KAFKA_VERSION="3.7.0"
+KAFKA_VERSION="${KAFKA_VERSION:-3.7.0}"   # overridable (one-click config)
 KAFKA_SCALA_VERSION="2.13"
 KAFKA_PORT=9092
 KAFKA_CONTROLLER_PORT=9094
@@ -42,7 +42,8 @@ if ! command -v psql &>/dev/null; then
     sudo apt-get install -y -qq gnupg2 lsb-release
     echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | \
         sudo tee /etc/apt/sources.list.d/pgdg.list
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/postgresql.gpg
+    sudo chmod 644 /etc/apt/trusted.gpg.d/postgresql.gpg   # apt verifies as _apt; under a restrictive umask gpg writes 0600
     sudo apt-get update -qq
     sudo apt-get install -y -qq postgresql-${POSTGRES_VERSION}
     echo "  PostgreSQL ${POSTGRES_VERSION} installed."
@@ -61,12 +62,13 @@ PG_CONF="/etc/postgresql/${POSTGRES_VERSION}/main/postgresql.conf"
 sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" "${PG_CONF}"
 sudo sed -i "s/listen_addresses = 'localhost'/listen_addresses = '*'/" "${PG_CONF}"
 
-# Add k3s pod network to pg_hba if not already present
-if ! grep -q "10.42.0.0/16" "${PG_HBA}"; then
-    echo "# Allow k3s pods to connect" | sudo tee -a "${PG_HBA}"
-    echo "host    all    all    10.42.0.0/16    md5" | sudo tee -a "${PG_HBA}"
-    echo "host    all    all    10.43.0.0/16    md5" | sudo tee -a "${PG_HBA}"
-fi
+# Add the k3s pod and service networks to pg_hba if not already present (K3S_CLUSTER_CIDR / K3S_SERVICE_CIDR when the cluster
+# was created with other ranges; defaults are k3s's own).
+for cidr in "${K3S_CLUSTER_CIDR:-10.42.0.0/16}" "${K3S_SERVICE_CIDR:-10.43.0.0/16}"; do
+    if ! grep -qE "^host[[:space:]]+all[[:space:]]+all[[:space:]]+${cidr//./\\.}[[:space:]]" "${PG_HBA}"; then
+        echo "host    all    all    ${cidr}    md5   # k3s pods/services" | sudo tee -a "${PG_HBA}"
+    fi
+done
 
 # Restart PostgreSQL to apply config
 sudo systemctl restart postgresql
@@ -75,6 +77,9 @@ sudo systemctl enable postgresql
 # Create database and user
 sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='${POSTGRES_USER}'" | grep -q 1 || \
     sudo -u postgres psql -c "CREATE USER ${POSTGRES_USER} WITH PASSWORD '${POSTGRES_PASSWORD}' CREATEDB;"
+# Every run, re-apply the password so PostgreSQL follows POSTGRES_PASSWORD (what the services are given): it was only set on
+# create, so rotating it left the services locked out. Passed as a psql variable on stdin (quoted by psql, not in argv).
+printf "ALTER USER %s WITH PASSWORD :'pw';\n" "${POSTGRES_USER}" | sudo -u postgres psql -q -v ON_ERROR_STOP=1 -v pw="${POSTGRES_PASSWORD}" >/dev/null
 
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='${POSTGRES_DB}'" | grep -q 1 || \
     sudo -u postgres psql -c "CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};"
@@ -96,21 +101,80 @@ if ! id "${KAFKA_USER}" &>/dev/null; then
     sudo useradd -r -s /bin/false "${KAFKA_USER}"
 fi
 
-# Download and install Kafka
-if [ ! -d "${KAFKA_HOME}" ]; then
+# Download a SHA-512-verified Kafka ${KAFKA_VERSION} tarball to /tmp (reused if already there and matching).
+kafka_fetch() {
     KAFKA_TARBALL="kafka_${KAFKA_SCALA_VERSION}-${KAFKA_VERSION}.tgz"
-    KAFKA_URL="https://downloads.apache.org/kafka/${KAFKA_VERSION}/${KAFKA_TARBALL}"
+    # downloads.apache.org (and dlcdn) only host CURRENT releases: once a newer Kafka ships, ${KAFKA_VERSION} is moved off them and
+    # the old URL 404s — wget exit 8 — which silently broke every fresh install after 3.7.0 stopped being current. archive.apache.org
+    # is permanent, so try it first; the others are fallbacks (they serve the newest release fastest).
+    KAFKA_MIRRORS=(
+        "https://archive.apache.org/dist/kafka/${KAFKA_VERSION}"
+        "https://downloads.apache.org/kafka/${KAFKA_VERSION}"
+        "https://dlcdn.apache.org/kafka/${KAFKA_VERSION}"
+    )
+    KAFKA_TGZ="/tmp/${KAFKA_TARBALL}"
+    KAFKA_OK=""
+    for base in "${KAFKA_MIRRORS[@]}"; do
+        # Checksum first (tiny): a tarball already in /tmp that matches it is reused — archive.apache.org can take 20+ minutes.
+        wget -q "${base}/${KAFKA_TARBALL}.sha512" -O "${KAFKA_TGZ}.sha512" || { echo "  (not available at ${base})"; rm -f "${KAFKA_TGZ}.sha512"; continue; }
+        # Kafka's .sha512 is "<file>: AB12 CD34 …" (upper-case, space/newline-grouped). Normalise to a bare lowercase hex digest.
+        expected="$(sed 's/^[^:]*://' "${KAFKA_TGZ}.sha512" | tr -d ' \n\r' | tr 'A-F' 'a-f')"
+        if [ -s "${KAFKA_TGZ}" ] && [ -n "${expected}" ] && [ "$(sha512sum "${KAFKA_TGZ}" | cut -d' ' -f1)" = "${expected}" ]; then
+            KAFKA_OK=1; echo "  reusing ${KAFKA_TGZ} (SHA-512 verified)"; break
+        fi
+        echo "  Downloading Kafka from ${base}/${KAFKA_TARBALL}..."
+        if wget -q "${base}/${KAFKA_TARBALL}" -O "${KAFKA_TGZ}"; then
+            actual="$(sha512sum "${KAFKA_TGZ}" | cut -d' ' -f1)"
+            if [ -n "${expected}" ] && [ "${expected}" = "${actual}" ]; then KAFKA_OK=1; echo "  SHA-512 verified"; break; fi
+            echo "  !! checksum MISMATCH from ${base} (expected ${expected:0:16}…, got ${actual:0:16}…) — trying next mirror"
+        else
+            echo "  (not available at ${base})"
+        fi
+        rm -f "${KAFKA_TGZ}" "${KAFKA_TGZ}.sha512"
+    done
+    [ -n "${KAFKA_OK}" ] || { echo "ERROR: could not download a verified Kafka ${KAFKA_VERSION} from any mirror"; exit 1; }
+    rm -f "${KAFKA_TGZ}.sha512"
+}
 
-    echo "  Downloading Kafka from ${KAFKA_URL}..."
-    wget -q "${KAFKA_URL}" -O "/tmp/${KAFKA_TARBALL}"
+# The installed version, from the broker jar's name (libs/kafka_2.13-<version>.jar); empty when there is none.
+# "|| true": with no Kafka yet, ls exits 2, and under set -e + pipefail that killed every fresh install right here.
+kafka_installed_version() {
+    { ls "${KAFKA_HOME}"/libs/kafka_*.jar 2>/dev/null || true; } | sed -nE 's#.*/kafka_[0-9.]+-([0-9]+\.[0-9]+\.[0-9]+)\.jar$#\1#p' | head -1
+}
+
+KAFKA_CURRENT="$(kafka_installed_version)"
+if [ ! -d "${KAFKA_HOME}" ]; then
+    kafka_fetch
     sudo mkdir -p "${KAFKA_HOME}"
-    sudo tar -xzf "/tmp/${KAFKA_TARBALL}" -C "${KAFKA_HOME}" --strip-components=1
-    rm -f "/tmp/${KAFKA_TARBALL}"
-
+    sudo tar -xzf "${KAFKA_TGZ}" -C "${KAFKA_HOME}" --strip-components=1
+    rm -f "${KAFKA_TGZ}"
     sudo chown -R "${KAFKA_USER}:${KAFKA_USER}" "${KAFKA_HOME}"
     echo "  Kafka extracted to ${KAFKA_HOME}"
+elif [ -n "${KAFKA_CURRENT}" ] && [ "${KAFKA_CURRENT}" != "${KAFKA_VERSION}" ] \
+     && [ "$(printf '%s\n%s\n' "${KAFKA_CURRENT}" "${KAFKA_VERSION}" | sort -V | tail -1)" = "${KAFKA_VERSION}" ]; then
+    # In-place upgrade to a newer KAFKA_VERSION (e.g. 3.7.0 -> 3.9.2 for CVE-2025-27817/-27818). Same layout, same data:
+    # the data directory (${KAFKA_DATA_DIR}) is outside ${KAFKA_HOME} and is not touched. Kept from the old install: config/
+    # (server, Connect, log4j), .cluster-id (it must match the data dir's meta.properties) and connect-plugins/ (Debezium).
+    # Kafka and Kafka Connect are down for about a minute; Connect is started again by 03-install-kafka-connect.sh.
+    # metadata.version is NOT finalized, so going back is possible: stop kafka, put ${KAFKA_HOME}-${KAFKA_CURRENT} back.
+    echo "  Upgrading Kafka ${KAFKA_CURRENT} -> ${KAFKA_VERSION} in place"
+    kafka_fetch
+    sudo systemctl stop kafka-connect 2>/dev/null || true
+    sudo systemctl stop kafka 2>/dev/null || true
+    KAFKA_OLD="${KAFKA_HOME}-${KAFKA_CURRENT}"; [ -e "${KAFKA_OLD}" ] && KAFKA_OLD="${KAFKA_OLD}.$(date +%Y%m%d%H%M%S)"
+    sudo mv "${KAFKA_HOME}" "${KAFKA_OLD}"
+    sudo mkdir -p "${KAFKA_HOME}"
+    sudo tar -xzf "${KAFKA_TGZ}" -C "${KAFKA_HOME}" --strip-components=1
+    rm -f "${KAFKA_TGZ}"
+    sudo cp -a "${KAFKA_OLD}/config/." "${KAFKA_HOME}/config/"
+    [ -f "${KAFKA_OLD}/.cluster-id" ] && sudo cp -a "${KAFKA_OLD}/.cluster-id" "${KAFKA_HOME}/"
+    [ -d "${KAFKA_OLD}/connect-plugins" ] && sudo cp -a "${KAFKA_OLD}/connect-plugins" "${KAFKA_HOME}/"
+    sudo chown -R "${KAFKA_USER}:${KAFKA_USER}" "${KAFKA_HOME}"
+    echo "  Kafka ${KAFKA_VERSION} installed; previous install kept at ${KAFKA_OLD} (rollback copy)"
 else
-    echo "  Kafka already installed at ${KAFKA_HOME}, skipping download."
+    echo "  Kafka ${KAFKA_CURRENT:-?} already installed at ${KAFKA_HOME}, skipping download."
+    [ -n "${KAFKA_CURRENT}" ] && [ "${KAFKA_CURRENT}" != "${KAFKA_VERSION}" ] \
+        && echo "  NOTE: KAFKA_VERSION=${KAFKA_VERSION} is older than the installed ${KAFKA_CURRENT} — not downgrading." || true
 fi
 
 # Create data and log directories
@@ -220,4 +284,4 @@ echo "  Status:   sudo systemctl status kafka"
 echo "  Port:     ${KAFKA_PORT}"
 echo "  Topics:   ${KAFKA_HOME}/bin/kafka-topics.sh --list --bootstrap-server localhost:${KAFKA_PORT}"
 echo ""
-echo "Firewall: Ensure ports ${POSTGRES_PORT} and ${KAFKA_PORT} are accessible from k3s pod network (10.42.0.0/16)"
+echo "Firewall: Ensure ports ${POSTGRES_PORT} and ${KAFKA_PORT} are accessible from k3s pod network (${K3S_CLUSTER_CIDR:-10.42.0.0/16})"

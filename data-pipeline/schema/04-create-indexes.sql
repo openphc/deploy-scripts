@@ -77,20 +77,20 @@ ALTER TABLE intelligence_deliveries MATERIALIZE INDEX idx_subject;
 -- ============================================================
 -- Adjust intervals to match your regulatory retention requirements.
 -- Healthcare regulations (e.g., HIPAA) typically require 7 years;
--- set hot-tier TTL to 90 days and cold-tier to 7 years accordingly.
+-- set hot-tier TTL to 200 days (was 90; raised 2026-10-26 — at 90 the PROD tables aged out entirely once ingestion paused) and cold-tier to 7 years accordingly.
 
--- Inbound events: 90 days hot retention
+-- Inbound events: 200 days hot retention
 ALTER TABLE inbound_event_logs
-    MODIFY TTL received_at + INTERVAL 90 DAY;
+    MODIFY TTL received_at + INTERVAL 200 DAY;
 
--- Intelligence event triggers: 90 days hot retention
+-- Intelligence event triggers: 200 days hot retention
 ALTER TABLE intelligence_event_logs
-    MODIFY TTL created_at + INTERVAL 90 DAY;
+    MODIFY TTL created_at + INTERVAL 200 DAY;
 
--- Delivery records: 90 days hot retention
+-- Delivery records: 200 days hot retention
 ALTER TABLE intelligence_deliveries
-    MODIFY TTL created_at + INTERVAL 90 DAY;
+    MODIFY TTL created_at + INTERVAL 200 DAY;
 
--- Matcher processing log: 90 days hot retention
+-- Matcher processing log: 200 days hot retention
 ALTER TABLE matcher_event_logs
-    MODIFY TTL received_at + INTERVAL 90 DAY;
+    MODIFY TTL received_at + INTERVAL 200 DAY;
