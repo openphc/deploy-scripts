@@ -232,16 +232,15 @@ sudo env EMITTER_ADAPTOR=tiberbu bash one-click-installer/lib/apply-emitter.sh <
 **Reads.** `EMITTER_ADAPTOR` (default `openhim`), `OVERLAY_NAME`, and `k8s/emitters/*/emitter.conf` via
 [emitter-lib.sh](#emitter-libsh).
 
-**Changes.** In `k8s/overlays/<OVERLAY_NAME>/`, for an emitter other than openhim:
-- adds `../../emitters/<name>` to `resources:`;
-- writes `emitter-delete-openhim-deployment.yaml` and `emitter-delete-openhim-service.yaml` (`$patch: delete`) and
-  references them, so the base openhim Deployment and Service are not deployed. They are separate files because the
-  installer runs `envsubst` over `kustomization.yaml`, which would turn an inline `$patch` into `: delete`;
-- adds a patch pointing gateway route 3 at the emitter (`/v1/<deployment>/**` → `http://<deployment>:<port>`);
-- renames the emitter in the existing sizing/pull-policy patch, the HPA in `cce-hpas.yaml`, and the `images:` entry.
-
-Its patches sit between `# >>> emitter` and `# <<< emitter` in `kustomization.yaml`. Do not edit them by hand: they are
-rewritten on every run. For `openhim` it removes the block and the two files and restores the openhim names.
+**Changes.** In `k8s/overlays/<OVERLAY_NAME>/`. Every emitter, OpenHIM included, lives in `k8s/emitters/<name>/`;
+none is in `k8s/base`.
+- keeps exactly one `../../emitters/<name>` entry in `resources:`, right after `../../base`;
+- renames the emitter in the existing sizing/pull-policy patch, the HPA in `cce-hpas.yaml`, and the `images:` entry;
+- for an emitter other than `openhim`, adds a patch pointing gateway route 3 at it (`/v1/<deployment>/**` →
+  `http://<deployment>:<port>`). The gateway's base default is OpenHIM's route, so `openhim` needs none. The patch sits
+  between `# >>> emitter` and `# <<< emitter`; do not edit it by hand, it is rewritten on every run;
+- removes `emitter-delete-openhim-deployment.yaml` / `emitter-delete-openhim-service.yaml` if present. Overlays made
+  when OpenHIM was part of `k8s/base` used these `$patch: delete` files to drop it.
 
 **Safe to re-run?** Yes. Running it twice gives the same files, and switching tiberbu → openhim restores the overlay
 byte for byte.
@@ -274,12 +273,12 @@ cce_emitter_from_overlay k8s/overlays/<name>  # the same, for the emitter that o
 cce_emitter_known                             # names that can be chosen
 ```
 
-**Reads.** `k8s/emitters/<name>/emitter.conf`. openhim's values (`openhim-emitter-adaptor`, port 8082) are built in.
+**Reads.** `k8s/emitters/<name>/emitter.conf` (`openhim` included: `openhim-emitter-adaptor`, port 8082).
 
 **Changes.** Nothing; it only sets shell variables.
 
-**Notes.** `cce_emitter_from_overlay` looks for `- ../../emitters/<name>` in the overlay's `resources:`. With none, the
-emitter is openhim. This is why day-2 runs of the deploy and seed steps need no config file to know the emitter.
+**Notes.** `cce_emitter_from_overlay` looks for `- ../../emitters/<name>` in the overlay's `resources:`. With none (an
+overlay made when OpenHIM was part of `k8s/base`), the emitter is openhim. This is why day-2 runs of the deploy and seed steps need no config file to know the emitter.
 
 ---
 

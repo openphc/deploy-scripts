@@ -2,14 +2,15 @@
 # one-click-installer/lib/apply-emitter.sh <envcode> — make the env's overlay deploy the emitter adaptor EMITTER_ADAPTOR
 # (default openhim). Runs on every install (phase 4, before the image pins), and switching is just a re-run with a different value.
 #
-# For a non-openhim emitter (k8s/emitters/<name>/) it:
-#   - adds ../../emitters/<name> to resources, and deletes the base openhim Deployment + Service ($patch: delete)
-#   - points gateway route 3 (the emitter inbound route) at it: /v1/<deployment>/** -> http://<deployment>:<port>
+# Every emitter lives in k8s/emitters/<name>/ (none in k8s/base). It:
+#   - keeps exactly one ../../emitters/<name> entry in the overlay's resources, right after ../../base
 #   - renames the emitter's HPA and its sizing/pull-policy patch, and the images: entry (so IMAGE_CCE_EMITTER_ADAPTOR pins it)
-# The patches it adds sit between "# >>> emitter" and "# <<< emitter" markers (plus two emitter-delete-openhim-*.yaml files)
-# and are rewritten each run — don't edit them.
-# openhim removes that block and restores the openhim names. Prometheus, api_permissions and the Keycloak inbound user
-# follow from the overlay (05-k8s-deploy.sh / 06-seed.sh read it back via emitter-lib.sh).
+#   - for an emitter other than openhim, points gateway route 3 (the emitter inbound route, whose base default is openhim's)
+#     at it: /v1/<deployment>/** -> http://<deployment>:<port>, in a patch between "# >>> emitter" and "# <<< emitter"
+#     markers that is rewritten each run — don't edit it.
+# It also removes what the old layout (openhim in k8s/base) needed: the emitter-delete-openhim-*.yaml "$patch: delete" files.
+# Prometheus, api_permissions and the Keycloak inbound user follow from the overlay (05-k8s-deploy.sh / 06-seed.sh read it
+# back via emitter-lib.sh).
 set -euo pipefail
 ENVCODE="${1:?usage: apply-emitter.sh <envcode>}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; REPO="$(cd "$HERE/../.." && pwd)"
@@ -33,12 +34,11 @@ k = open(kpath).read()
 # 1. drop the previous managed block (re-added last, so the renames below never touch it)
 k = re.sub(r"\n  # >>> emitter.*?# <<< emitter\n", "\n", k, flags=re.S)
 
-# 2. resources: exactly one emitters/<name> entry (none for openhim)
+# 2. resources: exactly one emitters/<name> entry, right after ../../base (comment lines between them are kept)
 k = re.sub(r"\n  - \.\./\.\./emitters/[a-z0-9-]+/?(?=\n)", "", k)
-if name != "openhim":
-    k = re.sub(r"(\nresources:\n  - \.\./\.\./base\n)", rf"\1  - ../../emitters/{name}\n", k, count=1)
-    if f"../../emitters/{name}" not in k:
-        sys.exit(f"ERROR: could not add ../../emitters/{name} to resources in {kpath} (expected '  - ../../base' first)")
+k, n = re.subn(r"(\nresources:\n  - \.\./\.\./base\n(?:  #[^\n]*\n)*)", rf"\1  - ../../emitters/{name}\n", k, count=1)
+if n != 1:
+    sys.exit(f"ERROR: could not add ../../emitters/{name} to resources in {kpath} (expected '  - ../../base' first)")
 
 # 3. rename the emitter in patch targets, the images: entry and the HPA
 for oname, odep, oimg in others:
@@ -47,22 +47,14 @@ for oname, odep, oimg in others:
     if oimg != image:
         k = re.sub(rf"(\n  - name: ){re.escape(oimg)}\n(    newName: ){re.escape(oimg)}\n", rf"\g<1>{image}\n\g<2>{image}\n", k)
         k = re.sub(rf"(\n  - name: ){re.escape(oimg)}\n", rf"\g<1>{image}\n", k)
-# 4. managed patch block, right after "patches:". The deletes live in their own files: the installer runs envsubst over
-#    kustomization.yaml, which would turn "$patch: delete" written inline into ": delete".
-DELETE_FILES = {"emitter-delete-openhim-deployment.yaml": ("apps/v1", "Deployment"),
-                "emitter-delete-openhim-service.yaml": ("v1", "Service")}
-for f, (api, kind) in DELETE_FILES.items():
-    fp = f"{ov}/{f}"
-    if name == "openhim":
-        if os.path.exists(fp): os.remove(fp)
-    else:
-        open(fp, "w").write(f"# Written by one-click-installer/lib/apply-emitter.sh: this environment runs the {name} emitter, not openhim.\n"
-                            f"$patch: delete\napiVersion: {api}\nkind: {kind}\nmetadata:\n  name: openhim-emitter-adaptor\n")
+# 4. the old layout's "$patch: delete" files for the base openhim (its path entries went with the block in step 1)
+for f in ("emitter-delete-openhim-deployment.yaml", "emitter-delete-openhim-service.yaml"):
+    if os.path.exists(f"{ov}/{f}"): os.remove(f"{ov}/{f}")
+# 5. managed gateway patch, right after "patches:" (openhim is the gateway's base default: no patch)
 if name != "openhim":
     env = [("ID", dep), ("URI", f"http://{dep}:{port}"), ("PREDICATES_0", f"Path=/v1/{dep}/**")]
     block = (
         "  # >>> emitter (lib/apply-emitter.sh — rewritten on every install, do not edit)\n"
-        + "".join(f"  - path: {f}\n" for f in DELETE_FILES)
         + "  - patch: |-\n      apiVersion: apps/v1\n      kind: Deployment\n      metadata:\n        name: gateway-service\n"
           "      spec:\n        template:\n          spec:\n            containers:\n              - name: gateway-service\n"
           "                env:\n"

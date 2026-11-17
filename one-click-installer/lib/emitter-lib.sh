@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # one-click-installer/lib/emitter-lib.sh — SOURCE me. Which emitter adaptor an environment runs.
 #
-# Every implementation runs ONE emitter adaptor, the one for its source system. openhim is built into k8s/base
-# (k8s/base/services/openhim-emitter-adaptor.yaml); any other lives in k8s/emitters/<name>/ (a kustomization plus
-# emitter.conf) and is swapped in by apply-emitter.sh. After that the overlay is the record: scripts that run later
-# (deploy, seed, day-2) read the choice back from it with cce_emitter_from_overlay, not from the config file.
+# Every implementation runs ONE emitter adaptor, the one for its source system. Each lives in k8s/emitters/<name>/ (a
+# kustomization plus emitter.conf; openhim, tiberbu, …) and none is in k8s/base: the overlay lists exactly one in its
+# resources, written by apply-emitter.sh. After that the overlay is the record: scripts that run later (deploy, seed,
+# day-2) read the choice back from it with cce_emitter_from_overlay, not from the config file. An overlay that lists none
+# was made when openhim was part of k8s/base, so it counts as openhim (apply-emitter.sh adds the entry on the next install).
 #
 #   cce_emitter_conf <name>              -> EMITTER_NAME EMITTER_DEPLOYMENT EMITTER_PORT EMITTER_IMAGE EMITTER_SOURCE
 #   cce_emitter_from_overlay <overlay>   -> the same, for the emitter that overlay deploys
@@ -14,18 +15,13 @@
 _EMITTER_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 cce_emitter_known() {
-  local d; echo openhim
+  local d
   for d in "$_EMITTER_REPO"/k8s/emitters/*/emitter.conf; do [ -r "$d" ] && basename "$(dirname "$d")"; done
 }
 
 cce_emitter_conf() {
   local name="${1:-openhim}" conf
   EMITTER_NAME="$name"
-  if [ "$name" = openhim ]; then
-    EMITTER_DEPLOYMENT=openhim-emitter-adaptor; EMITTER_PORT=8082
-    EMITTER_IMAGE=ghcr.io/openphc/openhim-cce-emitter-adaptor; EMITTER_SOURCE=openhim
-    return 0
-  fi
   conf="$_EMITTER_REPO/k8s/emitters/$name/emitter.conf"
   [ -r "$conf" ] || { echo "ERROR: unknown emitter adaptor '$name' — choose one of: $(cce_emitter_known | tr '\n' ' ')" >&2; return 1; }
   EMITTER_DEPLOYMENT="$(sed -n 's/^DEPLOYMENT=//p' "$conf")"; EMITTER_PORT="$(sed -n 's/^PORT=//p' "$conf")"

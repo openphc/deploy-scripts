@@ -5,6 +5,9 @@ namespace: cce-prod
 
 resources:
   - ../../base
+  # The emitter adaptor for this implementation's source system: exactly one of k8s/emitters/<name>
+  # (one-click installer: EMITTER_ADAPTOR, kept in sync by lib/apply-emitter.sh).
+  - ../../emitters/openhim
   - namespace.yaml
   - cce-hpas.yaml
   - ratelimit.yaml
