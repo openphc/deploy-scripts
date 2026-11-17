@@ -83,7 +83,7 @@ sed -i "s#\${VM_HOST_CIDR}#${VM_HOST_CIDR}#g" "$TMP/render.yaml"
 # ContainerCreating forever ("hostPath type check failed") and the whole stack had no IdP. Point it at THIS checkout — the themes
 # ship in the repo (keycloak-themes/).
 # Which theme: KEYCLOAK_THEME_DIR (default: the unbranded keycloak-themes/cce-insights-theme/dev). It is mounted under the theme
-# NAME the realm already selects (insights-ui-theme), exactly like docker-compose does for dev, so no realm change is needed.
+# NAME the realm selects (cce-insights-theme; k8s/seeds/cce-realm.json, 06-seed.sh), whatever directory it comes from.
 THEME_DIR="${KEYCLOAK_THEME_DIR:-keycloak-themes/cce-insights-theme/dev}"
 [ "${THEME_DIR#/}" = "$THEME_DIR" ] && THEME_DIR="$REPO/$THEME_DIR"
 sed -i -E "s#/home/cceadmin/deploy-scripts/keycloak-themes/[A-Za-z0-9_./-]+#${THEME_DIR}#g" "$TMP/render.yaml"

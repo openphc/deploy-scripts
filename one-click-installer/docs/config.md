@@ -236,7 +236,7 @@ Each key below has a **Change later** line. The answers are:
 
 ### `KEYCLOAK_THEME_DIR`
 - **Meaning:** directory (relative to the repository root, or absolute) that holds `login/theme.properties`. It is
-  mounted into Keycloak under the theme name `insights-ui-theme`, which the `cce` realm then selects.
+  mounted into Keycloak under the theme name `cce-insights-theme`, which the `cce` realm then selects.
 - **Default:** `keycloak-themes/cce-insights-theme/dev` (unbranded).
 - **Read by:** `install.sh` (checks the file exists), [05-k8s-deploy.sh](native.md#05-k8s-deploysh) (hostPath),
   [06-seed.sh](native.md#06-seedsh) (message only).
