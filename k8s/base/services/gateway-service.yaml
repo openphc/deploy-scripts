@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: gateway-service
-          image: ghcr.io/openphc/gateway-service:release-1.0.0
+          image: ghcr.io/openphc/gateway-service:latest
           ports:
             - containerPort: 8090
           env:

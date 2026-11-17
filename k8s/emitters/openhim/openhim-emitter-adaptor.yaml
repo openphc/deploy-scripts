@@ -18,7 +18,8 @@ spec:
     spec:
       containers:
         - name: openhim-emitter-adaptor
-          image: ghcr.io/openphc/openhim-cce-emitter-adaptor:release-1.0.0
+          # CI (release-1.0.0 branch) pushes v<N> and latest; pin a version with IMAGE_CCE_EMITTER_ADAPTOR.
+          image: ghcr.io/openphc/openhim-cce-emitter-adaptor:latest
           ports:
             - containerPort: 8082
           env:
