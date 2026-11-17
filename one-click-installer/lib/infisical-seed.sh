@@ -81,6 +81,9 @@ SPEC=(
   "BASIC_AUTH_CLIENT_SECRET:/keycloak:secret"
   "EMITTER_INBOUND_USER:/keycloak:default:${EMITTER_ADAPTOR:-openhim}-emitter-inbound"
   "EMITTER_INBOUND_PASSWORD:/keycloak:secret"
+  # The default Insights sign-in user (keycloak-insights-user.sh; read-only roles). "none" = do not create one.
+  "INSIGHTS_USER:/keycloak:default:insights"
+  "INSIGHTS_PASSWORD:/keycloak:secret"
   "GRAFANA_ADMIN_USER:/grafana:default:admin"
   "GRAFANA_ADMIN_PASSWORD:/grafana:secret"
   "OPENHIM_CORE_HOST:/openhim-emitter-adaptor:blank"

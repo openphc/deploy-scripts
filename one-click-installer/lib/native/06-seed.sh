@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# one-click-installer/lib/native/06-seed.sh <envcode> — gateway api_permissions + Keycloak cce realm (+ login theme and the
-# emitter's inbound Basic auth) (+ optional protocol) for the given env. Uses the NATIVE host PostgreSQL (psql) and this env's
+# one-click-installer/lib/native/06-seed.sh <envcode> — gateway api_permissions + Keycloak cce realm (+ login theme, the
+# emitter's inbound Basic auth and the default Insights user) (+ optional protocol) for the given env. Uses the NATIVE host PostgreSQL (psql) and this env's
 # cce-<envcode> keycloak.
 set -euo pipefail
 
@@ -70,6 +70,8 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOK" -H
 echo "  login theme cce-insights-theme (from ${KEYCLOAK_THEME_DIR:-keycloak-themes/cce-insights-theme/dev}) HTTP=$code"
 # The emitter's inbound HTTP Basic auth: client role, the gateway's password-grant client and the inbound user.
 bash "$HERE/../keycloak-inbound-basic.sh" "$ENVCODE"
+# The default Insights sign-in user (INSIGHTS_USER / INSIGHTS_PASSWORD; tools/show-credentials.sh prints them).
+bash "$HERE/../keycloak-insights-user.sh" "$ENVCODE"
 
 echo "=== [$ENVCODE 3/3] clinical protocol (optional — PROTOCOL_FILE + PROTOCOL_LOAD_URL in the config) ==="
 # The protocol-service endpoint (2.0; /v1/compliance/** in 1.x) expects {"planDefinitionJson": "<stringified PlanDefinition>"},

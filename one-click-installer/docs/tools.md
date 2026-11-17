@@ -264,7 +264,7 @@ was installed with an overlay name other than `<env>`; it is used to name the em
 | Entry | Where | Stored in |
 |---|---|---|
 | Infisical (holds everything else) | SSH tunnel to `localhost:8080` | file `/opt/cce-local-infisical/admin.env` |
-| Insights UI | `<CCE_PUBLIC_URL>/insights/` | users of the Keycloak realm `cce`; the installer creates none |
+| Insights UI | `<CCE_PUBLIC_URL>/insights/` | Infisical `/keycloak` `INSIGHTS_USER` / `INSIGHTS_PASSWORD` (the default user; others are created in Keycloak) |
 | Keycloak admin console | `<CCE_PUBLIC_URL>/auth/admin/` | Infisical `/keycloak` |
 | Grafana | `<CCE_PUBLIC_URL>/grafana/` | Infisical `/grafana` |
 | Portainer | SSH tunnel to `localhost:9443` | Infisical `/portainer` |
@@ -305,13 +305,18 @@ Infisical: expected for SMTP and OpenHIM until they are filled in, wrong for any
 Example (masked, trimmed):
 ```
 == Credentials for environment 'trial'   (passwords masked — add --reveal to show) ==
+-- Insights UI
+   where:     https://13-235-174-187.sslip.io/insights/
+   user:      insights
+   password:  ********
+   stored in: Infisical /keycloak INSIGHTS_USER/PASSWORD
 -- Keycloak admin console
-   where:     http://13.235.174.187/auth/admin/
+   where:     https://13-235-174-187.sslip.io/auth/admin/
    user:      admin
    password:  ********
    stored in: Infisical /keycloak KEYCLOAK_ADMIN_*
 -- Emitter inbound (tiberbu) — give to the source system
-   where:     http://13.235.174.187/v1/tiberbu-emitter-adaptor/inbound  (HTTP Basic)
+   where:     https://13-235-174-187.sslip.io/v1/tiberbu-emitter-adaptor/inbound  (HTTP Basic)
    user:      tiberbu-emitter-inbound
    password:  ********
    stored in: Infisical /keycloak EMITTER_INBOUND_*

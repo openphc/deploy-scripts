@@ -17,6 +17,7 @@ Contents:
 [apply-emitter.sh](#apply-emittersh) ·
 [emitter-lib.sh](#emitter-libsh) ·
 [keycloak-inbound-basic.sh](#keycloak-inbound-basicsh) ·
+[keycloak-insights-user.sh](#keycloak-insights-usersh) ·
 [apply-image-pins.sh](#apply-image-pinssh) ·
 [sync-data-pipeline.sh](#sync-data-pipelinesh) ·
 [overlay-vars-check.sh](#overlay-vars-checksh) ·
@@ -319,6 +320,43 @@ returns the adaptor's response, not 401 or 403.
 - An **existing** user's password is never changed: it is the source system's credential. To rotate it, change it in
   Keycloak and give the new one to the source system; updating Infisical alone does nothing.
 - The permission row (`EMITTER_INBOUND_WRITE` on `POST /v1/<deployment>/**`) is added by 06-seed.sh, not here.
+
+---
+
+## keycloak-insights-user.sh
+
+[`lib/keycloak-insights-user.sh`](../lib/keycloak-insights-user.sh)
+
+**Purpose.** Creates the default Insights sign-in user, so a new environment can be opened at
+`<CCE_PUBLIC_URL>/insights/` right after the install. [show-credentials.sh](tools.md#show-credentialssh) prints its login.
+
+**Called by / when to run.** [06-seed.sh](native.md#06-seedsh), after keycloak-inbound-basic.sh, on every run.
+
+**Usage.** `sudo bash one-click-installer/lib/infisical-run.sh <env> bash one-click-installer/lib/keycloak-insights-user.sh <env>`
+
+**Reads.** `INSIGHTS_USER` (default `insights`; `none` skips the step), `INSIGHTS_PASSWORD`, `KEYCLOAK_ADMIN_USER` /
+`KEYCLOAK_ADMIN_PASSWORD`, `KC_INSIGHTS_PF_PORT` (18083). All come from Infisical `/keycloak`; the password is generated
+there unless the seed file sets it.
+
+**Changes.** In realm `cce`, creating whatever is missing:
+- user `INSIGHTS_USER` with password `INSIGHTS_PASSWORD` (not temporary). It gets first name, last name and e-mail
+  (`<user>@cce.invalid`, verified) because Keycloak 26's default user profile requires them; without them the first sign-in
+  stops at "Update account information".
+- the `gateway-service` client roles `INSIGHTS_READ` (the `/v1/insights/**` API) and `COMPLIANCE_READ` (protocol
+  reads). That is read-only access to every Insights page.
+
+**Safe to re-run?** Yes. An existing user is kept and only gets missing profile fields and roles.
+
+**Verify.** `created user insights HTTP=201` on the first run, then `user insights: present (password not changed)` and
+`user insights: has INSIGHTS_READ, COMPLIANCE_READ`. Sign in at `<CCE_PUBLIC_URL>/insights/` with the login from
+`show-credentials.sh <env> --reveal`. This needs HTTPS (`INGRESS_HOST`): see [config.md → INGRESS_HOST](config.md#ingress_host).
+
+**Notes.**
+- An **existing** user's password is never changed. To change it, change it in Keycloak (realm `cce` → Users →
+  Credentials) and set the same value in Infisical `/keycloak` `INSIGHTS_PASSWORD`, or show-credentials.sh shows the
+  old one.
+- It is one shared login. For named users, create them in the Keycloak admin console with the same two client roles,
+  and disable or delete this one if it should not stay.
 
 ---
 

@@ -53,7 +53,7 @@ else:
     rows.append(("Infisical (holds all of the below)", E("INFISICAL_DOMAIN", "remote Infisical"),
                  "(org admin; not stored on this host)", "-", "-"))
 rows += [
-    ("Insights UI", f"{url}/insights/", "users of Keycloak realm 'cce' (none are created by the installer)", "-", "-"),
+    ("Insights UI", f"{url}/insights/", val("INSIGHTS_USER"), pw("INSIGHTS_PASSWORD"), "/keycloak INSIGHTS_USER/PASSWORD"),
     ("Keycloak admin console", f"{url}/auth/admin/", val("KEYCLOAK_ADMIN_USER"), pw("KEYCLOAK_ADMIN_PASSWORD"),
      "/keycloak KEYCLOAK_ADMIN_*"),
     ("Grafana", f"{url}/grafana/", val("GRAFANA_ADMIN_USER"), pw("GRAFANA_ADMIN_PASSWORD"), "/grafana GRAFANA_ADMIN_*"),

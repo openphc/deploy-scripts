@@ -158,10 +158,11 @@ CHF="$(stat -c '%a' /etc/clickhouse-server/users.d/cce-"$ENVCODE"-users.xml 2>/d
 echo "   security: Kafka ${KV:-?} · Connect override policy ${OVR:-NOT SET (All)} · Postgres log_connections ${LOGC:-?} · ClickHouse users file ${CHF:-?}"
 # ${INGRESS_HOST:-...} expands to INGRESS_HOST itself when it is set, so the old "${X:+a}${X:-b}" printed the host twice.
 PUBLIC_BASE="http://<this-host>"; [ -n "${INGRESS_HOST:-}" ] && PUBLIC_BASE="https://$INGRESS_HOST"
+INSIGHTS_NOTE=""; [ -n "${INGRESS_HOST:-}" ] || INSIGHTS_NOTE="   (no INGRESS_HOST: browsers sign in over HTTPS only — see docs/config.md#ingress_host)"
 cat <<DONE
 
 Done: namespace $NS · Infisical project cce-$ENVCODE · creds $CREDS_DIR/${ENVCODE}.{creds,meta}
-  URL:        $PUBLIC_BASE/insights/
+  URL:        $PUBLIC_BASE/insights/$INSIGHTS_NOTE
   Inbound:    $PUBLIC_BASE/v1/${EMITTER_DEPLOYMENT}/inbound  (${EMITTER_NAME} emitter, HTTP Basic)
   Logins:     sudo bash $HERE/tools/show-credentials.sh $ENVCODE [--reveal]   (every URL/user/password, incl. the inbound login)
   Back up:    $CREDS_DIR/${ENVCODE}.{creds,meta}$( { [ -f "$LOCAL_ADMIN" ] && echo ", $LOCAL_ADMIN and .env beside it"; } || true ) — off this machine
