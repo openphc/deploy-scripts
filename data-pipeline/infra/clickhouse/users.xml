@@ -1,16 +1,7 @@
 <clickhouse>
-    <!-- The cce_pipeline USER is created by the container entrypoint from CLICKHOUSE_USER /
-         CLICKHOUSE_PASSWORD (users.d/default-user.xml). We only attach a grants block to it here.
-
-         IMPORTANT (ClickHouse 26.3):
-           * Do NOT redefine the user's password/profile here — merging with the entrypoint's
-             definition produces a "more than one field of password" error.
-           * A <grants> block is EXCLUSIVE: it defines the user's COMPLETE grant set. So we must
-             grant ALL *plus* the cce_kafka named collection, otherwise the user loses its implicit
-             full access (and could not create the schema or read the Kafka named collection). -->
     <profiles>
-        <!-- Optional read-only profile (auto-FINAL) cce-insights-service can opt into for
-             consistent reads of the ReplacingMergeTree tables. -->
+        <!-- Analytics profile: final=1 makes reads auto-apply FINAL (correct dedup without explicit
+             FINAL). NOTE: this profile is defined but NOT auto-assigned to cce_pipeline — see below. -->
         <analytics>
             <final>1</final>
             <max_execution_time>60</max_execution_time>
@@ -19,6 +10,17 @@
     </profiles>
 
     <users>
+        <!-- cce_pipeline is created by the ClickHouse entrypoint from CLICKHOUSE_USER / CLICKHOUSE_PASSWORD
+             (docker-compose). We must NOT redefine its password / profile / networks here — if both the
+             entrypoint and this mounted file set a field, startup crashes with
+             "More than one field of 'password' … for user cce_pipeline".
+             The ONLY thing we add is <grants>:
+               - GRANT ALL ON *.*            — the entrypoint user needs explicit privileges
+               - GRANT NAMED COLLECTION …    — required to use ENGINE = Kafka(cce_kafka) (schema/02)
+             TRADE-OFF: because the <analytics> profile can't be assigned to this entrypoint-created
+             user via a mount, `final=1` auto-FINAL is NOT active for cce_pipeline. Reads that need
+             dedup must use FINAL explicitly, or assign the profile once with:
+               ALTER USER cce_pipeline SETTINGS PROFILE 'analytics'; -->
         <cce_pipeline>
             <grants>
                 <query>GRANT ALL ON *.*</query>

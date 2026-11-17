@@ -68,12 +68,23 @@ spec:
               value: "1048576"
             - name: CCE_COLLECTOR_FHIR_STRICT_VALIDATION
               value: "false"
-            - name: CCE_COLLECTOR_KAFKA_TOPICS_INBOUND
+            # 2.0.0 collector reads CCE_KAFKA_TOPICS_INBOUND_EVENTS (1.x read CCE_COLLECTOR_KAFKA_TOPICS_INBOUND)
+            - name: CCE_KAFKA_TOPICS_INBOUND_EVENTS
               value: "cce.events.inbound"
             - name: CCE_COLLECTOR_KAFKA_TOPICS_DEAD_LETTER
               value: "cce.deadletter"
+            # The emitter's CCE_COLLECTOR_TIMEOUT (15 s) must stay longer than
+            # KAFKA_MAX_BLOCK_MS + this value (3 s + 10 s). If not, the emitter retries
+            # while the collector is still publishing.
             - name: CCE_COLLECTOR_KAFKA_PUBLISH_TIMEOUT_SECONDS
-              value: "30"
+              value: "10"
+            - name: KAFKA_MAX_BLOCK_MS
+              value: "3000"
+            # Tries again the stored events that were rejected because the collector failed
+            # (REJECTED with KAFKA_PUBLISH_FAILURE or INTERNAL_ERROR). Off by default.
+            # Example: set it to "true" after a Kafka outage, until those events are published.
+            - name: CCE_COLLECTOR_REPUBLISH_ENABLED
+              value: "false"
             - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
               value: "health,info,prometheus,metrics"
             - name: MANAGEMENT_METRICS_TAGS_APPLICATION

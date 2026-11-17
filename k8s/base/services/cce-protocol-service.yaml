@@ -1,0 +1,99 @@
+# CCE 2.0.0 — Protocol owns protocol_definition, action_definition and trigger_index, and serves the
+# PlanDefinition / ActionDefinition API (/v1/protocol/**, moved from the 1.x /v1/compliance/**).
+# Flyway ledger: flyway_schema_history_protocol.
+# On a ccedb that Matcher has not migrated yet, Protocol's own migrations succeed but the app restarts
+# until Matcher's V6 has run (it expects protocol_instance_history_id_seq to step by 50); it then
+# starts normally.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cce-protocol-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cce-protocol-service
+  template:
+    metadata:
+      labels:
+        app: cce-protocol-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: cce-protocol-service
+          image: ghcr.io/openphc/cce-protocol-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: POSTGRES_DB
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cce-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DB_POOL_SIZE
+              value: "10"
+            # Baseline 0 = run every migration (fresh install and the replay upgrade). Only the
+            # in-place database migration uses 1, for that run only.
+            - name: CCE_FLYWAY_BASELINE_VERSION
+              value: "0"
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              value: "health,info,prometheus,metrics"
+            - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+              value: "cce-protocol-service"
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 768Mi
+              cpu: 500m
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cce-protocol-service
+spec:
+  selector:
+    app: cce-protocol-service
+  ports:
+    - port: 8080
+      targetPort: 8080

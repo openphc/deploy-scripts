@@ -58,16 +58,35 @@ CREATE TABLE IF NOT EXISTS inbound_event_logs
     -- MATERIALIZED: zero-cost extraction from raw_payload JSONB at insert time
     subject              String    MATERIALIZED JSONExtractString(raw_payload, 'subject'),
     event_type           String    MATERIALIZED JSONExtractString(raw_payload, 'type'),
-    -- Envelope 'facilityid' is only populated for Encounter events; fall back to the
-    -- FHIR resource's source-facility extension so every resource type carries a facility.
-    facility_id          String    MATERIALIZED if(
-                                       JSONExtractString(raw_payload, 'facilityid') != '',
-                                       JSONExtractString(raw_payload, 'facilityid'),
-                                       JSONExtractString(
-                                           arrayFirst(
-                                               x -> JSONExtractString(x, 'url') LIKE '%source-facility%',
-                                               JSONExtractArrayRaw(raw_payload, 'data', 'extension')),
-                                           'valueString')),
+    -- Facility attribution prioritizes Encounter.hospitalization.origin — per FHIR R4
+    -- (https://hl7.org/fhir/R4/encounter.html), hospitalization is only ever populated on a
+    -- TRANSFER_ENCOUNTER, and origin is the true reporting facility — falling back to the location
+    -- field (Encounter.location[0].location for transfer/visit/consultation encounters, or the
+    -- direct location Reference on Procedure/Immunization), then the envelope 'facilityid'.
+    -- location[0] alone is NOT reliable for a TRANSFER_ENCOUNTER: it holds the transfer
+    -- DESTINATION, not the reporting facility, so trusting it mis-attributes transfer-out events
+    -- to the receiving facility. The source-facility extension is deliberately never consulted —
+    -- it does not reliably distinguish origin from destination and is superseded by reading
+    -- hospitalization.origin directly. Mirrors matcher-service's FacilityService and
+    -- openhim-cce-emitter-adaptor's FacilityIdExtractor. Recomputing this column (rather than
+    -- trusting the envelope) corrects historically-stored payloads regardless of emitter redeploy.
+    facility_id          String    MATERIALIZED
+                                       if(JSONExtractString(raw_payload, 'data', 'hospitalization', 'origin', 'reference') != '',
+                                          arrayElement(splitByChar('/', JSONExtractString(raw_payload, 'data', 'hospitalization', 'origin', 'reference')), -1),
+                                       if(JSONExtractString(raw_payload, 'data', 'hospitalization', 'origin', 'identifier', 'value') != '',
+                                          JSONExtractString(raw_payload, 'data', 'hospitalization', 'origin', 'identifier', 'value'),
+                                       if(JSONExtractString(raw_payload, 'data', 'location', 1, 'location', 'reference') != '',
+                                          arrayElement(splitByChar('/', JSONExtractString(raw_payload, 'data', 'location', 1, 'location', 'reference')), -1),
+                                       if(JSONExtractString(raw_payload, 'data', 'location', 1, 'location', 'identifier', 'value') != '',
+                                          JSONExtractString(raw_payload, 'data', 'location', 1, 'location', 'identifier', 'value'),
+                                       if(JSONExtractString(raw_payload, 'data', 'location', 'reference') != '',
+                                          arrayElement(splitByChar('/', JSONExtractString(raw_payload, 'data', 'location', 'reference')), -1),
+                                       if(JSONExtractString(raw_payload, 'data', 'location', 'identifier', 'value') != '',
+                                          JSONExtractString(raw_payload, 'data', 'location', 'identifier', 'value'),
+                                          JSONExtractString(raw_payload, 'facilityid'))))))),
+    -- Facility display name: envelope-only (the adaptors' 'facilityname' extension attribute); no
+    -- FHIR body carries an equivalent name. Read by cce-insights-service (patient journey).
+    facility_name        String    MATERIALIZED JSONExtractString(raw_payload, 'facilityname'),
     resource_type        String    MATERIALIZED JSONExtractString(
                                        JSONExtractRaw(raw_payload, 'data'), 'resourceType'),
     practitioner_ref     String    MATERIALIZED JSONExtractString(
@@ -85,7 +104,7 @@ SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
 -- ============================================================
--- COMPLIANCE SERVICE: Protocol & Step Management
+-- PROTOCOL SERVICE: Definitional plane
 -- ============================================================
 
 -- FHIR PlanDefinition templates defining protocol structure and triggers.
@@ -114,13 +133,18 @@ ORDER BY (id)
 SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
+-- ============================================================
+-- MATCHER SERVICE: Runtime plane (Step SLA Service writes sla_status and its history rows)
+-- ============================================================
+
 -- Patient enrollments in a protocol. One row per patient × protocol.
 -- Status: ACTIVE | COMPLETED | WITHDRAWN | EXPIRED
+-- 2.0.0 dropped protocol_canonical (Matcher V2 §8): it is url|version of protocol_definition_id,
+-- which dict_protocol_definitions (schema/05) resolves as 'canonical'.
 CREATE TABLE IF NOT EXISTS protocol_instances
 (
     id                     UUID,
     patient_id             String,
-    protocol_canonical     String,    -- denormalized: url|version for join-free queries
     protocol_definition_id UUID,
     status                 String,    -- ACTIVE | COMPLETED | WITHDRAWN | EXPIRED
     enrolled_at            DateTime64(6),
@@ -137,21 +161,28 @@ SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
 -- Individual action step occurrences within a protocol enrollment.
--- State machine: PENDING → DUE → OVERDUE → MISSED | COMPLETED | SKIPPED
+-- Two independent statuses (2.0.0 split the 1.x `state` column — Matcher V2 §2):
+--   step_status  NOT_STARTED → COMPLETED              did the expected event arrive? (Matcher)
+--   sla_status   '' → OVERDUE → MISSED, or '' → MET   was the deadline met?          (Step SLA)
+-- sla_status is NULL in PostgreSQL until judged; JSONExtractString lands that as '' here, so
+-- "not yet judged" is sla_status = '' (also the permanent value for optional steps).
+-- 1.x completion_status (EARLY/ON_TIME/LATE) is gone — read the pair instead:
+--   COMPLETED+MET = on time · COMPLETED+OVERDUE = late · COMPLETED+MISSED = after write-off.
+-- 1.x overdue_date / missed_date are gone too: those thresholds are now rows in
+-- step_sla_state_transition (process_by). due_date stays.
 CREATE TABLE IF NOT EXISTS step_instances
 (
     id                    UUID,
     protocol_instance_id  UUID,
     action_id             String,        -- PlanDefinition action.id (e.g. 'anc-visit-2') — VARCHAR in source
+    step_group_instance_id Nullable(UUID), -- the step's group instance (step_group_instances); null outside any group
     repeat_index          Int32,         -- for recurring actions; 0 = first occurrence
-    state                 String,        -- PENDING | DUE | OVERDUE | MISSED | COMPLETED | SKIPPED
+    step_status           String,        -- NOT_STARTED | COMPLETED
+    sla_status            String,        -- '' (not judged) | OVERDUE | MISSED | MET
     due_date              Nullable(DateTime64(6)),
-    overdue_date          Nullable(DateTime64(6)),
-    missed_date           Nullable(DateTime64(6)),
-    completed_at          Nullable(DateTime64(6)),
+    completed_at          Nullable(DateTime64(6)),  -- clinical occurrence time of the completing event
     completed_by_source   String,        -- CloudEvent source that completed this step
-    completion_status     String,        -- EARLY | ON_TIME | LATE  (set when state = COMPLETED)
-    completed_by_event_id Nullable(UUID),-- FK → compliance_event_logs.id; null until completed
+    matched_event_id      Nullable(UUID),-- FK → matcher_event_logs.id (1.x completed_by_event_id)
     required_behavior     String,        -- FHIR requiredBehavior: must | could | must-unless-documented
     created_at            DateTime64(6),
     updated_at            DateTime64(6),
@@ -165,13 +196,84 @@ ORDER BY (id)
 SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
+-- Step group instances (Matcher V8). A step group is a set of steps that belong together
+-- clinically, such as one ANC visit; each instance of one for an enrollment is a row here, and a
+-- repeating group has one per cycle. A nested group points to its parent instance; steps point here
+-- through step_instances.step_group_instance_id. Only facts are stored: whether a group instance is
+-- "partly done" is worked out from its steps.
+--   sla_status   '' (not judged) | OVERDUE | MISSED | MET — the group deadline's verdict (Step SLA)
+--   opened_at    clinical event time (UTC) of whatever opened it; a calendar-day cycle's day is
+--                its date in the deployment's time zone (Matcher)
+--   completed_at clinical event time (UTC) the last mandatory member was completed (Matcher)
+--   closed_at    clinical event time (UTC) from which nothing more was expected of it (Matcher)
+CREATE TABLE IF NOT EXISTS step_group_instances
+(
+    id                        UUID,
+    protocol_instance_id      UUID,
+    parent_group_instance_id  Nullable(UUID),   -- null for a top-level group
+    group_action_id           String,           -- the group's PlanDefinition action.id
+    cycle_index               Int32,            -- in the order cycles were opened; 0 for a group that doesn't repeat
+    due_date                  Nullable(DateTime64(6)),
+    sla_status                String,
+    opened_at                 DateTime64(6),
+    completed_at              Nullable(DateTime64(6)),
+    closed_at                 Nullable(DateTime64(6)),
+    created_at                DateTime64(6),
+    updated_at                DateTime64(6),
+
+    _version             UInt64,
+    _is_deleted          UInt8 DEFAULT 0
+)
+ENGINE = ReplacingMergeTree(_version, _is_deleted)
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (id)
+SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
+
+
+-- Each step's SLA schedule: one row per verdict the Step SLA Service is to reach (Matcher inserts,
+-- Step SLA marks processed). New in 2.0.0.
+--   DUE_DATE_REACHED       process_by = the step's due date                → OVERDUE on a breach
+--   MISSED_DATE_REACHED    process_by = due date + tolerance-days          → MISSED on a breach
+--   MET_CONDITION_REACHED  process_by = the completed_at that beat the due → MET
+-- Mandatory ('must') steps only. process_by is the clinical threshold, which is why this table is
+-- captured: it is the only place a MISSED deviation's occurrence date survives (1.x kept it on
+-- step_instance as missed_date). Mutable (is_processed / attempts / next_attempt_at are updated).
+-- A row belongs to a step or, for a group with its own deadline, to a group instance: exactly one
+-- of step_instance_id and step_group_instance_id is set. Step-level queries join on
+-- step_instance_id, which leaves group rows out.
+CREATE TABLE IF NOT EXISTS step_sla_state_transitions
+(
+    id                UUID,
+    step_instance_id  Nullable(UUID),          -- null for a group's row
+    step_group_instance_id Nullable(UUID),     -- set only for a group's row
+    transition_type   String,        -- DUE_DATE_REACHED | MISSED_DATE_REACHED | MET_CONDITION_REACHED
+    process_by        DateTime64(6), -- the threshold itself (clinical time)
+    is_processed      UInt8,
+    processed_at      Nullable(DateTime64(6)),
+    processed_by      String,        -- Step SLA instance id, or 'migration:V2' for 1.x backfill
+    attempts          Int32,
+    next_attempt_at   DateTime64(6),
+    created_at        DateTime64(6),
+
+    _version             UInt64,
+    _is_deleted          UInt8 DEFAULT 0
+)
+ENGINE = ReplacingMergeTree(_version, _is_deleted)
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (id)
+SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
+
+
 -- ============================================================
 -- step_instance_history / protocol_instance_history (append-only CDC)
 -- ============================================================
--- Append-only transition logs from compliance service (Flyway V4__state_history.sql).
+-- Append-only transition logs (Matcher V1 §8; entities in cce-common-util). Matcher writes
+-- enrolment / step creation / completion rows; Step SLA writes one per sla_status it applies.
 -- Each row is one state transition; the source tables are INSERT-only, so _is_deleted
 -- is always 0 and _version (LSN) only dedups at-least-once CDC re-delivery.
--- ORDER BY (id) = the PostgreSQL BIGSERIAL PK, so every distinct transition is kept.
+-- ORDER BY (id) = the PostgreSQL BIGSERIAL PK, so every distinct transition is kept. Since
+-- Matcher V6 ids are allocated in blocks of 50 per writer, so they are unique but NOT in insert
+-- order — always order history by changed_at, never by id.
 -- These make point-in-time reconstruction of the schema/07 daily MVs possible after
 -- a full ClickHouse re-snapshot (see schema/09-historical-backfill.sql).
 
@@ -194,9 +296,9 @@ CREATE TABLE IF NOT EXISTS step_instance_history
 (
     id                    Int64,           -- PostgreSQL BIGSERIAL PK
     step_instance_id      UUID,            -- backfill joins step_instances to recover protocol_instance_id
-    state                 String,          -- PENDING | DUE | OVERDUE | MISSED | COMPLETED | SKIPPED
-    completion_status     String,          -- EARLY | ON_TIME | LATE  (set when state = COMPLETED)
-    changed_at            DateTime64(6),   -- when the transition occurred
+    step_status           String,          -- NOT_STARTED | COMPLETED (after this transition)
+    sla_status            String,          -- '' (not judged) | OVERDUE | MISSED | MET (after this transition)
+    changed_at            DateTime64(6),   -- when the transition was RECORDED (processing time, not clinical)
 
     _version             UInt64,
     _is_deleted          UInt8 DEFAULT 0
@@ -208,12 +310,15 @@ SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
 -- Compliance gaps recorded when steps become overdue or missed.
--- Types: OVERDUE | MISSED | ORDER_VIOLATION
+-- Types: OVERDUE | MISSED (Step SLA Service) | ORDER_VIOLATION (Matcher)
+-- At most one row per (step_instance_id, deviation_type) — unique in the source.
+-- 2.0.0 dropped protocol_instance_id (Matcher V2 §8): reach it through step_instances.
+-- A deviation belongs to a step or to a group instance, as step_sla_state_transitions rows do.
 CREATE TABLE IF NOT EXISTS deviations
 (
     id                    UUID,
-    protocol_instance_id  UUID,
-    step_instance_id      UUID,
+    step_instance_id      Nullable(UUID),   -- null for a group's deviation
+    step_group_instance_id Nullable(UUID),  -- set only for a group's deviation
     deviation_type        String,    -- OVERDUE | MISSED | ORDER_VIOLATION
     detected_at           DateTime64(6),
     intelligence_event_id Nullable(UUID),  -- links to the published intelligence event
@@ -229,9 +334,10 @@ ORDER BY (id)
 SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
--- Idempotency log for inbound CloudEvents processed by the compliance service.
+-- Idempotency log for inbound CloudEvents processed by the matcher service.
 -- Processing status: MATCHED | ZERO_MATCH | DUPLICATE
-CREATE TABLE IF NOT EXISTS compliance_event_logs
+-- 1.x compliance_event_log, renamed in 2.0.0 (Matcher V2 §1) — same columns.
+CREATE TABLE IF NOT EXISTS matcher_event_logs
 (
     id                UUID,
     cloudevents_id    String,
@@ -275,20 +381,25 @@ ORDER BY (id)
 SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
--- Self-contained intelligence action execution records (compliance service).
+-- Self-contained intelligence action execution records (Matcher and Step SLA services).
 -- event_payload (JSONB) is excluded at the connector — unused by analytics.
+-- step_status / sla_status carry the FHIR codes that went on the wire, in LOWERCASE
+-- ('not-started' | 'completed', and '' | 'overdue' | 'missed' | 'met') — unlike step_instances.
+-- They replace 1.x step_state (Matcher V2 §6).
 CREATE TABLE IF NOT EXISTS intelligence_event_logs
 (
     id                       UUID,
     action_definition_id     UUID,
     protocol_instance_id     UUID,
     step_instance_id         Nullable(UUID),  -- null for protocol-level actions
+    step_group_instance_id   Nullable(UUID),  -- set for an event about a group instance
     deviation_id             Nullable(UUID),  -- null for completion triggers
     subject                  String,    -- patient UPID (denormalized)
     action_type              String,    -- CommunicationRequest | Task | ServiceRequest
     intelligence_destination String,
-    step_state               String,
-    trigger_reason           String,    -- overdue | missed | completion
+    step_status              String,    -- not-started | completed; '' for a group event
+    sla_status               String,    -- '' | overdue | missed | met
+    trigger_reason           String,    -- missed | order_violation | completion
     step_action_id           String,    -- PlanDefinition intelligence action ID that fired
     evaluation_expression    String,    -- TEXT: condition expression evaluated (audit)
     evaluation_context       String,    -- JSONB: runtime variables for the evaluator
@@ -389,12 +500,12 @@ SETTINGS clean_deleted_rows = 'Always', min_age_to_force_merge_seconds = 120;
 
 
 -- ============================================================
--- COMPLIANCE SERVICE: Reference Data
+-- MATCHER SERVICE: Reference Data
 -- ============================================================
 
 -- Agreed facility roster, auto-captured from inbound FHIR clinical events.
--- Populated by FacilityReferenceService.registerFacilityIfAbsent() in the compliance service
--- Kafka consumer — no manual management needed once CDC is active.
+-- Populated by the matcher service's InboundEventConsumer — no manual management needed once CDC
+-- is active. Programme staff set district_name / expected_patients_per_day directly in SQL.
 -- Used as denominator in facility activity rate and e-Buzima adoption KPI calculations.
 --
 -- Prerequisites: public.facility must be added to the PostgreSQL publication:

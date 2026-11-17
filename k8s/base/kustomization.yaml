@@ -7,9 +7,11 @@ resources:
   # Application Services
   - services/openhim-emitter-adaptor.yaml
   - services/cce-collector-service.yaml
-  - services/cce-compliance-service.yaml
+  # CCE 2.0.0: Protocol + Matcher + Step SLA replace the 1.x compliance and scheduler services
+  - services/cce-protocol-service.yaml
+  - services/cce-matcher-service.yaml
+  - services/cce-step-sla-service.yaml
   - services/cce-intelligence-service.yaml
-  - services/cce-scheduler-service.yaml
   - services/cce-insights-service.yaml
   - services/cce-insights-ui.yaml
   # API Gateway

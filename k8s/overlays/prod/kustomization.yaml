@@ -6,7 +6,6 @@ namespace: cce-prod
 resources:
   - ../../base
   - namespace.yaml
-  - scheduler-hpa.yaml
   - cce-hpas.yaml
   - ratelimit.yaml
 
@@ -146,11 +145,12 @@ patches:
         value:
           - hosts: [ "${INGRESS_HOST}" ]
   # Vertical scaling (2026-06-18): compliance 6x; insights-ui + scheduler 4x; rest 3x — over the
+  # base requests/limits. CCE 2.0.0: Matcher takes compliance's sizing; Protocol and Step SLA keep
+  # their base sizing (the scheduler's leader-elected setup is gone with it). Over the
   # base requests/limits. Requires the raised ResourceQuota in namespace.yaml. imagePullPolicy is
   # input-driven (${IMAGE_PULL_POLICY}, from Infisical /platform, default "Always") on every CCE
   # service rather than hardcoded — 2026-07-22: lets an operator pin to IfNotPresent (e.g. to force
   # a redeploy onto an exact prior digest without risking an unwanted mutable-tag pull mid-incident).
-  # NOTE: cce-scheduler-service is leader-elected — see strategy note below.
   - target:
       kind: Deployment
       name: cce-collector-service
@@ -162,7 +162,7 @@ patches:
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "2304Mi"}
   - target:
       kind: Deployment
-      name: cce-compliance-service
+      name: cce-matcher-service
     patch: |
       - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/cpu, value: "600m"}
@@ -187,44 +187,16 @@ patches:
       - {op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: "768Mi"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/cpu, value: "3"}
       - {op: replace, path: /spec/template/spec/containers/0/resources/limits/memory, value: "1536Mi"}
-  # Scheduler: greedy partitioned leader-election (HA). 3 replicas (managed by scheduler-hpa.yaml)
-  # = 1 active leader (owns the partitions) + hot standbys that take over on failure.
-  # SCHEDULER_TOTAL_PARTITIONS=3 parallelizes work within the active leader. CRITICAL: probes MUST
-  # use the dedicated liveness/readiness endpoints — the aggregate /actuator/health returns 503 on
-  # a standby (leadership indicator DOWN), which would liveness-kill standbys into a crashloop.
-  # maxSurge=0/maxUnavailable=1 avoids a partition-less surge pod. Strategic-merge (merges env by name).
-  - patch: |
-      apiVersion: apps/v1
+  - target:
       kind: Deployment
-      metadata:
-        name: cce-scheduler-service
-      spec:
-        strategy:
-          type: RollingUpdate
-          rollingUpdate:
-            maxSurge: 0
-            maxUnavailable: 1
-        template:
-          spec:
-            containers:
-              - name: cce-scheduler-service
-                imagePullPolicy: ${IMAGE_PULL_POLICY}
-                env:
-                  - name: SCHEDULER_TOTAL_PARTITIONS
-                    value: "3"
-                livenessProbe:
-                  httpGet:
-                    path: /actuator/health/liveness
-                readinessProbe:
-                  httpGet:
-                    path: /actuator/health/readiness
-                resources:
-                  requests:
-                    cpu: 400m
-                    memory: 1Gi
-                  limits:
-                    cpu: "2"
-                    memory: 3Gi
+      name: cce-protocol-service
+    patch: |
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
+  - target:
+      kind: Deployment
+      name: cce-step-sla-service
+    patch: |
+      - {op: add, path: /spec/template/spec/containers/0/imagePullPolicy, value: ${IMAGE_PULL_POLICY}}
   - target:
       kind: Deployment
       name: openhim-emitter-adaptor
@@ -273,8 +245,11 @@ images:
   - name: ghcr.io/openphc/cce-collector-service
     newName: ghcr.io/openphc/cce-collector-service
     newTag: latest
-  - name: ghcr.io/openphc/cce-compliance-service
-    newName: ghcr.io/openphc/cce-compliance-service
+  - name: ghcr.io/openphc/cce-protocol-service
+    newName: ghcr.io/openphc/cce-protocol-service
+    newTag: latest
+  - name: ghcr.io/openphc/cce-matcher-service
+    newName: ghcr.io/openphc/cce-matcher-service
     newTag: latest
   - name: ghcr.io/openphc/cce-intelligence-service
     newName: ghcr.io/openphc/cce-intelligence-service
@@ -285,14 +260,17 @@ images:
   - name: ghcr.io/openphc/openhim-cce-emitter-adaptor
     newName: ghcr.io/openphc/openhim-cce-emitter-adaptor
     newTag: latest
+  # Insights: demo-rw-latest is built from the insights repos' demo-rw branch. For CCE 2.0 that branch
+  # carries demo-rw-v2 (2.0 ClickHouse schema: matcher_event_logs, step_status / sla_status); a 1.x
+  # build cannot read the 2.0 ClickHouse.
   - name: ghcr.io/openphc/cce-insights-service
     newName: ghcr.io/openphc/cce-insights-service
     newTag: demo-rw-latest
   - name: ghcr.io/openphc/cce-insights-ui
     newName: ghcr.io/openphc/cce-insights-ui
     newTag: demo-rw-latest
-  - name: ghcr.io/openphc/cce-scheduler-service
-    newName: ghcr.io/openphc/cce-scheduler-service
+  - name: ghcr.io/openphc/cce-step-sla-service
+    newName: ghcr.io/openphc/cce-step-sla-service
     newTag: latest
 
 commonLabels:

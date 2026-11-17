@@ -79,6 +79,19 @@ FROM deviations
 GROUP BY day, deviation_type;
 
 -- Deviation aggregation by protocol instance
+-- 2.0.0 dropped deviation.protocol_instance_id (reachable as step_instance.protocol_instance_id,
+-- Matcher V2 §8), so it has to be looked up from step_instances. That lookup is why this and
+-- mv_deviation_by_patient are REFRESHABLE full recomputes rather than insert-triggered MVs:
+--   * An insert-triggered MV joins against whatever step_instances holds when the deviation block
+--     lands. Topics are consumed independently, so during an initial snapshot deviations routinely
+--     arrive before their steps, and an insert-time join would file them under the nil UUID for good.
+--   * deviation rows are UPDATEd after insert (IntelligenceActionEvaluator links
+--     intelligence_event_id), so an insert-triggered count would count those deviations twice.
+-- A refresh over deviations FINAL sees each deviation once, joined to its step, and heals itself
+-- once late rows arrive. The target tables keep their engines and columns, so readers are unchanged
+-- (sum() / countMerge() still work); each refresh atomically replaces the contents.
+-- The pair (id, protocol_instance_id) never changes for a step, so any() over the plain table is
+-- exact without FINAL.
 CREATE TABLE IF NOT EXISTS mv_deviation_by_protocol (
     day                  DateTime,
     protocol_instance_id UUID,
@@ -89,13 +102,18 @@ PARTITION BY toYYYYMM(day)
 ORDER BY (protocol_instance_id, deviation_type, day);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_deviation_by_protocol_mv
+REFRESH EVERY 30 SECOND
 TO mv_deviation_by_protocol
 AS SELECT
-    toStartOfDay(detected_at) AS day,
-    protocol_instance_id,
-    deviation_type,
+    toStartOfDay(d.detected_at) AS day,
+    si.protocol_instance_id     AS protocol_instance_id,
+    d.deviation_type            AS deviation_type,
     count() AS deviation_count
-FROM deviations
+FROM deviations AS d FINAL
+INNER JOIN (
+    SELECT id, any(protocol_instance_id) AS protocol_instance_id FROM step_instances GROUP BY id
+) AS si ON si.id = d.step_instance_id
+WHERE d._is_deleted = 0
 GROUP BY day, protocol_instance_id, deviation_type;
 
 -- ============================================================
@@ -136,13 +154,14 @@ CREATE TABLE IF NOT EXISTS mv_intelligence_summary (
     day                      DateTime,
     action_type              String,
     intelligence_destination String,
-    step_state               LowCardinality(String),
+    step_status              LowCardinality(String),   -- lowercase FHIR code: not-started | completed
+    sla_status               LowCardinality(String),   -- lowercase: '' | overdue | missed | met
     trigger_reason           String,
     trigger_count            AggregateFunction(count),
     unique_patients          AggregateFunction(uniq, String)
 ) ENGINE = AggregatingMergeTree()
 PARTITION BY toYYYYMM(day)
-ORDER BY (action_type, intelligence_destination, trigger_reason, step_state, day);
+ORDER BY (action_type, intelligence_destination, trigger_reason, step_status, sla_status, day);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_intelligence_summary_mv
 TO mv_intelligence_summary
@@ -150,12 +169,13 @@ AS SELECT
     toStartOfDay(created_at) AS day,
     action_type,
     intelligence_destination,
-    step_state,
+    step_status,
+    sla_status,
     trigger_reason,
     countState() AS trigger_count,
     uniqState(subject) AS unique_patients
 FROM intelligence_event_logs
-GROUP BY day, action_type, intelligence_destination, step_state, trigger_reason;
+GROUP BY day, action_type, intelligence_destination, step_status, sla_status, trigger_reason;
 
 -- ============================================================
 -- Practitioner Metrics (from inbound_event_logs MATERIALIZED columns)
@@ -219,12 +239,12 @@ GROUP BY day, facility_id, resource_type;
 -- Entity × Behavior Cross-Dimensional Views
 -- ============================================================
 
--- Patient-level deviations (JOIN deviations → protocol_instances for patient_id)
--- LEFT JOIN with FINAL: protocol_instances is a ReplacingMergeTree; without FINAL,
--- unmerged duplicate rows for the same id would inflate countState() by returning
--- multiple JOIN matches per deviation row. FINAL deduplicates at execution time.
--- coalesce: if the protocol_instance hasn't arrived yet via CDC, the deviation is
--- still captured with patient_id='' rather than silently dropped.
+-- Patient-level deviations (deviations → step_instances → protocol_instances for patient_id)
+-- Two hops since 2.0.0 dropped deviation.protocol_instance_id; refreshable for the reasons given at
+-- mv_deviation_by_protocol. step → protocol_instance_id and instance → patient_id are both
+-- immutable, so any() over the plain tables is exact without FINAL.
+-- LEFT JOIN on the instance: if it hasn't arrived yet via CDC, the deviation is still counted with
+-- patient_id='' until the next refresh picks it up.
 CREATE TABLE IF NOT EXISTS mv_deviation_by_patient (
     day              DateTime,
     patient_id       String,
@@ -236,16 +256,23 @@ PARTITION BY toYYYYMM(day)
 ORDER BY (patient_id, deviation_type, day);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_deviation_by_patient_mv
+REFRESH EVERY 30 SECOND
 TO mv_deviation_by_patient
 AS SELECT
     toStartOfDay(d.detected_at) AS day,
     coalesce(pi.patient_id, '') AS patient_id,
-    d.deviation_type,
+    d.deviation_type            AS deviation_type,
     countState() AS deviation_count,
-    uniqState(d.protocol_instance_id) AS unique_protocols
-FROM deviations d
-LEFT JOIN protocol_instances AS pi FINAL ON d.protocol_instance_id = pi.id  -- CH 26.3: alias must precede FINAL
-GROUP BY day, patient_id, d.deviation_type;
+    uniqState(si.protocol_instance_id) AS unique_protocols
+FROM deviations AS d FINAL
+INNER JOIN (
+    SELECT id, any(protocol_instance_id) AS protocol_instance_id FROM step_instances GROUP BY id
+) AS si ON si.id = d.step_instance_id
+LEFT JOIN (
+    SELECT id, any(patient_id) AS patient_id FROM protocol_instances GROUP BY id
+) AS pi ON pi.id = si.protocol_instance_id
+WHERE d._is_deleted = 0
+GROUP BY day, patient_id, deviation_type;
 
 -- Patient-level intelligence actions
 CREATE TABLE IF NOT EXISTS mv_intelligence_by_patient (
@@ -298,10 +325,10 @@ FROM intelligence_event_logs
 GROUP BY day, protocol_instance_id, action_type, intelligence_destination, trigger_reason;
 
 -- ============================================================
--- Compliance Event Processing Quality
+-- Matcher Event Processing Quality  (1.x mv_compliance_processing_quality)
 -- ============================================================
 
-CREATE TABLE IF NOT EXISTS mv_compliance_processing_quality (
+CREATE TABLE IF NOT EXISTS mv_matcher_processing_quality (
     day               DateTime,
     source            String,
     processing_status LowCardinality(String),
@@ -310,14 +337,14 @@ CREATE TABLE IF NOT EXISTS mv_compliance_processing_quality (
 PARTITION BY toYYYYMM(day)
 ORDER BY (source, processing_status, day);
 
-CREATE MATERIALIZED VIEW IF NOT EXISTS mv_compliance_processing_quality_mv
-TO mv_compliance_processing_quality
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_matcher_processing_quality_mv
+TO mv_matcher_processing_quality
 AS SELECT
     toStartOfDay(received_at) AS day,
     source,
     processing_status,
     count() AS event_count
-FROM compliance_event_logs
+FROM matcher_event_logs
 GROUP BY day, source, processing_status;
 
 -- ============================================================

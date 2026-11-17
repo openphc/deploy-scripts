@@ -98,15 +98,21 @@ data:
         static_configs:
           - targets: ["openhim-emitter-adaptor:8082"]
 
-      - job_name: "cce-compliance-service"
+      # CCE 2.0.0 — replace the retired cce-compliance-service / cce-scheduler-service
+      - job_name: "cce-protocol-service"
         metrics_path: /actuator/prometheus
         static_configs:
-          - targets: ["cce-compliance-service:8080"]
+          - targets: ["cce-protocol-service:8080"]
 
-      - job_name: "cce-scheduler-service"
+      - job_name: "cce-matcher-service"
         metrics_path: /actuator/prometheus
         static_configs:
-          - targets: ["cce-scheduler-service:8083"]
+          - targets: ["cce-matcher-service:8080"]
+
+      - job_name: "cce-step-sla-service"
+        metrics_path: /actuator/prometheus
+        static_configs:
+          - targets: ["cce-step-sla-service:8092"]
 
       - job_name: "cce-insights-service"
         metrics_path: /actuator/prometheus

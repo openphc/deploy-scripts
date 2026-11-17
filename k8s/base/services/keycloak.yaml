@@ -101,7 +101,7 @@ spec:
       volumes:
         - name: insights-ui-theme
           hostPath:
-            path: /home/cceadmin/deploy-scripts/keycloak-themes/insights-ui-theme
+            path: /home/cceadmin/deploy-scripts/keycloak-themes/cce-insights-theme/dev
             type: Directory
 ---
 apiVersion: v1

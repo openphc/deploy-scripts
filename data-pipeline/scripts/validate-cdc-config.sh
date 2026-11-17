@@ -53,21 +53,25 @@ else
     FAILURES=$((FAILURES + 1))
 fi
 
-# Check publication tables (all 11)
+# Check publication tables (all 15)
 echo ""
 echo "--- Publication Tables ---"
 EXPECTED_TABLES=(
     "protocol_definition"
     "protocol_instance"
     "step_instance"
+    "step_sla_state_transition"
     "deviation"
     "inbound_event_log"
     "intelligence_delivery"
     "intelligence_event_log"
     "action_definition"
-    "compliance_event_log"
+    "matcher_event_log"
     "receiver_adaptor"
     "destination_adaptor_mapping"
+    "facility"
+    "protocol_instance_history"
+    "step_instance_history"
 )
 
 PUB_TABLES=$(pg "SELECT tablename FROM pg_publication_tables WHERE pubname = 'cce_analytics_pub' ORDER BY tablename;")

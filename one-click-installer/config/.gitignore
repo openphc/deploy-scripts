@@ -1,0 +1,3 @@
+# Real per-environment configs can name hosts/networks — keep them out of git. Only the documented template is tracked.
+*.env
+!example.env

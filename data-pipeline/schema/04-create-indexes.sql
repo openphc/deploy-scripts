@@ -23,12 +23,15 @@ ALTER TABLE protocol_instances ADD INDEX IF NOT EXISTS idx_protocol_definition  
 
 -- step_instances
 ALTER TABLE step_instances ADD INDEX IF NOT EXISTS idx_protocol_instance        protocol_instance_id  TYPE bloom_filter GRANULARITY 4;
-ALTER TABLE step_instances ADD INDEX IF NOT EXISTS idx_state                    state                 TYPE bloom_filter GRANULARITY 4;
+ALTER TABLE step_instances ADD INDEX IF NOT EXISTS idx_step_status              step_status           TYPE bloom_filter GRANULARITY 4;
+ALTER TABLE step_instances ADD INDEX IF NOT EXISTS idx_sla_status               sla_status            TYPE bloom_filter GRANULARITY 4;
 ALTER TABLE step_instances ADD INDEX IF NOT EXISTS idx_action_id                action_id             TYPE bloom_filter GRANULARITY 4;
 
--- deviations
-ALTER TABLE deviations ADD INDEX IF NOT EXISTS idx_protocol_instance            protocol_instance_id  TYPE bloom_filter GRANULARITY 4;
+-- deviations  (no protocol_instance_id since 2.0.0 — reach it via step_instances)
 ALTER TABLE deviations ADD INDEX IF NOT EXISTS idx_step_instance                step_instance_id      TYPE bloom_filter GRANULARITY 4;
+
+-- step_sla_state_transitions
+ALTER TABLE step_sla_state_transitions ADD INDEX IF NOT EXISTS idx_step_instance  step_instance_id      TYPE bloom_filter GRANULARITY 4;
 
 -- intelligence_event_logs
 ALTER TABLE intelligence_event_logs ADD INDEX IF NOT EXISTS idx_subject          subject               TYPE bloom_filter GRANULARITY 4;
@@ -54,11 +57,13 @@ ALTER TABLE protocol_instances MATERIALIZE INDEX idx_patient_id;
 ALTER TABLE protocol_instances MATERIALIZE INDEX idx_protocol_definition;
 
 ALTER TABLE step_instances MATERIALIZE INDEX idx_protocol_instance;
-ALTER TABLE step_instances MATERIALIZE INDEX idx_state;
+ALTER TABLE step_instances MATERIALIZE INDEX idx_step_status;
+ALTER TABLE step_instances MATERIALIZE INDEX idx_sla_status;
 ALTER TABLE step_instances MATERIALIZE INDEX idx_action_id;
 
-ALTER TABLE deviations MATERIALIZE INDEX idx_protocol_instance;
 ALTER TABLE deviations MATERIALIZE INDEX idx_step_instance;
+
+ALTER TABLE step_sla_state_transitions MATERIALIZE INDEX idx_step_instance;
 
 ALTER TABLE intelligence_event_logs MATERIALIZE INDEX idx_subject;
 ALTER TABLE intelligence_event_logs MATERIALIZE INDEX idx_protocol_instance;
@@ -72,20 +77,20 @@ ALTER TABLE intelligence_deliveries MATERIALIZE INDEX idx_subject;
 -- ============================================================
 -- Adjust intervals to match your regulatory retention requirements.
 -- Healthcare regulations (e.g., HIPAA) typically require 7 years;
--- set hot-tier TTL to 90 days and cold-tier to 7 years accordingly.
+-- set hot-tier TTL to 200 days (was 90; raised 2026-10-26 — at 90 the PROD tables aged out entirely once ingestion paused) and cold-tier to 7 years accordingly.
 
--- Inbound events: 90 days hot retention
+-- Inbound events: 200 days hot retention
 ALTER TABLE inbound_event_logs
-    MODIFY TTL received_at + INTERVAL 90 DAY;
+    MODIFY TTL received_at + INTERVAL 200 DAY;
 
--- Intelligence event triggers: 90 days hot retention
+-- Intelligence event triggers: 200 days hot retention
 ALTER TABLE intelligence_event_logs
-    MODIFY TTL created_at + INTERVAL 90 DAY;
+    MODIFY TTL created_at + INTERVAL 200 DAY;
 
--- Delivery records: 90 days hot retention
+-- Delivery records: 200 days hot retention
 ALTER TABLE intelligence_deliveries
-    MODIFY TTL created_at + INTERVAL 90 DAY;
+    MODIFY TTL created_at + INTERVAL 200 DAY;
 
--- Compliance processing log: 90 days hot retention
-ALTER TABLE compliance_event_logs
-    MODIFY TTL received_at + INTERVAL 90 DAY;
+-- Matcher processing log: 200 days hot retention
+ALTER TABLE matcher_event_logs
+    MODIFY TTL received_at + INTERVAL 200 DAY;

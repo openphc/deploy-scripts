@@ -1,6 +1,6 @@
 # Traefik rate-limit for the gateway APIs (cce-prod). Two chained rateLimit middlewares per API
 # (per-client-IP + per-host "global"); a request must pass BOTH. Path-specific ingresses route the
-# longer /v1/compliance and /v1/insights prefixes through these middlewares (Traefik prefers the
+# longer /v1/protocol and /v1/insights prefixes through these middlewares (Traefik prefers the
 # longer match), while the main cce-ingress /v1 stays unthrottled for the rest.
 # Host + TLS are injected by the kustomization patches (envsubst ${INGRESS_HOST}); the middleware
 # refs are namespace-prefixed (cce-prod-…@kubernetescrd) per Traefik's k8s middleware naming.
@@ -88,7 +88,7 @@ spec:
   rules:
     - http:
         paths:
-          - path: /v1/compliance
+          - path: /v1/protocol
             pathType: Prefix
             backend:
               service:

@@ -4,30 +4,35 @@
 The native TCP protocol resets on some ClickHouse builds, so the schema is applied over HTTP: this
 splits each .sql file into statements (comment/quote aware) and POSTs them with ?database=<db>.
 
-Usage:
-  CH_HTTP=http://host:8124 CH_USER=cce_pipeline CLICKHOUSE_PASSWORD=… [CH_DB=cce_analytics] \
-    python3 apply-schema.py <schema-dir> [basename ...]
+Usage (source .env first — it reads the same CLICKHOUSE_* vars as the other scripts):
+  set -a; source .env; set +a
+  python3 scripts/apply-schema.py schema [basename ...]
 
-With no basenames it applies every *.sql in <schema-dir> in sorted (filename) order. Pass explicit
-basenames (with or without .sql) to control order — e.g. when a file depends on a higher-numbered
-one (07 daily-summary-aggregates needs 08 reference-tables first):
-  python3 apply-schema.py schema 01-create-tables 02-kafka-ingestion 03-create-materialized-views \
-    04-create-indexes 05-create-dictionary 06-current-state-rollups 08-reference-tables \
-    07-daily-summary-aggregates
+With no basenames it applies the standard set in dependency order:
+  01 02 03 04 05 06 08 07   (07 daily-summary-aggregates needs 08 reference-tables first)
+schema/09-historical-backfill is a manual, parameterised backfill and is never applied by default.
+Pass explicit basenames (with or without .sql) to apply a subset or a different order, e.g.:
+  python3 scripts/apply-schema.py schema 07-daily-summary-aggregates
 
-Env: CH_HTTP (default http://localhost:8123), CH_USER (default cce_pipeline),
-     CLICKHOUSE_PASSWORD (required), CH_DB (default cce_analytics),
+Env: CH_HTTP (default http://${CLICKHOUSE_HOST:-localhost}:${CLICKHOUSE_PORT:-8123}),
+     CLICKHOUSE_USER (default cce_pipeline), CLICKHOUSE_PASSWORD (required),
+     CLICKHOUSE_DB (default cce_analytics),
      DRY_RUN (non-empty = list files + statement counts, apply nothing).
 Exit: non-zero if any statement failed (or a named file is missing).
 """
-import os, sys, glob, urllib.request, urllib.parse, urllib.error
+import os, sys, urllib.request, urllib.parse, urllib.error
 
 SCHEMA = sys.argv[1] if len(sys.argv) > 1 else sys.exit("usage: apply-schema.py <schema-dir> [basename ...]")
-ORDER = sys.argv[2:]
-BASE = os.environ.get("CH_HTTP", "http://localhost:8123").rstrip("/") + "/"
-USER = os.environ.get("CH_USER", "cce_pipeline")
+# Default apply order: 07 depends on 08 (facility); 09 is a manual backfill and is excluded.
+DEFAULT_ORDER = ["01-create-tables", "02-kafka-ingestion", "03-create-materialized-views",
+                 "04-create-indexes", "05-create-dictionary", "06-current-state-rollups",
+                 "08-reference-tables", "07-daily-summary-aggregates"]
+ORDER = sys.argv[2:] or DEFAULT_ORDER
+BASE = os.environ.get("CH_HTTP", "http://%s:%s" % (os.environ.get("CLICKHOUSE_HOST", "localhost"),
+                                                  os.environ.get("CLICKHOUSE_PORT", "8123"))).rstrip("/") + "/"
+USER = os.environ.get("CLICKHOUSE_USER", "cce_pipeline")
 PW = os.environ.get("CLICKHOUSE_PASSWORD")
-DB = os.environ.get("CH_DB", "cce_analytics")
+DB = os.environ.get("CLICKHOUSE_DB", "cce_analytics")
 DRY = os.environ.get("DRY_RUN", "")
 
 if not PW:
@@ -88,10 +93,7 @@ def split_stmts(s):
     return [x for x in stmts if x]
 
 
-if ORDER:
-    files = [os.path.join(SCHEMA, b if b.endswith(".sql") else b + ".sql") for b in ORDER]
-else:
-    files = sorted(glob.glob(os.path.join(SCHEMA, "*.sql")))
+files = [os.path.join(SCHEMA, b if b.endswith(".sql") else b + ".sql") for b in ORDER]
 
 for f in files:
     if not os.path.exists(f):
