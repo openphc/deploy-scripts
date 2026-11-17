@@ -69,11 +69,11 @@ spec:
               value: "cce-protocol-service"
           resources:
             requests:
-              memory: 256Mi
-              cpu: 100m
+              memory: 512Mi
+              cpu: 800m
             limits:
-              memory: 768Mi
-              cpu: 500m
+              memory: 256Mi
+              cpu: 1500m
           livenessProbe:
             httpGet:
               path: /actuator/health
