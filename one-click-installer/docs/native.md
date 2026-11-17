@@ -423,7 +423,8 @@ realm, its login theme, the emitter's inbound Basic authentication, and optional
 **Reads.** `POSTGRES_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD` (required). `POSTGRES_USER`, `POSTGRES_DB`,
 `KEYCLOAK_ADMIN_USER` (`admin`), `KC_PF_PORT` (18080), `PROTOCOL_FILE`, `PROTOCOL_LOAD_URL`, `PROTOCOL_AUTH`,
 `KEYCLOAK_THEME_DIR` (message only), the `BASIC_AUTH_*` and `EMITTER_INBOUND_*` keys (passed to
-[keycloak-inbound-basic.sh](lib-install.md#keycloak-inbound-basicsh)). Files `k8s/seeds/api_permissions.sql` and
+[keycloak-inbound-basic.sh](lib-install.md#keycloak-inbound-basicsh)), `INSIGHTS_USER` / `INSIGHTS_PASSWORD` (passed to
+[keycloak-insights-user.sh](lib-install.md#keycloak-insights-usersh)). Files `k8s/seeds/api_permissions.sql` and
 `k8s/seeds/cce-realm.json`. The emitter is read from the overlay ([emitter-lib.sh](lib-install.md#emitter-libsh)).
 
 **Changes.**
@@ -435,7 +436,8 @@ realm, its login theme, the emitter's inbound Basic authentication, and optional
 2. Waits up to 10 minutes for the `keycloak` rollout. Port-forwards `svc/keycloak` to `localhost:18080` (log
    `/tmp/kc-pf-<env>.log`), gets an admin token, imports `cce-realm.json` if realm `cce` does not exist (the file sets
    `loginTheme: cce-insights-theme`), then sets the realm's `loginTheme` to `cce-insights-theme` again (this covers a
-   realm imported before the file had it, or with the old theme name `insights-ui-theme`), and runs [keycloak-inbound-basic.sh](lib-install.md#keycloak-inbound-basicsh).
+   realm imported before the file had it, or with the old theme name `insights-ui-theme`), and runs [keycloak-inbound-basic.sh](lib-install.md#keycloak-inbound-basicsh) and
+   [keycloak-insights-user.sh](lib-install.md#keycloak-insights-usersh) (the default Insights sign-in user).
 3. If `PROTOCOL_FILE` and `PROTOCOL_LOAD_URL` are both set: reads the PlanDefinition's `url` and `version`, lists the
    loaded protocols (`GET <PROTOCOL_LOAD_URL>?size=500`). If that `url|version` is already loaded, prints
    `already loaded (<status>) — not posted again`. Otherwise wraps the file as
@@ -443,12 +445,13 @@ realm, its login theme, the emitter's inbound Basic authentication, and optional
    code.
 
 **Safe to re-run?** Yes. The permissions SQL and the emitter row are idempotent. The realm is imported only once (an
-existing realm is not updated from the file). Keycloak inbound objects are created only if missing. The protocol is not
+existing realm is not updated from the file). Keycloak inbound objects and the Insights user are created only if missing. The protocol is not
 posted again when the same `url|version` is loaded. If the list cannot be read (for example the token lacks read
 rights), the script posts and the service rejects the duplicate.
 
 **Verify.** `realm import HTTP=201` on first run, `cce realm already exists — skipping` after. `login theme … HTTP=204`.
-Open `http(s)://<host>/insights/` — the login page shows the CCE theme. Protocol: `HTTP=2xx`.
+Open `https://<INGRESS_HOST>/insights/` — the login page shows the CCE theme; sign in with the Insights login from
+show-credentials.sh. Protocol: `HTTP=2xx`.
 
 **Notes.**
 - `✗ keycloak did not become ready` usually means an image pull is still running or the theme hostPath is wrong:

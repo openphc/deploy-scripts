@@ -115,9 +115,9 @@ sudo bash one-click-installer/tools/show-credentials.sh <env>            # passw
 sudo bash one-click-installer/tools/show-credentials.sh <env> --reveal   # passwords shown
 ```
 
-It covers Infisical, Insights, the Keycloak admin console, Grafana, Portainer, PostgreSQL, ClickHouse and the emitter
-inbound login for the source system. Insights users themselves are created in the Keycloak realm `cce`; the installer
-creates none.
+It covers Infisical, the Insights sign-in, the Keycloak admin console, Grafana, Portainer, PostgreSQL, ClickHouse and the
+emitter inbound login for the source system. The installer creates one Insights user, `insights` (read-only roles;
+`INSIGHTS_USER=none` in the seed file skips it); create named users in the Keycloak realm `cce`.
 
 Three things live only on the machine (0600, root). Without them Infisical, and so every password, cannot be recovered:
 

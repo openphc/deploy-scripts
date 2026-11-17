@@ -553,6 +553,8 @@ organisation only.
 | `BASIC_AUTH_CLIENT_SECRET` | /keycloak | secret | generated |
 | `EMITTER_INBOUND_USER` | /keycloak | default | `<EMITTER_ADAPTOR>-emitter-inbound` |
 | `EMITTER_INBOUND_PASSWORD` | /keycloak | secret | generated |
+| `INSIGHTS_USER` | /keycloak | default | `insights` (the default Insights sign-in user; `none` = do not create one) |
+| `INSIGHTS_PASSWORD` | /keycloak | secret | generated |
 | `GRAFANA_ADMIN_USER` | /grafana | default | `admin` |
 | `GRAFANA_ADMIN_PASSWORD` | /grafana | secret | generated |
 | `OPENHIM_CORE_HOST` | /openhim-emitter-adaptor | blank | |
