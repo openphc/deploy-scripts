@@ -19,6 +19,7 @@ The machines' hostnames are misleading (.21 is called `cce-prod`). Always go by 
 | know how UAT is secured, rotate a credential | [`docs/uat/SECURITY.md`](docs/uat/SECURITY.md) |
 | recover UAT from data or machine loss, test the backups | [`docs/uat/DISASTER-RECOVERY.md`](docs/uat/DISASTER-RECOVERY.md) |
 | see how an event flows, which ports are open, what each config key does | [`docs/uat/CONFIG-REFERENCE.md`](docs/uat/CONFIG-REFERENCE.md) |
+| give someone access to the Insights dashboard (with screenshots) | [`docs/uat/USER-ONBOARDING.md`](docs/uat/USER-ONBOARDING.md) |
 | install PROD (step by step, for a less-technical operator) | [`docs/prod/INSTALL-GUIDE.md`](docs/prod/INSTALL-GUIDE.md) |
 
 PROD's own versions of the four UAT docs will be written once PROD is installed. Until then, PROD is run the way UAT is, with
