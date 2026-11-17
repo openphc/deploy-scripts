@@ -42,7 +42,7 @@ cpu="$(nproc)"; mem="$(awk '/MemTotal/{printf "%d", $2/1048576+0.5}' /proc/memin
 
 sect "outbound access (everything the installer downloads)"
 # A site used only to install something that is already in place is not checked: the install steps skip it (k3s is never
-# reinstalled without FORCE_K3S_REINSTALL; Kafka when /opt/kafka exists — k8s/infrastructure/setup-prod-infra.sh; ClickHouse when
+# reinstalled without FORCE_K3S_REINSTALL; Kafka when /opt/kafka exists — one-click-installer/lib/native/setup-postgres-kafka.sh; ClickHouse when
 # clickhouse-server exists — native/02; the Infisical CLI at the pinned version). So a slow or unreachable archive.apache.org
 # (seen: 7–8 s per request) cannot stop a re-run. Image registries, github.com and the Ubuntu mirror are always needed.
 sites=(https://github.com https://ghcr.io/v2/ https://quay.io/v2/ https://registry-1.docker.io/v2/ https://registry.k8s.io/v2/)

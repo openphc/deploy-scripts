@@ -28,8 +28,8 @@ cce_load_config() {
     if [ -z "${!key+x}" ]; then export "$key=$val"; else export "$key"; fi   # environment wins
   done < "$file"
   [ "${#unknown[@]}" -gt 0 ] && echo "WARNING: unknown config key(s) — typo? ${unknown[*]}" >&2
-  # Defaults that must agree everywhere (example.env and the README document these). setup-prod-infra.sh's own Kafka default
-  # stays 3.7.0 for callers that pass no version; the one-click installer always passes this one.
+  # Defaults that must agree everywhere (example.env and the README document these). lib/native/setup-postgres-kafka.sh has the
+  # same Kafka default; the installer always passes KAFKA_VERSION, so this is the one that counts.
   export USE_LOCAL_INFISICAL="${USE_LOCAL_INFISICAL:-true}" KAFKA_VERSION="${KAFKA_VERSION:-3.9.2}"
   return 0
 }

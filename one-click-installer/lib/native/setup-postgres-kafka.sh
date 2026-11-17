@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# PROD Infrastructure Setup — PostgreSQL 16 & Kafka (KRaft) via systemd
-# Run this script once on the VM to install and configure PROD infrastructure.
+# one-click-installer/lib/native/setup-postgres-kafka.sh — PostgreSQL & Kafka (KRaft), native via systemd.
+# Run by 01-install-postgres-kafka.sh (install phase 6), which passes the passwords, versions and k3s CIDRs from the config
+# and Infisical, then fixes Kafka's advertised listener. Re-run safe: it reuses what is installed and upgrades Kafka in
+# place when KAFKA_VERSION is newer. (Was k8s/infrastructure/setup-prod-infra.sh.)
 #
-# Usage:
-#   chmod +x setup-prod-infra.sh
-#   sudo ./setup-prod-infra.sh
+# By hand (normally not needed):
+#   sudo env POSTGRES_PROD_PASSWORD=… bash one-click-installer/lib/native/setup-postgres-kafka.sh
 # =============================================================================
 
 set -euo pipefail
@@ -22,7 +23,7 @@ POSTGRES_USER="${POSTGRES_USER:-admin}"
 POSTGRES_PASSWORD="${POSTGRES_PROD_PASSWORD:?set POSTGRES_PROD_PASSWORD in the environment}"
 POSTGRES_PORT=5432
 
-KAFKA_VERSION="${KAFKA_VERSION:-3.7.0}"   # overridable (one-click config)
+KAFKA_VERSION="${KAFKA_VERSION:-3.9.2}"   # overridable (one-click config: KAFKA_VERSION; same default)
 KAFKA_SCALA_VERSION="2.13"
 KAFKA_PORT=9092
 KAFKA_CONTROLLER_PORT=9094
