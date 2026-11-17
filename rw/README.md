@@ -14,11 +14,13 @@ The machines' hostnames are misleading (.21 is called `cce-prod`). Always go by 
 
 | I want to… | Read |
 |---|---|
+| understand what CCE is, how it is built and secured, and how it is deployed here | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
 | understand how the installer works | [`docs/ONE-CLICK-INSTALL.md`](docs/ONE-CLICK-INSTALL.md) |
 | operate UAT: deploy new code, back up, change config, load a protocol | [`docs/uat/OPERATIONS-RUNBOOK.md`](docs/uat/OPERATIONS-RUNBOOK.md) |
 | know how UAT is secured, rotate a credential | [`docs/uat/SECURITY.md`](docs/uat/SECURITY.md) |
 | recover UAT from data or machine loss, test the backups | [`docs/uat/DISASTER-RECOVERY.md`](docs/uat/DISASTER-RECOVERY.md) |
 | see how an event flows, which ports are open, what each config key does | [`docs/uat/CONFIG-REFERENCE.md`](docs/uat/CONFIG-REFERENCE.md) |
+| give someone access to the Insights dashboard (with screenshots) | [`docs/uat/USER-ONBOARDING.md`](docs/uat/USER-ONBOARDING.md) |
 | install PROD (step by step, for a less-technical operator) | [`docs/prod/INSTALL-GUIDE.md`](docs/prod/INSTALL-GUIDE.md) |
 
 PROD's own versions of the four UAT docs will be written once PROD is installed. Until then, PROD is run the way UAT is, with

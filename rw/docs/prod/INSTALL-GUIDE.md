@@ -454,6 +454,8 @@ The technical team then finishes these items, which are **not** part of your job
 - put OpenHIM's real password into Infisical as `EMITTER_INBOUND_PASSWORD` once known; until then Infisical holds a generated
   value that is not the password (`show-credentials.sh` shows that one)
 - confirm that OpenHIM traffic is arriving, and that Insights lists the facilities
+- give new people access to the dashboard with `rw/docs/uat/USER-ONBOARDING.md`, using `cce.moh.gov.rw` (users from the old
+  system come back with step 9)
 - decide when to delete the old system's leftovers: `/var/backups/cce-prod-old-*` (it holds the old, unredacted clinical
   database dumps) and `~/old-cce-*`
 - from now on, run PROD the way UAT is run (`rw/docs/uat/OPERATIONS-RUNBOOK.md`, with `rw/config/prod.env` and namespace

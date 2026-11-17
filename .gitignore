@@ -43,9 +43,15 @@ rw/tools/openhim/*
 !rw/docs/
 rw/docs/*
 !rw/docs/ONE-CLICK-INSTALL.md
+!rw/docs/ARCHITECTURE.md
 !rw/docs/uat/
 rw/docs/uat/*
 !rw/docs/uat/*.md
+!rw/docs/uat/images/
+rw/docs/uat/images/*
+!rw/docs/uat/images/user-onboarding/
+rw/docs/uat/images/user-onboarding/*
+!rw/docs/uat/images/user-onboarding/*.png
 !rw/docs/prod/
 rw/docs/prod/*
 !rw/docs/prod/INSTALL-GUIDE.md

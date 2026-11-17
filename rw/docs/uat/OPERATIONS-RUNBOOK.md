@@ -359,9 +359,13 @@ instances, 142 visit groups, 931 steps and 503 deviations, with the same counts 
 
 ### Add an Insights user
 
-1. Keycloak admin (§2) → realm **`cce`** → **Users** → **Add user**. Fill in the username and e-mail, then **Create**.
-2. **Credentials** → **Set password**, with **Temporary** off unless the user should change it at first login.
-3. **Role mapping** → **Assign role** → filter by **clients** → `gateway-service` **`INSIGHTS_READ`** → **Assign**.
+Follow [USER-ONBOARDING.md](USER-ONBOARDING.md), which has screenshots. In short:
+
+1. Keycloak admin (§2) → **Manage realms** → **`cce`** → **Users** → **Add user**. Username and e-mail = the person's e-mail
+   address, **Required user actions** = **Update Password**, then **Create**.
+2. **Role mapping** → **Assign role** → **Client roles** → `gateway-service` **`INSIGHTS_READ`** → **Assign**.
+3. **Credentials** → **Credential Reset** → **Update Password** → **Send Email**. The user chooses their own password from the
+   e-mail link; don't use **Set password**.
 
 The user logs in at `https://cceuat.moh.gov.rw/insights`. Give only `INSIGHTS_READ` (`SECURITY.md` §5). On 2026-11-12 the
 realm has 5 users: 4 with `INSIGHTS_READ`, and `openhim-emitter-inbound` with `EMITTER_INBOUND_WRITE`.
