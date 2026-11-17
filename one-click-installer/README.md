@@ -175,7 +175,7 @@ These were all hit on real fresh installs; the fixes are in the scripts. Listed 
 
 ## Notes
 
-* **Known product-level item:** `k8s/base/services/openhim-emitter-adaptor.yaml` sets `EBUZIMA_CLIENT_ID=ebuzima` — the source
+* **Known product-level item:** `k8s/emitters/openhim/openhim-emitter-adaptor.yaml` sets `EBUZIMA_CLIENT_ID=ebuzima` — the source
   system of the first implementation. Other implementations configure their own source systems in the emitter.
 * **ClickHouse retention:** set by the deployed `data-pipeline/schema/04-create-indexes.sql`. Keep it at 200 days
   (`cce-data-pipeline` `demo-v2`): at 90, a pause in ingestion longer than that empties the dashboards entirely.

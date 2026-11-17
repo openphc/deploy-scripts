@@ -5,7 +5,6 @@ resources:
   # Infrastructure (Kafka UI only — Postgres & Kafka run on host)
   - infrastructure/kafka-ui.yaml
   # Application Services
-  - services/openhim-emitter-adaptor.yaml
   - services/cce-collector-service.yaml
   # CCE 2.0.0: Protocol + Matcher + Step SLA replace the 1.x compliance and scheduler services
   - services/cce-protocol-service.yaml

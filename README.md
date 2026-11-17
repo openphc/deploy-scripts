@@ -14,7 +14,7 @@ the history of `main`.
 | [`one-click-installer/`](one-click-installer/) | The installer: `install.sh`, its `lib/` and `tools/` scripts, `config/example.env` and the detailed [docs](one-click-installer/docs/README.md) |
 | `k8s/base/` | Kubernetes manifests of every CCE service, Keycloak and monitoring |
 | `k8s/overlays/prod/` | The template the installer copies into `k8s/overlays/<env>/` for a new environment |
-| `k8s/emitters/` | Emitter adaptors other than the built-in OpenHIM one (e.g. `tiberbu`), chosen with `EMITTER_ADAPTOR` |
+| `k8s/emitters/` | The emitter adaptors (`openhim`, `tiberbu`): each environment deploys exactly one, chosen with `EMITTER_ADAPTOR` |
 | `k8s/seeds/` | Keycloak `cce` realm and gateway `api_permissions` |
 | `k8s/infrastructure/setup-prod-infra.sh` | Native PostgreSQL + Kafka install, run by the installer |
 | (`data-pipeline/`) | Not in git: the installer fetches ClickHouse schema, CDC SQL and the Debezium connector from `cce-data-pipeline` at `DATA_PIPELINE_REF` (default `demo-v2`: step groups, 200-day retention) on every run |

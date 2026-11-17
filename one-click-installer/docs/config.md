@@ -371,8 +371,8 @@ Each implementation runs one emitter adaptor: the one for its source system. It 
 clinical findings, and forwards them to the collector.
 
 ### `EMITTER_ADAPTOR`
-- **Meaning:** which `<system>-cce-emitter-adaptor` to deploy. `openhim` is built into `k8s/base`; any other is a
-  directory `k8s/emitters/<name>/` (a kustomization plus `emitter.conf`). Available today: `openhim`, `tiberbu`.
+- **Meaning:** which `<system>-cce-emitter-adaptor` to deploy. Each is a directory `k8s/emitters/<name>/` (a
+  kustomization plus `emitter.conf`); `k8s/base` has none, and the overlay lists exactly one. Available today: `openhim`, `tiberbu`.
 - **Default:** `openhim`.
 - **Read by:** `install.sh` (validates it before anything is installed, and prints it in the summary),
   [apply-emitter.sh](lib-install.md#apply-emittersh) (rewrites the overlay), and
