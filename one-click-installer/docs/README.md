@@ -18,6 +18,10 @@ how to check it worked.
 - [native.md](native.md) — `lib/native/install-all.sh` and its steps 01–07, in the order they run.
 - [lib-day2.md](lib-day2.md) — day-2 scripts: redeploy, ClickHouse schema, Grafana dashboards, admin passwords.
 - [tools.md](tools.md) — `tools/`: IP drift check, environment fingerprint and parity, connector repoint.
+- [beckn-demo-setup.md](beckn-demo-setup.md) — the Beckn demo explained: participants, deployment architecture, how one
+  event travels from OpenMRS through the HIE to CCE, how to run the demo, status. Start here for the Beckn work.
+- [beckn.md](beckn.md) — the Beckn add-on reference (`install-beckn.sh`): what it deploys, config keys, secrets,
+  contracts, timeouts, copying an OpenMRS, day-2 tasks, troubleshooting.
 
 ## Phase → scripts it runs
 
@@ -57,6 +61,8 @@ All commands run on the machine, from the repository root, as root.
 | Apply a ClickHouse schema change | `sudo bash one-click-installer/lib/redeploy-clickhouse.sh <env>` (`DROP_FIRST="…"` to replace objects — loses their data) | [redeploy-clickhouse.sh](lib-day2.md#redeploy-clickhousesh) |
 | Ship new / edited Grafana dashboards | `sudo bash one-click-installer/lib/grafana-redeploy.sh <env>` | [grafana-redeploy.sh](lib-day2.md#grafana-redeploysh) |
 | Change Grafana / Portainer admin password | `sudo bash one-click-installer/lib/set-admin-passwords.sh <env>` | [set-admin-passwords.sh](lib-day2.md#set-admin-passwordssh) |
+| Add the Beckn participants (CCE's Beckn bridge, OpenHIM, OpenMRS, their ONIX adapters) | `sudo bash one-click-installer/install-beckn.sh --config one-click-installer/config/<env>.env` | [beckn.md](beckn.md) |
+| Check the Beckn add-on, print its contract ids | `sudo bash one-click-installer/lib/beckn/run.sh --config one-click-installer/config/<env>.env beckn-status.sh` | [beckn.md → Check it](beckn.md#check-it) |
 | Machine IP changed | `sudo bash one-click-installer/tools/host-ip-check.sh <env>`, then fix each DRIFT line | [host-ip-check.sh](tools.md#host-ip-checksh) |
 | CDC connector points at an IP | `sudo bash one-click-installer/tools/connector-repoint.sh <env>` | [connector-repoint.sh](tools.md#connector-repointsh) |
 | Compare with a reference environment | `env-fingerprint.sh` on each host, then `env-parity.py ref.fp new.fp` | [tools.md](tools.md#env-paritypy) |
