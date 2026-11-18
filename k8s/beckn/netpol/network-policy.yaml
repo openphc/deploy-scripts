@@ -1,0 +1,34 @@
+# Isolation of a participant namespace that is NOT a CCE namespace (OpenHIM, OpenMRS). Same idea as k8s/base/network-policy.yaml:
+# pods talk to their own namespace, to kube-system (DNS, and Traefik for the other participants' public Beckn addresses) and
+# to public addresses (network registry, schema downloads) — never directly to another participant's pods.
+# Other participants reach this one only through Traefik -> onix-bap / onix-bpp, where the Beckn signature is checked.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: participant-isolation
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+  egress:
+    - to:
+        - podSelector: {}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16

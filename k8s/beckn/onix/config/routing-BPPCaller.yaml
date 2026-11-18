@@ -1,0 +1,15 @@
+# onix-bpp /bpp/caller/<action>: callbacks this participant sends as provider go to the consumer named in the message
+# (context.bapUri, checked against the network registry).
+routingRules:
+  - version: "2.0.0"
+    targetType: "bap"
+    endpoints:
+      - on_select
+      - on_init
+      - on_confirm
+      - on_status
+      - on_cancel
+      - on_support
+      - on_track
+      - on_update
+      - on_rate

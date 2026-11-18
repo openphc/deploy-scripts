@@ -1,0 +1,237 @@
+# The Beckn ONIX adapter of ONE network participant: onix-bap (consumer side, :8081), onix-bpp (provider side, :8082)
+# and their Redis. Deployed once per participant namespace (CCE, OpenHIM, OpenMRS, …) by one-click-installer/install-beckn.sh.
+#
+# Not in this file, created per namespace by one-click-installer/lib/beckn/beckn-deploy.sh before this is applied:
+#   Secret    onix-config  — the two adapter configs (they hold the signing keys) and the four routing files,
+#                            rendered from k8s/beckn/onix/config/*.yaml
+#   ConfigMap onix-schema  — the extra schema folders (CceClinicalEvent, CceCareAlert), one key per file with "/" written "__"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onix-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: onix-redis
+  template:
+    metadata:
+      labels:
+        app: onix-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          # The adapter keeps only short-lived data here (registry lookups, signatures): no disk needed.
+          args: ["--save", "", "--appendonly", "no"]
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onix-redis
+spec:
+  selector:
+    app: onix-redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onix-bap
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: onix-bap
+  template:
+    metadata:
+      labels:
+        app: onix-bap
+    spec:
+      initContainers:
+        # The adapter finds a local schema by its folder name (config/schema/<Name>/<version>/…). A ConfigMap is flat, so the
+        # folders are rebuilt here from keys such as CceClinicalEvent__v1.0__attributes.yaml.
+        - name: schema
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              cd /in || exit 0
+              for f in *; do
+                [ -f "$f" ] || continue
+                d="/out/$(echo "$f" | sed 's#__#/#g')"
+                mkdir -p "$(dirname "$d")" && cp "$f" "$d"
+              done
+              find /out -type f | sort
+          # Explicit and small: a namespace LimitRange would otherwise give this container its default request (200m CPU),
+          # and a pod's request is at least that of its largest init container.
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: schema-in
+              mountPath: /in
+            - name: schema
+              mountPath: /out
+      containers:
+        - name: onix-bap
+          image: fidedocker/onix-adapter:1.6.1
+          args: ["./server", "--config=/app/config/onix-bap.yaml"]
+          ports:
+            - containerPort: 8081
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          readinessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: schema
+              mountPath: /app/config/schema
+      volumes:
+        - name: config
+          secret:
+            secretName: onix-config
+        - name: schema-in
+          configMap:
+            name: onix-schema
+        - name: schema
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onix-bap
+spec:
+  selector:
+    app: onix-bap
+  ports:
+    - port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onix-bpp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: onix-bpp
+  template:
+    metadata:
+      labels:
+        app: onix-bpp
+    spec:
+      initContainers:
+        - name: schema
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              cd /in || exit 0
+              for f in *; do
+                [ -f "$f" ] || continue
+                d="/out/$(echo "$f" | sed 's#__#/#g')"
+                mkdir -p "$(dirname "$d")" && cp "$f" "$d"
+              done
+              find /out -type f | sort
+          # Explicit and small: a namespace LimitRange would otherwise give this container its default request (200m CPU),
+          # and a pod's request is at least that of its largest init container.
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: schema-in
+              mountPath: /in
+            - name: schema
+              mountPath: /out
+      containers:
+        - name: onix-bpp
+          image: fidedocker/onix-adapter:1.6.1
+          args: ["./server", "--config=/app/config/onix-bpp.yaml"]
+          ports:
+            - containerPort: 8082
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          readinessProbe:
+            tcpSocket:
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: schema
+              mountPath: /app/config/schema
+      volumes:
+        - name: config
+          secret:
+            secretName: onix-config
+        - name: schema-in
+          configMap:
+            name: onix-schema
+        - name: schema
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onix-bpp
+spec:
+  selector:
+    app: onix-bpp
+  ports:
+    - port: 8082
+      targetPort: 8082

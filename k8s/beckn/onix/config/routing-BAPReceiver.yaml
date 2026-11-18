@@ -1,0 +1,17 @@
+# onix-bap /bap/receiver/<action>: callbacks from the network are passed to this participant's own service.
+# The adapter appends the action name to the URL. ${ONIX_BAP_RECEIVER_TARGET} is set per participant by beckn-deploy.sh.
+routingRules:
+  - version: "2.0.0"
+    targetType: "url"
+    target:
+      url: "${ONIX_BAP_RECEIVER_TARGET}"
+    endpoints:
+      - on_select
+      - on_init
+      - on_confirm
+      - on_status
+      - on_cancel
+      - on_support
+      - on_track
+      - on_update
+      - on_rate

@@ -21,7 +21,8 @@ This page covers every key in the installer config file, the environment-only va
   `sudo env IS_CLOUD_DEPLOYMENT=true bash install.sh --config …` overrides the file. Use `sudo env VAR=x`, not
   `VAR=x sudo …` and not `sudo -E` (see [sudo-compat.sh](lib-install.md#sudo-compatsh)).
 - Every key is exported, so every script that `install.sh` starts sees it.
-- A key that is not in `CCE_CONFIG_KEYS` and does not start with `IMAGE_` produces
+- A key that is not in `CCE_CONFIG_KEYS` and does not start with `IMAGE_` or `BECKN_` (the
+  [Beckn add-on](beckn.md#configuration-keys)'s keys, validated by `lib/beckn/beckn-lib.sh`) produces
   `WARNING: unknown config key(s) — typo? …`. It is still exported. So an environment-only variable such as
   `FORCE_K3S_REINSTALL` works from the file, but warns.
 - After reading, two defaults are exported if still unset: `USE_LOCAL_INFISICAL=true` and `KAFKA_VERSION=3.9.2`, so
@@ -487,6 +488,8 @@ Parsed by [infisical-seed.sh](lib-infisical.md#infisical-seedsh), not by the she
 - Unquoted, `#` is part of the value (`s3cret#2027` is kept whole). Only whitespace followed by `#` starts a
   trailing comment: `KEY=value   # note` stores `value`.
 - An empty value is the same as not giving the key.
+- The line is split at its first `=`; everything after it is the value, a trailing `=` included (base64 values end in
+  one).
 
 ### What happens to each key
 

@@ -1,0 +1,17 @@
+# onix-bpp /bpp/receiver/<action>: requests from the network are passed to this participant's own service.
+# The adapter appends the action name to the URL. ${ONIX_BPP_RECEIVER_TARGET} is set per participant by beckn-deploy.sh.
+routingRules:
+  - version: "2.0.0"
+    targetType: "url"
+    target:
+      url: "${ONIX_BPP_RECEIVER_TARGET}"
+    endpoints:
+      - select
+      - init
+      - confirm
+      - status
+      - cancel
+      - support
+      - track
+      - update
+      - rate

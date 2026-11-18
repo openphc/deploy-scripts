@@ -1,0 +1,172 @@
+# openhim-cce-emitter-adaptor, demo-beckn build (https://github.com/openphc/openhim-cce-emitter-adaptor/tree/demo-beckn):
+# the HIE's Beckn worker AND its OpenHIM mediator, in one service.
+#   unwrap:  onix-bpp -> POST /beckn/bpp-webhook/update -> OpenHIM channel /cce-beckn -> POST /inbound (the existing pipeline:
+#            source, patient, facility, redaction, CloudEvent)
+#   wrap:    /inbound -> onix-bap /bap/caller/update -> CCE's BPP
+#   callback: onix-bap -> POST /beckn/bap-webhook/on_update (logged)
+# It runs beside OpenHIM, in the HIE's namespace — not in a CCE namespace, and with no access to the CCE collector: every
+# source's output is Beckn (docs/beckn-integration.md §5.1). This is separate from k8s/emitters/openhim, the collector-path
+# adaptor inside a CCE environment.
+# ${...} values are filled by one-click-installer/lib/beckn/beckn-deploy.sh (installer config + Infisical /beckn).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openhim-adaptor-secrets
+type: Opaque
+stringData:
+  # OpenHIM Core API login: mediator registration and heartbeat.
+  OPENHIM_USERNAME: "${OPENHIM_ROOT_USER}"
+  OPENHIM_PASSWORD: "${OPENHIM_ROOT_PASSWORD}"
+  # The OpenHIM client the unwrap endpoint posts to the /cce-beckn channel with (openhim-metadata.json: cce-beckn-endpoint).
+  OPENHIM_EMITTER_BECKN_OPENHIM_CLIENT_PASSWORD: "${OPENHIM_CLIENT_PASSWORD_CCE_BECKN_ENDPOINT}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openhim-adaptor-config
+data:
+  # beckn.subscribers — one entry per HMIS that sends events to the HIE over Beckn, with the "HIE feed" contract ids this HIE
+  # issued to it. A list, so it is given as JSON (built by beckn-deploy.sh) rather than as indexed environment variables.
+  SPRING_APPLICATION_JSON: '${OPENHIM_ADAPTOR_SPRING_JSON}'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openhim-cce-emitter-adaptor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openhim-cce-emitter-adaptor
+  template:
+    metadata:
+      labels:
+        app: openhim-cce-emitter-adaptor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8082"
+        cce.openphc.org/config-hash: "${BECKN_CONFIG_HASH}"
+    spec:
+      containers:
+        - name: openhim-cce-emitter-adaptor
+          # CI (demo-beckn branch) pushes demo-beckn-v<N> and demo-beckn-latest. Pin with IMAGE_OPENHIM_BECKN_EMITTER_ADAPTOR.
+          image: ${BECKN_OPENHIM_ADAPTOR_IMAGE}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - secretRef:
+                name: openhim-adaptor-secrets
+            - configMapRef:
+                name: openhim-adaptor-config
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+            # ── OpenHIM Core (mediator) ──
+            - name: OPENHIM_CORE_HOST
+              value: "openhim-core"
+            - name: OPENHIM_CORE_API_PORT
+              value: "8080"
+            - name: OPENHIM_CORE_SCHEME
+              value: "https"
+            - name: OPENHIM_CORE_AUTH_TYPE
+              value: "basic"
+            # The host OpenHIM routes to: this Service (openhim-metadata.json uses the same name in every route).
+            - name: MEDIATOR_ENDPOINT_HOST
+              value: "openhim-cce-emitter-adaptor"
+            # ── Sources: the OpenHIM clients whose events this adaptor accepts (openhim-metadata.json) ──
+            - name: EBUZIMA_CLIENT_ID
+              value: "ebuzima-emr-client"
+            - name: SPICE_CLIENT_ID
+              value: "spice-fhir-client"
+            - name: OPENMRS_CLIENT_ID
+              value: "openmrs-fhir-client"
+            - name: SPICE_FACILITY_CLIENT_ID
+              value: "spice-facility-client"
+            - name: FACILITY_FILTER_IDS
+              value: "${BECKN_OPENHIM_FACILITY_FILTER_IDS}"
+            # ── Collector path: not used here. Every source's output is Beckn (beckn.enabled=true and no source sets
+            #    output: collector), and the HIE's namespace cannot reach a CCE collector anyway. The prod profile still
+            #    requires the variable, so it gets an address that fails loudly if a source is ever switched back.
+            - name: CCE_COLLECTOR_URL
+              value: "http://collector-not-used.invalid"
+            # ── Beckn ──
+            - name: OPENHIM_EMITTER_BECKN_ENABLED
+              value: "true"
+            - name: OPENHIM_EMITTER_BECKN_SCHEMA_BASE_URL
+              value: "${BECKN_SCHEMA_BASE_URL}"
+            - name: OPENHIM_EMITTER_BECKN_ONIX_BAP_CALLER_URL
+              value: "http://onix-bap:8081/bap/caller"
+            - name: OPENHIM_EMITTER_BECKN_ONIX_BPP_CALLER_URL
+              value: "http://onix-bpp:8082/bpp/caller"
+            # Timeout budget (docs/beckn-integration.md §8.3) — each hop waits longer than the hop behind it:
+            #   onix-bap -> CCE 20 s  <  this adaptor -> onix-bap 25 s  <  channel 30 s  <  unwrap -> channel 35 s  <  onix-bpp 40 s
+            - name: OPENHIM_EMITTER_BECKN_ONIX_TIMEOUT_MS
+              value: "25000"
+            - name: OPENHIM_EMITTER_BECKN_OPENHIM_CHANNEL_TIMEOUT_MS
+              value: "35000"
+            - name: OPENHIM_EMITTER_BECKN_SELF_NETWORK_ID
+              value: "${BECKN_NETWORK_ID}"
+            - name: OPENHIM_EMITTER_BECKN_SELF_BAP_ID
+              value: "${BECKN_OPENHIM_BAP_ID}"
+            - name: OPENHIM_EMITTER_BECKN_SELF_BAP_URI
+              value: "${BECKN_OPENHIM_BAP_URI}"
+            - name: OPENHIM_EMITTER_BECKN_SELF_BPP_ID
+              value: "${BECKN_OPENHIM_BPP_ID}"
+            - name: OPENHIM_EMITTER_BECKN_SELF_BPP_URI
+              value: "${BECKN_OPENHIM_BPP_URI}"
+            # CCE, and the HIE's contract with CCE (ids issued by CCE; the same two ids are in CCE's hmis.yml).
+            - name: OPENHIM_EMITTER_BECKN_CCE_BPP_ID
+              value: "${BECKN_CCE_BPP_ID}"
+            - name: OPENHIM_EMITTER_BECKN_CCE_BPP_URI
+              value: "${BECKN_CCE_BPP_URI}"
+            - name: OPENHIM_EMITTER_BECKN_CCE_CONTRACT_ID
+              value: "${BECKN_HIE_CCE_CONTRACT_ID}"
+            - name: OPENHIM_EMITTER_BECKN_CCE_TRANSACTION_ID
+              value: "${BECKN_HIE_CCE_TRANSACTION_ID}"
+            # The unwrap endpoint posts the FHIR resource here. 5001 is OpenHIM's plain-HTTP channel port (5000 is the HTTPS
+            # one): an https:// URL on 5001 gets no answer at all — Core logs "Parse Error: Invalid method encountered" and the
+            # adaptor times out. In-namespace traffic only; the client still signs in with HTTP Basic.
+            - name: OPENHIM_EMITTER_BECKN_OPENHIM_CHANNEL_URL
+              value: "http://openhim-core:5001/cce-beckn"
+            - name: OPENHIM_EMITTER_BECKN_OPENHIM_CLIENT_ID
+              value: "cce-beckn-endpoint"
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              value: "health,info,prometheus,metrics"
+            - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+              value: "openhim-cce-emitter-adaptor"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openhim-cce-emitter-adaptor
+spec:
+  selector:
+    app: openhim-cce-emitter-adaptor
+  ports:
+    - port: 8082
+      targetPort: 8082
