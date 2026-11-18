@@ -87,7 +87,9 @@ spec:
               value: "${BECKN_OPENMRS_BPP_ID}"
             - name: OPENMRS_EMITTER_BECKN_SELF_BPP_URI
               value: "${BECKN_OPENMRS_BPP_URI}"
-            # The HIE, and this OpenMRS's "HIE feed" contract (ids issued by the HIE; the same two are in its subscriber list).
+            # The HIE, and the contract id and transactionId this OpenMRS puts in every update to it. The sender chooses
+            # them: the HIE accepts any non-blank contract id from a listed subscriber and echoes it. They only have to stay
+            # the same.
             - name: OPENMRS_EMITTER_BECKN_OPENHIM_BPP_ID
               value: "${BECKN_OPENHIM_BPP_ID}"
             - name: OPENMRS_EMITTER_BECKN_OPENHIM_BPP_URI
@@ -114,6 +116,9 @@ spec:
               value: "${BECKN_SPICE_BPP_URI}"
             - name: OPENMRS_EMITTER_BECKN_SPICE_FACILITY_CODES
               value: "${BECKN_SPICE_FACILITY_CODES}"
+            # Referral ids, used only with the referral legs on. "Referrals in": what the emitter puts in on_status (a
+            # referral's outcome) to Spice — agree the pair with Spice. "Referrals out": what it puts in update (a new
+            # referral) to Spice — Spice supplies the pair.
             - name: OPENMRS_EMITTER_BECKN_REFERRALS_IN_CONTRACT_ID
               value: "${BECKN_REFERRALS_IN_CONTRACT_ID}"
             - name: OPENMRS_EMITTER_BECKN_REFERRALS_IN_TRANSACTION_ID
@@ -222,16 +227,13 @@ spec:
               value: "${BECKN_OPENMRS_BPP_URI}"
             - name: OPENMRS_RECEIVER_BECKN_NETWORK_ID
               value: "${BECKN_NETWORK_ID}"
-            # The one HMIS peer (Spice) and the "referrals in" contract this OpenMRS issued to it. The receiver does not
-            # start without them, so beckn-deploy.sh supplies placeholders (*.invalid) until Spice's real ids are configured.
+            # The one HMIS peer (Spice). A referral is accepted only when context.bapId is this id, with any non-blank
+            # contract id (echoed in on_update). The receiver does not start without the two values, so beckn-lib.sh
+            # supplies placeholders (*.invalid) until Spice's real ids are configured: until then every referral is refused.
             - name: OPENMRS_RECEIVER_BECKN_SPICE_BAP_ID
               value: "${BECKN_SPICE_BAP_ID}"
             - name: OPENMRS_RECEIVER_BECKN_SPICE_BAP_URI
               value: "${BECKN_SPICE_BAP_URI}"
-            - name: OPENMRS_RECEIVER_BECKN_REFERRALS_IN_CONTRACT_ID
-              value: "${BECKN_REFERRALS_IN_CONTRACT_ID}"
-            - name: OPENMRS_RECEIVER_BECKN_REFERRALS_IN_TRANSACTION_ID
-              value: "${BECKN_REFERRALS_IN_TRANSACTION_ID}"
           resources:
             requests:
               cpu: 50m

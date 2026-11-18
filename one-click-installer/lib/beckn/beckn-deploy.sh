@@ -56,19 +56,16 @@ case "$COMPONENT" in
 esac
 HOSTVAR="BECKN_${P}_HOST"; export BECKN_HOST="${!HOSTVAR:?$HOSTVAR not set}"
 
-# The HIE's subscriber list (beckn.subscribers of the adaptor): every HMIS that sends it events, with the "HIE feed" ids the
-# HIE issued. OpenMRS always; Spice once its real id is configured.
+# The HIE's subscriber list (beckn.subscribers of the adaptor): every HMIS that may send it events. OpenMRS always; Spice once
+# its real id is configured. No contract ids: the adaptor accepts any non-blank contract id from a listed subscriber and
+# echoes it in its on_update (openhim-cce-emitter-adaptor PR 43).
 if [ "$COMPONENT" = openhim ]; then
   OPENHIM_ADAPTOR_SPRING_JSON="$(python3 - <<'PY'
 import json, os
 E = os.environ.get
-subs = [{"subscriber-id": E("BECKN_OPENMRS_BAP_ID"), "subscriber-uri": E("BECKN_OPENMRS_BAP_URI"),
-         "contract-id": E("BECKN_HIE_FEED_OPENMRS_CONTRACT_ID"), "transaction-id": E("BECKN_HIE_FEED_OPENMRS_TRANSACTION_ID"),
-         "source-system": "openmrs"}]
+subs = [{"subscriber-id": E("BECKN_OPENMRS_BAP_ID"), "subscriber-uri": E("BECKN_OPENMRS_BAP_URI"), "source-system": "openmrs"}]
 if E("BECKN_SPICE_CONFIGURED") == "true":
-    subs.append({"subscriber-id": E("BECKN_SPICE_BAP_ID"), "subscriber-uri": E("BECKN_SPICE_BAP_URI"),
-                 "contract-id": E("BECKN_HIE_FEED_SPICE_CONTRACT_ID"), "transaction-id": E("BECKN_HIE_FEED_SPICE_TRANSACTION_ID"),
-                 "source-system": "spice"})
+    subs.append({"subscriber-id": E("BECKN_SPICE_BAP_ID"), "subscriber-uri": E("BECKN_SPICE_BAP_URI"), "source-system": "spice"})
 print(json.dumps({"beckn": {"subscribers": subs}}, separators=(",", ":")))
 PY
 )"; export OPENHIM_ADAPTOR_SPRING_JSON

@@ -25,8 +25,9 @@ kind: ConfigMap
 metadata:
   name: openhim-adaptor-config
 data:
-  # beckn.subscribers — one entry per HMIS that sends events to the HIE over Beckn, with the "HIE feed" contract ids this HIE
-  # issued to it. A list, so it is given as JSON (built by beckn-deploy.sh) rather than as indexed environment variables.
+  # beckn.subscribers — one entry per HMIS that may send events to the HIE over Beckn: its consumer id and address, and the
+  # source its events are filed under. No contract ids: any non-blank one from a listed subscriber is accepted and echoed.
+  # A list, so it is given as JSON (built by beckn-deploy.sh) rather than as indexed environment variables.
   SPRING_APPLICATION_JSON: '${OPENHIM_ADAPTOR_SPRING_JSON}'
 ---
 apiVersion: apps/v1
@@ -116,7 +117,8 @@ spec:
               value: "${BECKN_OPENHIM_BPP_ID}"
             - name: OPENHIM_EMITTER_BECKN_SELF_BPP_URI
               value: "${BECKN_OPENHIM_BPP_URI}"
-            # CCE, and the HIE's contract with CCE (ids issued by CCE; the same two ids are in CCE's hmis.yml).
+            # CCE, and the contract id and transactionId the HIE puts in every update to CCE. Nothing issues them (no
+            # confirm): CCE accepts any non-blank contract id. The same pair is in CCE's hmis.yml, which CCE uses for alerts.
             - name: OPENHIM_EMITTER_BECKN_CCE_BPP_ID
               value: "${BECKN_CCE_BPP_ID}"
             - name: OPENHIM_EMITTER_BECKN_CCE_BPP_URI
