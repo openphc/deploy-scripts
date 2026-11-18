@@ -86,8 +86,12 @@ beckn_defaults() {
   _beckn_default BECKN_CCE_IMAGE_PULL_POLICY IfNotPresent
   # Spice, the one HMIS peer of OpenMRS (referrals) and a second sender to the HIE. Until its ids are known the OpenMRS
   # receiver still needs SOMETHING to start with: .invalid is a reserved TLD, so nothing can ever be sent there.
-  if [ -n "${BECKN_SPICE_BAP_ID:-}" ]; then export BECKN_SPICE_CONFIGURED=true
-  else export BECKN_SPICE_CONFIGURED=false BECKN_SPICE_BAP_ID="bap.spice.invalid" BECKN_SPICE_BAP_URI="https://spice.invalid/bap/receiver"; fi
+  # This function runs more than once per install (install-beckn.sh, then each script): the placeholder set by an earlier
+  # call must not count as a configured Spice, or the HIE would list bap.spice.invalid among the senders it accepts.
+  case "${BECKN_SPICE_BAP_ID:-}" in
+    ""|*.invalid) export BECKN_SPICE_CONFIGURED=false BECKN_SPICE_BAP_ID="bap.spice.invalid" BECKN_SPICE_BAP_URI="https://spice.invalid/bap/receiver";;
+    *)            export BECKN_SPICE_CONFIGURED=true;;
+  esac
   export BECKN_SPICE_BAP_URI="${BECKN_SPICE_BAP_URI:-}" BECKN_SPICE_BPP_ID="${BECKN_SPICE_BPP_ID:-}" \
          BECKN_SPICE_BPP_URI="${BECKN_SPICE_BPP_URI:-}" BECKN_SPICE_FACILITY_CODES="${BECKN_SPICE_FACILITY_CODES:-}"
 }

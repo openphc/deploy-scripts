@@ -6,8 +6,8 @@
 #
 # Per hosted component: pods, the adapter's loaded schemas, its two subscribers in the network registry (live? same address and
 # signing key as configured here? a member of the network?), and the public Beckn address (an empty, unsigned request must be
-# refused by the ADAPTER — 400 or 401 — which proves DNS, TLS, the ingress and the adapter in one call). Then the contract ids,
-# with who must hold the same value.
+# refused by the ADAPTER — 400 or 401 — which proves DNS, TLS, the ingress and the adapter in one call). Then the contract ids
+# the senders here put in their messages.
 set -uo pipefail
 ENVCODE="${1:?usage: beckn-status.sh <envcode>}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,17 +53,17 @@ done
 
 cat <<IDS
 
-== Contract ids (Infisical /beckn). Each must be IDENTICAL on both sides; the issuer's value is the one that counts.
-   HIE -> CCE            issued by CCE       contract ${BECKN_HIE_CCE_CONTRACT_ID:-(not set)}
-                                             transaction ${BECKN_HIE_CCE_TRANSACTION_ID:-(not set)}
-   OpenMRS -> HIE feed   issued by the HIE   contract ${BECKN_HIE_FEED_OPENMRS_CONTRACT_ID:-(not set)}
-                                             transaction ${BECKN_HIE_FEED_OPENMRS_TRANSACTION_ID:-(not set)}
-   Spice -> HIE feed     issued by the HIE   contract ${BECKN_HIE_FEED_SPICE_CONTRACT_ID:-(not set)}
-                                             transaction ${BECKN_HIE_FEED_SPICE_TRANSACTION_ID:-(not set)}
-   Spice -> OpenMRS      issued by OpenMRS   contract ${BECKN_REFERRALS_IN_CONTRACT_ID:-(not set)}      (referrals in)
-                                             transaction ${BECKN_REFERRALS_IN_TRANSACTION_ID:-(not set)}
-   OpenMRS -> Spice      issued by Spice     contract ${BECKN_REFERRALS_OUT_CONTRACT_ID:-(not set — Spice issues it)}      (referrals out)
-                                             transaction ${BECKN_REFERRALS_OUT_TRANSACTION_ID:-(not set — Spice issues it)}
+== Contract ids (Infisical /beckn): what each SENDER here puts in its messages. Nothing issues them; a receiver accepts any
+   non-blank contract id from a sender it knows and echoes it.
+   HIE -> CCE            sent by the HIE adaptor (and in CCE's hmis.yml)   contract ${BECKN_HIE_CCE_CONTRACT_ID:-(not set)}
+                                                                           transaction ${BECKN_HIE_CCE_TRANSACTION_ID:-(not set)}
+   OpenMRS -> HIE feed   sent by the OpenMRS emitter                       contract ${BECKN_HIE_FEED_OPENMRS_CONTRACT_ID:-(not set)}
+                                                                           transaction ${BECKN_HIE_FEED_OPENMRS_TRANSACTION_ID:-(not set)}
+   Spice -> HIE feed     Spice chooses its own                             —
+   Referrals in          sent by the OpenMRS emitter in on_status to       contract ${BECKN_REFERRALS_IN_CONTRACT_ID:-(not set)}
+                         Spice (agree with Spice)                          transaction ${BECKN_REFERRALS_IN_TRANSACTION_ID:-(not set)}
+   Referrals out         sent by the OpenMRS emitter in update to Spice    contract ${BECKN_REFERRALS_OUT_CONTRACT_ID:-(not set — Spice supplies it)}
+                         (Spice supplies them)                             transaction ${BECKN_REFERRALS_OUT_TRANSACTION_ID:-(not set — Spice supplies it)}
    Spice: $( [ "$BECKN_SPICE_CONFIGURED" = true ] && echo "$BECKN_SPICE_BAP_ID / ${BECKN_SPICE_BPP_ID:-?}" || echo "not configured — placeholder ids; referral legs $BECKN_REFERRALS_ENABLED" )
    Network id (context.networkId; the adapters accept its members only): ${BECKN_NETWORK_ID:-(not set)}
    Schema base URL (the same for every participant): $BECKN_SCHEMA_BASE_URL

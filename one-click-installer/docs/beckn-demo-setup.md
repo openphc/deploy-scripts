@@ -244,7 +244,7 @@ sequenceDiagram
 | 1–2 | OpenMRS emitter | Polls OpenMRS FHIR for `Patient`, `RelatedPerson`, `Encounter`, `Observation`, `Condition`, `ServiceRequest`, `MedicationRequest`, `MedicationDispense`. A new emitter starts from "now": history is not sent. A patient without a national id is skipped |
 | 3 | OpenMRS emitter | Wraps the resource, unchanged, in a `CceClinicalEvent` box and posts an `update` on its "HIE feed" contract. The event id is a hash of the resource |
 | 4 | the two adapters | The sender's adapter signs. The receiver's adapter looks the sender up in the registry, checks network membership, the signature and the schema |
-| 5–7 | HIE adaptor + OpenHIM | The adaptor checks the subscriber and the contract, takes the FHIR resource out and posts it to the OpenHIM channel `CCE Beckn feed`. OpenHIM authenticates the client, logs the transaction and routes to the adaptor's `/inbound` |
+| 5–7 | HIE adaptor + OpenHIM | The adaptor checks that the sender is in its subscriber list and that a contract id is present, takes the FHIR resource out and posts it to the OpenHIM channel `CCE Beckn feed`. OpenHIM authenticates the client, logs the transaction and routes to the adaptor's `/inbound` |
 | 7 | HIE adaptor (mediator pipeline) | The existing pipeline: source, patient id, facility, **redaction of clinical values**, CloudEvent. The CloudEvent id is fixed per event (a UUID v5), so a resend is recognised |
 | 8–9 | HIE adaptor, adapters | Wraps the redacted resource again and sends an `update` to CCE on the HIE's contract with CCE. Signed and checked as in step 4 |
 | 10–12 | CCE | `cce-beckn-service` builds CCE's own CloudEvent (`source` = the HIE's BAP id, `subject` = the patient id) and posts it to the collector. No gateway, no token: both are inside the CCE namespace |
@@ -269,8 +269,9 @@ endpoints must stay unreachable from outside their namespace.
 
 ## Contracts
 
-No message opens a contract in the demo. A contract is a pair of ids (contract id, `transactionId`) that its provider
-issues and both sides configure. The installer generates the ids once and keeps them in Infisical.
+No message opens a contract in the demo (there is no `confirm`), so nothing issues a contract id. Each sender puts a
+contract id and a `transactionId` of its own in every message; the installer generates them once and keeps them in
+Infisical. A receiver checks who sent the message, accepts any non-blank contract id and repeats it in its `on_update`.
 
 ```mermaid
 flowchart LR
@@ -279,15 +280,16 @@ flowchart LR
     CCE["CCE"]
     SPICE["Spice"]
 
-    OMRS -- "HIE feed, OpenMRS<br/>issued by the HIE" --> HIE
-    HIE -- "HIE to CCE<br/>issued by CCE" --> CCE
-    SPICE -. "HIE feed, Spice<br/>issued by the HIE" .-> HIE
-    SPICE -. "Referrals in<br/>issued by OpenMRS" .-> OMRS
-    OMRS -. "Referrals out<br/>issued by Spice" .-> SPICE
+    OMRS -- "HIE feed, OpenMRS<br/>ids chosen by OpenMRS" --> HIE
+    HIE -- "HIE to CCE<br/>ids chosen by the HIE" --> CCE
+    SPICE -. "HIE feed, Spice<br/>ids chosen by Spice" .-> HIE
+    SPICE -. "Referrals in<br/>ids chosen by Spice" .-> OMRS
+    OMRS -. "Referrals out<br/>ids supplied by Spice" .-> SPICE
 ```
 
-Solid: in use. Dotted: prepared, waiting for Spice. The arrow points from consumer to provider. The keys and where each
-id is configured are in [beckn.md → Contracts](beckn.md#contracts-the-ids-both-sides-must-share).
+Solid: in use. Dotted: prepared, waiting for Spice. The arrow points from consumer (the sender) to provider. For the
+referral outcomes OpenMRS sends back to Spice on "Referrals in", the two agree a pair of ids. The keys and which service
+reads each id are in [beckn.md → Contracts](beckn.md#contracts-the-ids-a-sender-uses).
 
 ## Configuration and secrets
 

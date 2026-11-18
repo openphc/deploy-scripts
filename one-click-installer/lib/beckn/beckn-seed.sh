@@ -5,19 +5,21 @@
 # Like lib/infisical-seed.sh: a value in the seed file is stored as given; a missing one is generated, defaulted, or left
 # blank, by kind. Kinds here:
 #   secret    random 32 characters
-#   uuid      a random UUID — the contract and transaction ids of the fixed Beckn contracts. They are not secret, but each must
-#             be generated ONCE and be identical on both sides of its contract. When the two sides are on different machines,
-#             generate on the issuer's machine and give the other side the value in its seed file.
+#   uuid      a random UUID — the contract id and transactionId a sender puts in its messages. Nothing issues them (there is
+#             no confirm) and they are not secret, but each must be generated ONCE and then stay the same.
 #   default   a fixed value
 #   blank     nothing stored until the operator supplies it
 #   required  must be in the seed file (or already in Infisical): the adapters' private keys, issued with the registry records
 #
-#   Contract                 consumer -> provider      issued by   keys
-#   HIE to CCE               HIE -> CCE                CCE         BECKN_HIE_CCE_*
-#   HIE feed, OpenMRS        OpenMRS -> HIE            HIE         BECKN_HIE_FEED_OPENMRS_*
-#   HIE feed, Spice          Spice -> HIE              HIE         BECKN_HIE_FEED_SPICE_*
-#   Referrals in             Spice -> OpenMRS          OpenMRS     BECKN_REFERRALS_IN_*
-#   Referrals out            OpenMRS -> Spice          Spice       BECKN_REFERRALS_OUT_*   (blank until Spice issues them)
+#   Contract                 consumer -> provider      keys                       who reads them
+#   HIE to CCE               HIE -> CCE                BECKN_HIE_CCE_*            HIE adaptor (sends them); CCE's hmis.yml (alerts)
+#   HIE feed, OpenMRS        OpenMRS -> HIE            BECKN_HIE_FEED_OPENMRS_*   OpenMRS emitter (sends them)
+#   HIE feed, Spice          Spice -> HIE              —                          nobody here: Spice chooses its own
+#   Referrals in             Spice -> OpenMRS          BECKN_REFERRALS_IN_*       OpenMRS emitter, in on_status to Spice (agree with Spice)
+#   Referrals out            OpenMRS -> Spice          BECKN_REFERRALS_OUT_*      OpenMRS emitter, in update to Spice (blank until Spice
+#                                                                                 supplies them)
+# A receiver (CCE, the HIE adaptor, the OpenMRS receiver) accepts any non-blank contract id and echoes it in its on_update;
+# what it checks is who sent the message.
 set -euo pipefail
 ENVCODE="${1:?usage: beckn-seed.sh <envcode> [seed-file]}"
 SEED_FILE="${2:-}"
@@ -51,10 +53,9 @@ fi
 
 F=/beckn
 SPEC=(
-  # every contract id, whatever is hosted here: a neighbour's side of a contract is configured from the same keys
+  # every id a sender here uses, whatever is hosted here (the HIE adaptor and CCE's hmis.yml read the same HIE_CCE pair)
   "BECKN_HIE_CCE_CONTRACT_ID:uuid" "BECKN_HIE_CCE_TRANSACTION_ID:uuid"
   "BECKN_HIE_FEED_OPENMRS_CONTRACT_ID:uuid" "BECKN_HIE_FEED_OPENMRS_TRANSACTION_ID:uuid"
-  "BECKN_HIE_FEED_SPICE_CONTRACT_ID:uuid" "BECKN_HIE_FEED_SPICE_TRANSACTION_ID:uuid"
   "BECKN_REFERRALS_IN_CONTRACT_ID:uuid" "BECKN_REFERRALS_IN_TRANSACTION_ID:uuid"
   "BECKN_REFERRALS_OUT_CONTRACT_ID:blank" "BECKN_REFERRALS_OUT_TRANSACTION_ID:blank"
 )

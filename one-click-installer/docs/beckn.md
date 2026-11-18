@@ -54,7 +54,7 @@ follows as a callback. Each participant is described in its own repository:
 - [Check it](#check-it)
 - [Configuration keys](#configuration-keys)
 - [Secrets: Infisical `/beckn`](#secrets-infisical-beckn)
-- [Contracts: the ids both sides must share](#contracts-the-ids-both-sides-must-share)
+- [Contracts: the ids a sender uses](#contracts-the-ids-a-sender-uses)
 - [The timeout budget](#the-timeout-budget)
 - [Copying an OpenMRS](#copying-an-openmrs)
 - [Day 2](#day-2)
@@ -201,8 +201,8 @@ except with a value from the seed file.
 | Key | How it gets its value | Used by |
 |---|---|---|
 | `BECKN_SIGNING_PRIVATE_KEY`, `BECKN_ENCR_PRIVATE_KEY` (or `BECKN_<P>_…`, `BECKN_<P>_BAP_…`, `BECKN_<P>_BPP_…`) | **seed file, required once** | the adapters (Secret `onix-config`) |
-| `BECKN_HIE_CCE_*`, `BECKN_HIE_FEED_OPENMRS_*`, `BECKN_HIE_FEED_SPICE_*`, `BECKN_REFERRALS_IN_*` (`_CONTRACT_ID`, `_TRANSACTION_ID`) | generated UUID | [contracts](#contracts-the-ids-both-sides-must-share) |
-| `BECKN_REFERRALS_OUT_CONTRACT_ID`, `_TRANSACTION_ID` | blank until supplied (Spice issues them) | OpenMRS emitter |
+| `BECKN_HIE_CCE_*`, `BECKN_HIE_FEED_OPENMRS_*`, `BECKN_REFERRALS_IN_*` (`_CONTRACT_ID`, `_TRANSACTION_ID`) | generated UUID | [contracts](#contracts-the-ids-a-sender-uses) |
+| `BECKN_REFERRALS_OUT_CONTRACT_ID`, `_TRANSACTION_ID` | blank until supplied (Spice supplies them) | OpenMRS emitter |
 | `CCE_BECKN_ALERTS_WEBHOOK_SECRET` | generated | `cce-beckn-service`; must equal `config.webhookSecret` of its receiver-adaptor records in the intelligence service |
 | `OPENHIM_ROOT_USER`, `OPENHIM_ROOT_PASSWORD` | `root@openhim.org`, generated | OpenHIM console login; the HIE adaptor's mediator login |
 | `OPENHIM_CLIENT_PASSWORD_<CLIENTID>` | generated, one per client in [`openhim-metadata.json`](../../k8s/beckn/openhim/openhim-metadata.json) | Basic auth on the OpenHIM channels |
@@ -221,22 +221,34 @@ file is no longer needed: delete it and empty the key.
 `sudo bash one-click-installer/tools/show-credentials.sh <env> [--reveal]` lists the OpenHIM and OpenMRS logins, the
 channel client passwords and the webhook secret. Private keys are never printed.
 
-## Contracts: the ids both sides must share
+## Contracts: the ids a sender uses
 
-No Beckn message opens a contract in this setup. Each contract is a pair of ids — contract id and `transactionId` — that
-its provider issues and both sides configure. `beckn-status.sh` prints them.
+No Beckn message opens a contract in this setup (there is no `confirm`), so nothing issues a contract id. Each sender
+puts a contract id and a `transactionId` of its own in every message. They are generated once and must then stay the
+same. `beckn-status.sh` prints them.
 
-| Contract | Consumer → provider | Issued by | Keys | Configured in |
-|---|---|---|---|---|
-| HIE to CCE | HIE → CCE | CCE | `BECKN_HIE_CCE_*` | `cce-beckn-service` (`hmis.yml`), HIE adaptor (`OPENHIM_EMITTER_BECKN_CCE_*`) |
-| HIE feed, OpenMRS | OpenMRS → HIE | HIE | `BECKN_HIE_FEED_OPENMRS_*` | HIE adaptor (`beckn.subscribers`), OpenMRS emitter (`OPENMRS_EMITTER_BECKN_OPENHIM_*`) |
-| HIE feed, Spice | Spice → HIE | HIE | `BECKN_HIE_FEED_SPICE_*` | HIE adaptor (`beckn.subscribers`), Spice |
-| Referrals in | Spice → OpenMRS | OpenMRS | `BECKN_REFERRALS_IN_*` | OpenMRS receiver and emitter, Spice |
-| Referrals out | OpenMRS → Spice | Spice | `BECKN_REFERRALS_OUT_*` | OpenMRS emitter, Spice |
+A receiver does not compare the contract id with its settings. It checks who sent the message, accepts any non-blank
+contract id, and repeats that id and the `transactionId` in its `on_update`:
 
-With all three components on one machine, both sides read the same Infisical key, so they agree by construction. When the
-two sides are on different machines, generate on the issuer's machine and put the two values into the other machine's
-`BECKN_SEED_ENV_FILE` before its first run.
+| Receiver | Accepts an `update` from |
+|---|---|
+| `cce-beckn-service` | any subscriber its adapter verified (no list of its own) |
+| HIE adaptor | a `context.bapId` in its subscriber list: OpenMRS, and Spice once configured |
+| OpenMRS receiver | `context.bapId` = Spice's BAP id (`BECKN_SPICE_BAP_ID`) |
+
+| Contract | Consumer → provider | Keys | Read by |
+|---|---|---|---|
+| HIE to CCE | HIE → CCE | `BECKN_HIE_CCE_*` | HIE adaptor, for every `update` to CCE (`OPENHIM_EMITTER_BECKN_CCE_*`). `cce-beckn-service` holds the same pair in `hmis.yml`, for the alerts it sends to the HIE |
+| HIE feed, OpenMRS | OpenMRS → HIE | `BECKN_HIE_FEED_OPENMRS_*` | OpenMRS emitter, for every `update` to the HIE (`OPENMRS_EMITTER_BECKN_OPENHIM_*`) |
+| HIE feed, Spice | Spice → HIE | none | nothing here. Spice chooses its own ids |
+| Referrals in | Spice → OpenMRS | `BECKN_REFERRALS_IN_*` | OpenMRS emitter, for the `on_status` (a referral's outcome) it sends to Spice. Agree the pair with Spice. Spice's own `update` may carry any id |
+| Referrals out | OpenMRS → Spice | `BECKN_REFERRALS_OUT_*` | OpenMRS emitter, for the `update` (a new referral) it sends to Spice. Spice supplies the pair |
+
+To use ids agreed with another participant instead of generated ones, put them in `BECKN_SEED_ENV_FILE` before the run.
+
+This is the behaviour of the adaptor images built from `demo-beckn` on or after 2026-11-18
+(`openhim-cce-emitter-adaptor` PR 43, `openmrs-cce-receiver-adaptor` PR 16). Earlier builds compared the contract id with
+their settings and do not start with this add-on's configuration.
 
 ## The timeout budget
 
@@ -311,12 +323,14 @@ subscriber ids are known, the OpenMRS receiver runs with placeholder ids (`bap.s
 without any, and the emitter sends events to the HIE only.
 
 1. Give the Spice team: the HIE's BPP id and address, OpenMRS's BAP and BPP ids and addresses, `BECKN_NETWORK_ID`,
-   `BECKN_SCHEMA_BASE_URL`, and the ids of "HIE feed, Spice" and "Referrals in" from `beckn-status.sh`.
+   `BECKN_SCHEMA_BASE_URL`, and the "Referrals in" ids from `beckn-status.sh` (OpenMRS sends referral outcomes with
+   them). For the events and referrals Spice sends, it chooses its own contract id and `transactionId`.
 2. Get from them: Spice's BAP and BPP subscriber ids and addresses, the facility codes Spice serves, and the "Referrals
-   out" contract id and `transactionId`, which Spice issues. Spice's subscribers must be members of the same network.
+   out" contract id and `transactionId`. Spice's subscribers must be members of the same network.
 3. Set `BECKN_SPICE_BAP_ID`, `BECKN_SPICE_BAP_URI`, `BECKN_SPICE_BPP_ID`, `BECKN_SPICE_BPP_URI`,
    `BECKN_SPICE_FACILITY_CODES` in the config, and `BECKN_REFERRALS_OUT_CONTRACT_ID` / `_TRANSACTION_ID` in Infisical
-   `/beckn` (or the seed file). The HIE then accepts Spice's events (source `spice`).
+   `/beckn` (or the seed file). The HIE then accepts Spice's events (source `spice`) and the OpenMRS receiver accepts
+   Spice's referrals. Both check Spice's BAP id, so it must be exactly the id Spice signs with.
 4. Set `BECKN_REFERRALS_ENABLED=true` to turn on the emitter's two referral legs, and run
    `install-beckn.sh --only openhim,openmrs`.
 

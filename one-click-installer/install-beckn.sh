@@ -125,5 +125,5 @@ $(beckn_hosted openhim && echo "  OpenHIM:     https://$BECKN_OPENHIM_HOST/   (c
 $(beckn_hosted openmrs && echo "  OpenMRS:     https://$BECKN_OPENMRS_HOST/openmrs/spa   Beckn: /bap/receiver, /bpp/receiver")
   Logins:      sudo bash $HERE/tools/show-credentials.sh $ENVCODE [--reveal]
   Check:       sudo bash $BLIB/run.sh --config $CONFIG beckn-status.sh
-  Docs:        $HERE/docs/beckn.md   (the flow, the contract ids to give the other participants, copying an OpenMRS)
+  Docs:        $HERE/docs/beckn.md   (the flow, what to exchange with the other participants, copying an OpenMRS)
 DONE

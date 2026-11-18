@@ -17,8 +17,9 @@ kind: ConfigMap
 metadata:
   name: cce-beckn-hmis
 data:
-  # One entry per HMIS that CCE sends alerts to. The contract and transaction ids are issued by CCE and must be the same in
-  # that HMIS's own settings. Events from an HMIS are accepted without an entry.
+  # One entry per HMIS that CCE sends alerts to, with the contract id and transactionId of that HMIS's contract with CCE:
+  # the pair the HMIS sends its events with (the HIE adaptor reads the same two keys). Events from an HMIS are accepted
+  # without an entry, with any non-blank contract id.
   hmis.yml: |
     cce:
       beckn:
