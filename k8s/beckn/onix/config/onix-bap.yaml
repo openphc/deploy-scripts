@@ -1,0 +1,169 @@
+# ONIX adapter config for the BAP side of one Beckn participant — a TEMPLATE.
+# one-click-installer/lib/beckn/beckn-deploy.sh fills the ${...} values per participant (from the installer config and
+# Infisical) and stores the result in the Secret onix-config; nothing rendered is written to the repository.
+# Based on the devkit config of beckn-onix (local-simple-bap.yaml). What differs, and why:
+#   - responseHeaderTimeout per module: one event crosses about nine hops in a single HTTP call, and every hop must wait
+#     longer than the hop behind it (the default 5 s breaks that). The values come from the installer.
+#   - http.timeout: must be longer than the longest of those waits.
+#   - storeBody "false": the stored copy of a message would hold patient data.
+#   - cache: the participant's own Redis (Service onix-redis).
+#   - allowedNetworkIDs: a subscriber found in the registry is accepted only if it is a member of one of these networks
+#     (its record's network_memberships). The installer sets it to BECKN_NETWORK_ID and leaves the line out when that is empty.
+appName: "onix-bap"
+log:
+  level: ${ONIX_LOG_LEVEL}
+  destinations:
+    - type: stdout
+  contextKeys:
+    - transactionId
+    - messageId
+    - subscriber_id
+    - module_id
+http:
+  port: 8081
+  timeout:
+    read: ${ONIX_HTTP_TIMEOUT}
+    write: ${ONIX_HTTP_TIMEOUT}
+    idle: ${ONIX_HTTP_TIMEOUT}
+pluginManager:
+  root: ./plugins
+modules:
+  # Callbacks from the network (on_update, on_status): signature checked, then passed to this participant's own service.
+  - name: bapTxnReceiver
+    path: /bap/receiver/
+    handler:
+      type: std
+      role: bap
+      httpClientConfig:
+        maxIdleConns: 1000
+        maxIdleConnsPerHost: 200
+        idleConnTimeout: 300s
+        responseHeaderTimeout: ${ONIX_BAP_RECEIVER_TIMEOUT}
+      plugins:
+        registry:
+          id: dediregistry
+          config:
+            url: ${BECKN_REGISTRY_URL}
+            registryName: ${BECKN_REGISTRY_NAME}
+            allowedNetworkIDs: "${BECKN_ALLOWED_NETWORK_IDS}"
+            timeout: 10
+        keyManager:
+          id: simplekeymanager
+          config:
+            networkParticipant: ${ONIX_BAP_SUBSCRIBER_ID}
+            keyId: ${ONIX_BAP_KEY_ID}
+            signingPrivateKey: ${ONIX_BAP_SIGNING_PRIVATE_KEY}
+            signingPublicKey: ${ONIX_BAP_SIGNING_PUBLIC_KEY}
+            encrPrivateKey: ${ONIX_BAP_ENCR_PRIVATE_KEY}
+            encrPublicKey: ${ONIX_BAP_ENCR_PUBLIC_KEY}
+        cache:
+          id: cache
+          config:
+            addr: onix-redis:6379
+        payloadStore:
+          id: payloadstore
+          config:
+            ttl: "24h"
+            indexTTL: "25h"
+            maxBodyBytes: "1048576"
+            storeBody: "false"
+            storeSignature: "true"
+            compress: "true"
+        schemaValidator:
+          id: schemav2validator
+          config:
+            type: url
+            location: ${BECKN_CORE_SCHEMA_URL}
+            cacheTTL: "3600"
+            extendedSchema_enabled: "true"
+            extendedSchema_cacheTTL: "86400"
+            extendedSchema_maxCacheSize: "100"
+            extendedSchema_downloadTimeout: "30"
+            extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
+            extendedSchema_localSchemaPath: "config/schema"
+        signValidator:
+          id: signvalidator
+        router:
+          id: router
+          config:
+            routingConfig: ./config/routing-BAPReceiver.yaml
+        signer:
+          id: signer
+        middleware:
+          - id: reqpreprocessor
+            config:
+              contextKeys: transactionId,messageId
+              role: bap
+      steps:
+        - validateSign
+        - addRoute
+        - validateSchema
+
+  # Requests this participant sends as CONSUMER (update): signed, then sent to the provider's bppUri.
+  - name: bapTxnCaller
+    path: /bap/caller/
+    handler:
+      type: std
+      role: bap
+      httpClientConfig:
+        maxIdleConns: 1000
+        maxIdleConnsPerHost: 200
+        idleConnTimeout: 300s
+        responseHeaderTimeout: ${ONIX_BAP_CALLER_TIMEOUT}
+      plugins:
+        registry:
+          id: dediregistry
+          config:
+            url: ${BECKN_REGISTRY_URL}
+            registryName: ${BECKN_REGISTRY_NAME}
+            allowedNetworkIDs: "${BECKN_ALLOWED_NETWORK_IDS}"
+            timeout: 10
+        keyManager:
+          id: simplekeymanager
+          config:
+            networkParticipant: ${ONIX_BAP_SUBSCRIBER_ID}
+            keyId: ${ONIX_BAP_KEY_ID}
+            signingPrivateKey: ${ONIX_BAP_SIGNING_PRIVATE_KEY}
+            signingPublicKey: ${ONIX_BAP_SIGNING_PUBLIC_KEY}
+            encrPrivateKey: ${ONIX_BAP_ENCR_PRIVATE_KEY}
+            encrPublicKey: ${ONIX_BAP_ENCR_PUBLIC_KEY}
+        cache:
+          id: cache
+          config:
+            addr: onix-redis:6379
+        payloadStore:
+          id: payloadstore
+          config:
+            ttl: "24h"
+            indexTTL: "25h"
+            maxBodyBytes: "1048576"
+            storeBody: "false"
+            storeSignature: "true"
+            compress: "true"
+        schemaValidator:
+          id: schemav2validator
+          config:
+            type: url
+            location: ${BECKN_CORE_SCHEMA_URL}
+            cacheTTL: "3600"
+            extendedSchema_enabled: "true"
+            extendedSchema_cacheTTL: "86400"
+            extendedSchema_maxCacheSize: "100"
+            extendedSchema_downloadTimeout: "30"
+            extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
+            extendedSchema_localSchemaPath: "config/schema"
+        router:
+          id: router
+          config:
+            routingConfig: ./config/routing-BAPCaller.yaml
+        signer:
+          id: signer
+        middleware:
+          - id: reqpreprocessor
+            config:
+              contextKeys: transactionId,messageId
+              role: bap
+      steps:
+        - addRoute
+        - sign
+        - validateSchema

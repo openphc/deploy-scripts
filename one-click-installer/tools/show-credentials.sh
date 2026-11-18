@@ -73,6 +73,16 @@ rows += [
     (f"Emitter inbound ({E('EMITTER_NAME')}) — give to the source system", f"{url}/v1/{E('EMITTER_DEPLOYMENT')}/inbound  (HTTP Basic)",
      val("EMITTER_INBOUND_USER"), pw("EMITTER_INBOUND_PASSWORD"), "/keycloak EMITTER_INBOUND_*"),
 ]
+# Beckn add-on (install-beckn.sh): only what is in Infisical /beckn, i.e. only the components this machine hosts.
+if E("OPENHIM_ROOT_PASSWORD"):
+    rows.append(("OpenHIM console (Beckn add-on)", val("OPENHIM_PUBLIC_URL", "https://<OpenHIM host>") + "/", val("OPENHIM_ROOT_USER", "root@openhim.org"),
+                 pw("OPENHIM_ROOT_PASSWORD"), "/beckn OPENHIM_ROOT_*"))
+if E("OPENMRS_ADMIN_PASSWORD"):
+    rows.append(("OpenMRS (Beckn add-on) — the account the adaptors use", val("OPENMRS_PUBLIC_URL", "https://<OpenMRS host>") + "/openmrs/spa", val("OPENMRS_ADMIN_USER", "admin"),
+                 pw("OPENMRS_ADMIN_PASSWORD"), "/beckn OPENMRS_ADMIN_* (must match the account IN OpenMRS; changing it here changes nothing there)"))
+if E("OPENMRS_DB_PASSWORD"):
+    rows.append(("OpenMRS MariaDB (Beckn add-on)", "in-cluster Service openmrs-db:3306, db openmrs", "openmrs / root",
+                 pw("OPENMRS_DB_PASSWORD") + " / " + pw("OPENMRS_DB_ROOT_PASSWORD"), "/beckn OPENMRS_DB_PASSWORD / OPENMRS_DB_ROOT_PASSWORD"))
 for what, where, user, p, loc in rows:
     print(f"-- {what}\n   where:     {where}\n   user:      {user}\n   password:  {p}" + (f"\n   stored in: {loc if loc.startswith('file ') else 'Infisical ' + loc}" if loc != "-" else ""))
 
@@ -82,6 +92,13 @@ for k, label in [("BASIC_AUTH_CLIENT_SECRET", f"gateway Basic-auth client '{val(
                  ("CCE_INTELLIGENCE_SMTP_PASSWORD", f"SMTP login '{val('CCE_INTELLIGENCE_SMTP_USERNAME')}' at {val('CCE_INTELLIGENCE_SMTP_HOST')} (/platform)"),
                  ("OPENHIM_PASSWORD", f"OpenHIM login '{val('OPENHIM_USERNAME')}' (/openhim-emitter-adaptor)")]:
     print(f"   {k:<32} {pw(k):<20} {label}")
+beckn = sorted(k for k in os.environ if k.startswith("OPENHIM_CLIENT_PASSWORD_")) + [k for k in ("CCE_BECKN_ALERTS_WEBHOOK_SECRET",) if E(k)]
+for k in beckn:
+    label = ("OpenHIM channel client '" + k[len("OPENHIM_CLIENT_PASSWORD_"):].lower().replace("_", "-") + "' (/beckn)") if k.startswith("OPENHIM_CLIENT") \
+            else "cce-beckn-service alert webhook secret = webhookSecret of its receiver-adaptor records (/beckn)"
+    print(f"   {k:<32} {pw(k):<20} {label}")
+if any(k.endswith("_PRIVATE_KEY") and k.startswith("BECKN_") for k in os.environ):
+    print("   BECKN_*_PRIVATE_KEY              (never printed)      the ONIX adapters' signing / encryption keys (/beckn)")
 print("   Kafka (9092) and Kafka Connect (127.0.0.1:8083) have no login; keep 9092 closed to the outside (UFW, or the cloud security group).")
 
 cd = E("CREDS_DIR"); st = E("INF_STATE")

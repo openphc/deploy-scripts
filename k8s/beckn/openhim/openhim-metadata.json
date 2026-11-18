@@ -1,0 +1,91 @@
+{
+  "_comment": [
+    "OpenHIM clients and channels, applied through the Core API by one-click-installer/lib/beckn/openhim-setup.sh (create or update, by",
+    "clientID / channel name). Passwords are NOT here: each client gets a generated password in Infisical /beckn, key",
+    "OPENHIM_CLIENT_PASSWORD_<CLIENTID in upper case, '-' as '_'>.",
+    "The four FHIR channels are the ones of the dev environment. 'CCE Beckn feed' is the channel the adaptor's Beckn endpoint posts",
+    "to (openhim-cce-emitter-adaptor docs/openhim-channel-setup.md §9): /inbound must be its PRIMARY route, so that its answer",
+    "comes back, and its timeout must sit between the adaptor's 25 s (onix) and 35 s (channel) waits.",
+    "Every route host is the adaptor's Service name (k8s/beckn/openhim/openhim-cce-emitter-adaptor.yaml)."
+  ],
+  "clients": [
+    { "clientID": "cce-beckn-endpoint", "name": "CCE Emitter Adaptor - Beckn endpoint", "roles": ["cce-beckn"] },
+    { "clientID": "openmrs-fhir-client", "name": "OPENMRS FHIR Client", "roles": ["openmrs"] },
+    { "clientID": "spice-fhir-client", "name": "SPICE FHIR Client", "roles": ["spice"] },
+    { "clientID": "spice-facility-client", "name": "SPICE Facility FHIR Client", "roles": ["spice-facility"] },
+    { "clientID": "ebuzima-emr-client", "name": "eBUZIMA EMR Client", "roles": ["ebuzima-emr-client-role"] }
+  ],
+  "channels": [
+    {
+      "name": "CCE Beckn feed",
+      "urlPattern": "^/cce-beckn$",
+      "methods": ["POST"],
+      "type": "http",
+      "allow": ["cce-beckn"],
+      "authType": "private",
+      "timeout": 30000,
+      "status": "enabled",
+      "routes": [
+        { "name": "CCE Emitter Adaptor (Beckn)", "type": "http", "status": "enabled", "secured": false,
+          "host": "openhim-cce-emitter-adaptor", "port": 8082, "path": "/inbound", "primary": true, "forwardAuthHeader": false }
+      ]
+    },
+    {
+      "name": "OPENMRS FHIR Channel",
+      "urlPattern": "^/openmrs/fhir/.*$",
+      "methods": ["POST", "PUT"],
+      "type": "http",
+      "allow": ["openmrs"],
+      "authType": "private",
+      "timeout": 30000,
+      "status": "enabled",
+      "routes": [
+        { "name": "CCE Emitter Adaptor", "type": "http", "status": "enabled", "secured": false,
+          "host": "openhim-cce-emitter-adaptor", "port": 8082, "path": "/inbound", "primary": true, "forwardAuthHeader": false }
+      ]
+    },
+    {
+      "name": "SPICE FHIR Channel",
+      "urlPattern": "^/fhir/.*$",
+      "methods": ["POST", "PUT"],
+      "type": "http",
+      "allow": ["spice"],
+      "authType": "private",
+      "timeout": 30000,
+      "status": "enabled",
+      "routes": [
+        { "name": "CCE Emitter Adaptor", "type": "http", "status": "enabled", "secured": false,
+          "host": "openhim-cce-emitter-adaptor", "port": 8082, "path": "/inbound", "primary": true, "forwardAuthHeader": false }
+      ]
+    },
+    {
+      "name": "SPICE FACILITY FHIR Channel",
+      "urlPattern": "^/spice-facility/fhir/.*$",
+      "methods": ["POST", "PUT"],
+      "type": "http",
+      "allow": ["spice-facility"],
+      "authType": "private",
+      "timeout": 30000,
+      "status": "enabled",
+      "routes": [
+        { "name": "CCE Emitter Adaptor", "type": "http", "status": "enabled", "secured": false,
+          "host": "openhim-cce-emitter-adaptor", "port": 8082, "path": "/inbound", "primary": true, "forwardAuthHeader": false }
+      ]
+    },
+    {
+      "name": "eBUZIMA EMR Channel",
+      "urlPattern": "^/ebuzima/.*$",
+      "methods": ["GET", "POST", "DELETE", "PUT", "OPTIONS", "HEAD", "TRACE", "CONNECT", "PATCH"],
+      "type": "http",
+      "allow": ["ebuzima-emr-client", "ebuzima-emr-client-role"],
+      "authType": "private",
+      "status": "enabled",
+      "routes": [
+        { "name": "HAPI FHIR Server (Public)", "type": "http", "status": "enabled", "secured": true,
+          "host": "hapi.fhir.org", "port": 443, "path": "", "pathTransform": "s/\\/ebuzima\\/fhir/\\/baseR4/", "primary": true, "forwardAuthHeader": false },
+        { "name": "CCE Emitter Adaptor", "type": "http", "status": "enabled", "secured": false,
+          "host": "openhim-cce-emitter-adaptor", "port": 8082, "path": "/inbound", "primary": false, "forwardAuthHeader": false }
+      ]
+    }
+  ]
+}

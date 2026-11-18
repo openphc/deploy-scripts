@@ -1,0 +1,268 @@
+# The two OpenMRS adaptors, demo-beckn builds:
+#   openmrs-cce-emitter-adaptor   polls OpenMRS FHIR and sends every changed resource as a Beckn `update` to the HIE,
+#                                 through onix-bap (https://github.com/openphc/openmrs-cce-emitter-adaptor/tree/demo-beckn)
+#   openmrs-cce-receiver-adaptor  takes what onix passes in: referrals from Spice (/beckn/bpp-webhook) and callbacks
+#                                 (/beckn/bap-webhook), and writes into OpenMRS
+#                                 (https://github.com/openphc/openmrs-cce-receiver-adaptor/tree/demo-beckn)
+# Neither is published: /beckn/** carries no token and must be reachable from this namespace's onix pods only.
+# ${...} values are filled by one-click-installer/lib/beckn/beckn-deploy.sh (installer config + Infisical /beckn).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openmrs-emitter-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmrs-cce-emitter-adaptor
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # one poller: two would send every resource twice
+  selector:
+    matchLabels:
+      app: openmrs-cce-emitter-adaptor
+  template:
+    metadata:
+      labels:
+        app: openmrs-cce-emitter-adaptor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8085"
+        cce.openphc.org/config-hash: "${BECKN_CONFIG_HASH}"
+    spec:
+      securityContext:
+        fsGroup: 999        # the image's non-root user must be able to write the checkpoint file
+      containers:
+        - name: openmrs-cce-emitter-adaptor
+          # CI (demo-beckn branch) pushes demo-beckn-v<N> and demo-beckn-latest. Pin with IMAGE_OPENMRS_CCE_EMITTER_ADAPTOR.
+          image: ${BECKN_OPENMRS_EMITTER_IMAGE}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8085
+          env:
+            - name: SERVER_PORT
+              value: "8085"
+            - name: SPRING_PROFILES_ACTIVE
+              value: "production"
+            # ── OpenMRS, through the O3 gateway ──
+            - name: OPENMRS_BASE_URL
+              value: "http://openmrs-gateway:80/openmrs"
+            - name: OPENMRS_AUTH_USERNAME
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: OPENMRS_ADMIN_USER } }
+            - name: OPENMRS_AUTH_PASSWORD
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: OPENMRS_ADMIN_PASSWORD } }
+            # The checkpoint keeps the last-seen time per resource type. With none (a new volume) polling starts from "now":
+            # history is not replayed.
+            - name: CHECKPOINT_FILE_PATH
+              value: /app/data/checkpoints.json
+            # 0: the checkpoint store already steps past the last second it saw (OpenMRS fhir2's `gt` is inclusive).
+            - name: POLLING_FHIR_OVERLAP_SECONDS
+              value: "0"
+            # ── Beckn ──
+            - name: OPENMRS_EMITTER_TARGET
+              value: "beckn"
+            - name: OPENMRS_EMITTER_BECKN_ONIX_BAP_CALLER_URL
+              value: "http://onix-bap:8081/bap/caller"
+            - name: OPENMRS_EMITTER_BECKN_ONIX_BPP_CALLER_URL
+              value: "http://onix-bpp:8082/bpp/caller"
+            # The outermost wait of the whole route: longer than onix-bap's 45 s (docs/beckn-integration.md §10.4).
+            - name: OPENMRS_EMITTER_BECKN_ONIX_TIMEOUT
+              value: "50s"
+            - name: OPENMRS_EMITTER_BECKN_SCHEMA_BASE_URL
+              value: "${BECKN_SCHEMA_BASE_URL}"
+            - name: OPENMRS_EMITTER_BECKN_SELF_NETWORK_ID
+              value: "${BECKN_NETWORK_ID}"
+            - name: OPENMRS_EMITTER_BECKN_SELF_BAP_ID
+              value: "${BECKN_OPENMRS_BAP_ID}"
+            - name: OPENMRS_EMITTER_BECKN_SELF_BAP_URI
+              value: "${BECKN_OPENMRS_BAP_URI}"
+            - name: OPENMRS_EMITTER_BECKN_SELF_BPP_ID
+              value: "${BECKN_OPENMRS_BPP_ID}"
+            - name: OPENMRS_EMITTER_BECKN_SELF_BPP_URI
+              value: "${BECKN_OPENMRS_BPP_URI}"
+            # The HIE, and this OpenMRS's "HIE feed" contract (ids issued by the HIE; the same two are in its subscriber list).
+            - name: OPENMRS_EMITTER_BECKN_OPENHIM_BPP_ID
+              value: "${BECKN_OPENHIM_BPP_ID}"
+            - name: OPENMRS_EMITTER_BECKN_OPENHIM_BPP_URI
+              value: "${BECKN_OPENHIM_BPP_URI}"
+            - name: OPENMRS_EMITTER_BECKN_OPENHIM_CONTRACT_ID
+              value: "${BECKN_HIE_FEED_OPENMRS_CONTRACT_ID}"
+            - name: OPENMRS_EMITTER_BECKN_OPENHIM_TRANSACTION_ID
+              value: "${BECKN_HIE_FEED_OPENMRS_TRANSACTION_ID}"
+            # Legs. Events to CCE (through the HIE) are always on; the two referral legs to Spice follow
+            # BECKN_REFERRALS_ENABLED, and only then are the Spice ids below required.
+            - name: OPENMRS_EMITTER_BECKN_LEG_CCE_EVENTS
+              value: "true"
+            - name: OPENMRS_EMITTER_BECKN_LEG_REFERRALS_IN
+              value: "${BECKN_REFERRALS_ENABLED}"
+            - name: OPENMRS_EMITTER_BECKN_LEG_REFERRALS_OUT
+              value: "${BECKN_REFERRALS_ENABLED}"
+            - name: OPENMRS_EMITTER_BECKN_SPICE_BAP_ID
+              value: "${BECKN_SPICE_BAP_ID}"
+            - name: OPENMRS_EMITTER_BECKN_SPICE_BAP_URI
+              value: "${BECKN_SPICE_BAP_URI}"
+            - name: OPENMRS_EMITTER_BECKN_SPICE_BPP_ID
+              value: "${BECKN_SPICE_BPP_ID}"
+            - name: OPENMRS_EMITTER_BECKN_SPICE_BPP_URI
+              value: "${BECKN_SPICE_BPP_URI}"
+            - name: OPENMRS_EMITTER_BECKN_SPICE_FACILITY_CODES
+              value: "${BECKN_SPICE_FACILITY_CODES}"
+            - name: OPENMRS_EMITTER_BECKN_REFERRALS_IN_CONTRACT_ID
+              value: "${BECKN_REFERRALS_IN_CONTRACT_ID}"
+            - name: OPENMRS_EMITTER_BECKN_REFERRALS_IN_TRANSACTION_ID
+              value: "${BECKN_REFERRALS_IN_TRANSACTION_ID}"
+            - name: OPENMRS_EMITTER_BECKN_REFERRALS_OUT_CONTRACT_ID
+              value: "${BECKN_REFERRALS_OUT_CONTRACT_ID}"
+            - name: OPENMRS_EMITTER_BECKN_REFERRALS_OUT_TRANSACTION_ID
+              value: "${BECKN_REFERRALS_OUT_TRANSACTION_ID}"
+            - name: MANAGEMENT_METRICS_TAGS_APPLICATION
+              value: "openmrs-cce-emitter-adaptor"
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8085
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8085
+            periodSeconds: 15
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openmrs-emitter-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openmrs-cce-emitter-adaptor
+spec:
+  selector:
+    app: openmrs-cce-emitter-adaptor
+  ports:
+    - port: 8085
+      targetPort: 8085
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmrs-cce-receiver-adaptor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openmrs-cce-receiver-adaptor
+  template:
+    metadata:
+      labels:
+        app: openmrs-cce-receiver-adaptor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8080"
+        cce.openphc.org/config-hash: "${BECKN_CONFIG_HASH}"
+    spec:
+      containers:
+        - name: openmrs-cce-receiver-adaptor
+          # CI (demo-beckn branch) pushes demo-beckn-v<N> and demo-beckn-latest. Pin with IMAGE_OPENMRS_CCE_RECEIVER_ADAPTOR.
+          image: ${BECKN_OPENMRS_RECEIVER_IMAGE}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OPENMRS_REST_BASE_URL
+              value: "http://openmrs-gateway:80/openmrs/ws/rest/v1"
+            - name: OPENMRS_FHIR_BASE_URL
+              value: "http://openmrs-gateway:80/openmrs/ws/fhir2/R4"
+            - name: OPENMRS_REST_TIMEOUT
+              value: "30000"
+            - name: OPENMRS_FHIR_TIMEOUT
+              value: "30000"
+            - name: OPENMRS_AUTH_TYPE
+              value: "basic"
+            - name: OPENMRS_USERNAME
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: OPENMRS_ADMIN_USER } }
+            - name: OPENMRS_PASSWORD
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: OPENMRS_ADMIN_PASSWORD } }
+            - name: OPENMRS_IDENTIFIER_TYPE_NAME
+              value: "OpenMRS ID"
+            # The bearer token guards /api/** only. That path is not published and nothing calls it in the Beckn setup.
+            - name: CCE_SECURITY_ENABLED
+              value: "false"
+            - name: LOG_LEVEL
+              value: "INFO"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xms256m -Xmx512m"
+            # ── Beckn ──
+            - name: OPENMRS_RECEIVER_BECKN_ENABLED
+              value: "true"
+            - name: OPENMRS_RECEIVER_BECKN_ONIX_BPP_CALLER_URL
+              value: "http://onix-bpp:8082/bpp/caller"
+            - name: OPENMRS_RECEIVER_BECKN_SELF_BPP_ID
+              value: "${BECKN_OPENMRS_BPP_ID}"
+            - name: OPENMRS_RECEIVER_BECKN_SELF_BPP_URI
+              value: "${BECKN_OPENMRS_BPP_URI}"
+            - name: OPENMRS_RECEIVER_BECKN_NETWORK_ID
+              value: "${BECKN_NETWORK_ID}"
+            # The one HMIS peer (Spice) and the "referrals in" contract this OpenMRS issued to it. The receiver does not
+            # start without them, so beckn-deploy.sh supplies placeholders (*.invalid) until Spice's real ids are configured.
+            - name: OPENMRS_RECEIVER_BECKN_SPICE_BAP_ID
+              value: "${BECKN_SPICE_BAP_ID}"
+            - name: OPENMRS_RECEIVER_BECKN_SPICE_BAP_URI
+              value: "${BECKN_SPICE_BAP_URI}"
+            - name: OPENMRS_RECEIVER_BECKN_REFERRALS_IN_CONTRACT_ID
+              value: "${BECKN_REFERRALS_IN_CONTRACT_ID}"
+            - name: OPENMRS_RECEIVER_BECKN_REFERRALS_IN_TRANSACTION_ID
+              value: "${BECKN_REFERRALS_IN_TRANSACTION_ID}"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openmrs-cce-receiver-adaptor
+spec:
+  selector:
+    app: openmrs-cce-receiver-adaptor
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -1,0 +1,127 @@
+# cce-beckn-service (https://github.com/openphc/cce-beckn-service): the bridge between CCE and its ONIX adapter.
+#   events in:   onix-bpp -> POST /api/bpp-webhook/update -> cce-collector-service /v1/events   (no gateway, no token)
+#   alerts out:  cce-intelligence-service -> POST /v1/alerts -> onix-bpp /bpp/caller/on_status
+# ClusterIP only: port 8075 must never be reachable from outside the CCE namespace (its deployment guide, §1).
+# ${...} values are filled by one-click-installer/lib/beckn/beckn-deploy.sh (installer config + Infisical /beckn).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cce-beckn-secrets
+type: Opaque
+stringData:
+  # Must equal config.webhookSecret of every Beckn receiver-adaptor record in the intelligence service.
+  CCE_BECKN_ALERTS_WEBHOOK_SECRET: "${CCE_BECKN_ALERTS_WEBHOOK_SECRET}"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cce-beckn-hmis
+data:
+  # One entry per HMIS that CCE sends alerts to. The contract and transaction ids are issued by CCE and must be the same in
+  # that HMIS's own settings. Events from an HMIS are accepted without an entry.
+  hmis.yml: |
+    cce:
+      beckn:
+        hmis:
+          - subscriber-id: ${BECKN_OPENHIM_BAP_ID}
+            subscriber-uri: ${BECKN_OPENHIM_BAP_URI}
+            contract-id: ${BECKN_HIE_CCE_CONTRACT_ID}
+            transaction-id: ${BECKN_HIE_CCE_TRANSACTION_ID}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cce-beckn-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cce-beckn-service
+  template:
+    metadata:
+      labels:
+        app: cce-beckn-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8075"
+        # hmis.yml and the secret are read once, at start: a change must roll the pod.
+        cce.openphc.org/config-hash: "${BECKN_CONFIG_HASH}"
+    spec:
+      # The service finishes running requests for up to 30 s after SIGTERM.
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: cce-beckn-service
+          # CI (demo branch) pushes v<N> and latest. Pin with IMAGE_CCE_BECKN_SERVICE; the pull policy is
+          # BECKN_CCE_IMAGE_PULL_POLICY (IfNotPresent while the GHCR package is private and the image is imported by hand).
+          image: ${BECKN_CCE_SERVICE_IMAGE}
+          imagePullPolicy: ${BECKN_CCE_IMAGE_PULL_POLICY}
+          ports:
+            - containerPort: 8075
+          env:
+            - name: CCE_BECKN_SELF_BPP_ID
+              value: "${BECKN_CCE_BPP_ID}"
+            - name: CCE_BECKN_SELF_BPP_URI
+              value: "${BECKN_CCE_BPP_URI}"
+            - name: CCE_BECKN_SELF_NETWORK_ID
+              value: "${BECKN_NETWORK_ID}"
+            - name: CCE_BECKN_SCHEMA_BASE_URL
+              value: "${BECKN_SCHEMA_BASE_URL}"
+            - name: CCE_BECKN_ONIX_CALLER_URL
+              value: "http://onix-bpp:8082/bpp/caller"
+            - name: CCE_COLLECTOR_URL
+              value: "http://cce-collector-service:8080"
+            # Longer than the collector's Kafka publish time (3 s + 10 s), as for every emitter (CCE_COLLECTOR_TIMEOUT).
+            - name: CCE_COLLECTOR_TIMEOUT
+              value: "15000"
+            - name: CCE_BECKN_ALERTS_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cce-beckn-secrets
+                  key: CCE_BECKN_ALERTS_WEBHOOK_SECRET
+            - name: CCE_BECKN_HMIS_FILE
+              value: /app/config/hmis.yml
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=60.0"
+          volumeMounts:
+            - name: hmis
+              mountPath: /app/config
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 640Mi
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8075
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8075
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8075
+            periodSeconds: 10
+      volumes:
+        - name: hmis
+          configMap:
+            name: cce-beckn-hmis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cce-beckn-service
+spec:
+  selector:
+    app: cce-beckn-service
+  ports:
+    - port: 8075
+      targetPort: 8075

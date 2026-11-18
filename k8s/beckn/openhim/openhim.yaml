@@ -1,0 +1,238 @@
+# OpenHIM (the HIE): MongoDB, OpenHIM Core and the admin console — the same images and settings as the dev compose stack.
+# Channels, clients and the root password are set through the Core API by one-click-installer/lib/beckn/openhim-setup.sh
+# from openhim-metadata.json (nothing is preloaded into MongoDB).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openhim-mongo-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openhim-mongo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # one writer on a ReadWriteOnce volume
+  selector:
+    matchLabels:
+      app: openhim-mongo
+  template:
+    metadata:
+      labels:
+        app: openhim-mongo
+    spec:
+      # Start as the image's own "mongodb" user (999). Started as root, the entrypoint switches user with gosu, which spins at
+      # 100 % CPU and never starts mongod on this platform (k3s/containerd on Ubuntu 26.04) — and root is not needed anyway.
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: mongo
+          image: mongo:7.0
+          # Bounded cache: by default MongoDB sizes it from the NODE's memory, not the container limit.
+          args: ["--wiredTigerCacheSizeGB", "0.5"]
+          ports:
+            - containerPort: 27017
+          env:
+            - name: HOME               # mongosh (the readiness probe) keeps its files here, not on the data volume
+              value: /tmp
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1280Mi
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openhim-mongo-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openhim-mongo
+spec:
+  selector:
+    app: openhim-mongo
+  ports:
+    - port: 27017
+      targetPort: 27017
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openhim-core
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openhim-core
+  template:
+    metadata:
+      labels:
+        app: openhim-core
+    spec:
+      containers:
+        - name: openhim-core
+          image: jembi/openhim-core:v8.5.1
+          ports:
+            - containerPort: 8080   # Core API (HTTPS, self-signed certificate)
+            - containerPort: 5000   # channels, HTTPS
+            - containerPort: 5001   # channels, HTTP
+          env:
+            - name: mongo_url
+              value: mongodb://openhim-mongo/openhim
+            - name: mongo_atnaUrl
+              value: mongodb://openhim-mongo/openhim
+            # "basic" lets the emitter adaptor (mediator registration, heartbeat) and openhim-setup.sh use HTTP Basic.
+            - name: api_authenticationTypes
+              value: '["local","basic"]'
+            - name: authentication_enableJWTAuthentication
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          startupProbe:
+            httpGet:
+              path: /heartbeat
+              port: 8080
+              scheme: HTTPS
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /heartbeat
+              port: 8080
+              scheme: HTTPS
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /heartbeat
+              port: 8080
+              scheme: HTTPS
+            periodSeconds: 30
+            failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openhim-core
+  annotations:
+    # Traefik talks HTTPS to the Core API and accepts its self-signed certificate (ingress.yaml: /openhim-api).
+    traefik.ingress.kubernetes.io/service.serversscheme: https
+    traefik.ingress.kubernetes.io/service.serverstransport: ${BECKN_OPENHIM_NAMESPACE}-openhim-core-selfsigned@kubernetescrd
+spec:
+  selector:
+    app: openhim-core
+  ports:
+    - name: api
+      port: 8080
+      targetPort: 8080
+    - name: channels-https
+      port: 5000
+      targetPort: 5000
+    - name: channels-http
+      port: 5001
+      targetPort: 5001
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openhim-console-config
+data:
+  # The console runs in the browser and calls the Core API at https://<host>/openhim-api (ingress.yaml strips the prefix).
+  default.json: |
+    {
+      "version": "1.18.2",
+      "minimumCoreVersion": "5.2.0",
+      "protocol": "https",
+      "host": "${BECKN_OPENHIM_HOST}",
+      "hostPath": "openhim-api",
+      "port": "443",
+      "title": "Admin Console",
+      "footerTitle": "OpenHIM Administration Console",
+      "footerPoweredBy": "<a href='http://openhim.org/' target='_blank'>Powered by OpenHIM</a>",
+      "loginBanner": "",
+      "mediatorLastHeartbeatWarningSeconds": 60,
+      "mediatorLastHeartbeatDangerSeconds": 120,
+      "showLoginForm": true,
+      "ssoEnabled": false,
+      "keyCloakUrl": "http://localhost:9088",
+      "keyCloakRealm": "platform-realm",
+      "keyCloakClientId": "openhim-oauth"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openhim-console
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openhim-console
+  template:
+    metadata:
+      labels:
+        app: openhim-console
+      annotations:
+        cce.openphc.org/config-hash: "${BECKN_CONFIG_HASH}"
+    spec:
+      containers:
+        - name: openhim-console
+          image: jembi/openhim-console:v1.18.2
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/nginx/html/config/default.json
+              subPath: default.json
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: openhim-console-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openhim-console
+spec:
+  selector:
+    app: openhim-console
+  ports:
+    - port: 80
+      targetPort: 80

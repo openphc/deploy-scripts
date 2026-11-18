@@ -1,0 +1,347 @@
+# OpenMRS O3 reference application 3.6.0 — MariaDB, backend, frontend and the O3 gateway: the same images and settings as
+# the dev compose stack.
+#
+# Site data is NOT in this repository. It lives on the node under ${BECKN_OPENMRS_HOST_DIR} (default /opt/openmrs, as on dev):
+#   config-core_demo.json          frontend configuration ("{}" is written by beckn-deploy.sh when there is none)
+#   frontend/custom-esms/          extra frontend modules + manifest.json (may be empty)
+# A copy of another OpenMRS (database, /openmrs/data, the two items above) is moved with one-click-installer/lib/beckn/openmrs-export.sh
+# and openmrs-import.sh. Single-node k3s: hostPath is safe here, as for the Keycloak theme.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openmrs-secrets
+type: Opaque
+stringData:
+  OMRS_DB_USER: "openmrs"
+  OMRS_DB_PASSWORD: "${OPENMRS_DB_PASSWORD}"
+  MYSQL_ROOT_PASSWORD: "${OPENMRS_DB_ROOT_PASSWORD}"
+  # The OpenMRS account the two adaptors use (REST + FHIR).
+  OPENMRS_ADMIN_USER: "${OPENMRS_ADMIN_USER}"
+  OPENMRS_ADMIN_PASSWORD: "${OPENMRS_ADMIN_PASSWORD}"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openmrs-db-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openmrs-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmrs-db
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: openmrs-db
+  template:
+    metadata:
+      labels:
+        app: openmrs-db
+    spec:
+      # Start as the image's own "mysql" user (999): see the note on openhim-mongo (gosu) in k8s/beckn/openhim/openhim.yaml.
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: mariadb
+          image: mariadb:10.11.7
+          args: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_general_ci"]
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_DATABASE
+              value: openmrs
+            - name: MYSQL_USER
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: OMRS_DB_USER } }
+            - name: MYSQL_PASSWORD
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: OMRS_DB_PASSWORD } }
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: MYSQL_ROOT_PASSWORD } }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysql --user=\"$MYSQL_USER\" --password=\"$MYSQL_PASSWORD\" --execute 'SELECT 1' >/dev/null"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openmrs-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openmrs-db
+spec:
+  selector:
+    app: openmrs-db
+  ports:
+    - port: 3306
+      targetPort: 3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmrs-backend
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # one OpenMRS on the data volume
+  selector:
+    matchLabels:
+      app: openmrs-backend
+  template:
+    metadata:
+      labels:
+        app: openmrs-backend
+    spec:
+      containers:
+        - name: backend
+          image: openmrs/openmrs-reference-application-3-backend:3.6.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OMRS_CONFIG_MODULE_WEB_ADMIN
+              value: "true"
+            - name: OMRS_CONFIG_AUTO_UPDATE_DATABASE
+              value: "true"
+            - name: OMRS_CONFIG_CREATE_TABLES
+              value: "true"
+            - name: OMRS_CONFIG_CONNECTION_SERVER
+              value: openmrs-db
+            - name: OMRS_CONFIG_CONNECTION_DATABASE
+              value: openmrs
+            - name: OMRS_CONFIG_CONNECTION_USERNAME
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: OMRS_DB_USER } }
+            - name: OMRS_CONFIG_CONNECTION_PASSWORD
+              valueFrom: { secretKeyRef: { name: openmrs-secrets, key: OMRS_DB_PASSWORD } }
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Xms512m -Xmx1536m -XX:+UseG1GC -XX:MaxMetaspaceSize=256m"
+          volumeMounts:
+            - name: data
+              mountPath: /openmrs/data
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2304Mi
+          # A first start on an empty database installs the whole reference application: allow 20 minutes.
+          startupProbe:
+            httpGet:
+              path: /openmrs/health/started
+              port: 8080
+            periodSeconds: 15
+            failureThreshold: 80
+          # Ready = the REST module answers. The core can be "started" with every module failed (then REST and FHIR are 404,
+          # and the adaptors and the app are useless): that must show as a pod that is not ready, not as a healthy one.
+          readinessProbe:
+            httpGet:
+              path: /openmrs/ws/rest/v1/session
+              port: 8080
+            periodSeconds: 20
+            timeoutSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 30
+            failureThreshold: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: openmrs-data
+---
+# Named "backend": the O3 gateway image proxies /openmrs to http://backend:8080 (fixed in its nginx config).
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: openmrs-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmrs-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openmrs-frontend
+  template:
+    metadata:
+      labels:
+        app: openmrs-frontend
+      annotations:
+        cce.openphc.org/config-hash: "${BECKN_CONFIG_HASH}"
+    spec:
+      containers:
+        - name: frontend
+          image: openmrs/openmrs-reference-application-3-frontend:3.6.0
+          # Splice the custom modules into the image's import map and routes registry, then start as the image does.
+          command: ["sh", "-c", "/docker-entrypoint.d/40-merge-custom-esms.sh; exec /usr/local/bin/startup.sh"]
+          ports:
+            - containerPort: 80
+          env:
+            - name: SPA_PATH
+              value: /openmrs/spa
+            - name: API_URL
+              value: /openmrs
+            - name: SPA_CONFIG_URLS
+              value: /openmrs/spa/config-core_demo.json
+            - name: SPA_DEFAULT_LOCALE
+              value: ""
+          volumeMounts:
+            - name: scripts
+              mountPath: /docker-entrypoint.d/40-merge-custom-esms.sh
+              subPath: 40-merge-custom-esms.sh
+              readOnly: true
+            # No 1-year cache for /custom-esms/: those bundles keep their file names across rebuilds.
+            - name: scripts
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: site-config
+              mountPath: /usr/share/nginx/html/config-core_demo.json
+              readOnly: true
+            - name: custom-esms
+              mountPath: /usr/share/nginx/html/custom-esms
+              readOnly: true
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 15
+      volumes:
+        - name: scripts
+          configMap:
+            name: openmrs-frontend-scripts
+            defaultMode: 0755
+        - name: site-config
+          hostPath:
+            path: ${BECKN_OPENMRS_HOST_DIR}/config-core_demo.json
+            type: File
+        - name: custom-esms
+          hostPath:
+            path: ${BECKN_OPENMRS_HOST_DIR}/frontend/custom-esms
+            type: Directory
+---
+# Named "frontend": the O3 gateway image proxies /openmrs/spa/ to http://frontend/ (fixed in its nginx config).
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector:
+    app: openmrs-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openmrs-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openmrs-gateway
+  template:
+    metadata:
+      labels:
+        app: openmrs-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: openmrs/openmrs-reference-application-3-gateway:3.6.0
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          readinessProbe:
+            tcpSocket:
+              port: 80
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openmrs-gateway
+spec:
+  selector:
+    app: openmrs-gateway
+  ports:
+    - port: 80
+      targetPort: 80
+---
+# https://<OpenMRS host>/ -> the O3 gateway (/openmrs/spa = the app, /openmrs = REST and FHIR).
+# /bap/receiver and /bpp/receiver on the same host are in k8s/beckn/onix/ingress.yaml.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openmrs-ingress
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: le
+spec:
+  tls:
+    - hosts:
+        - ${BECKN_OPENMRS_HOST}
+  rules:
+    - host: ${BECKN_OPENMRS_HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openmrs-gateway
+                port:
+                  number: 80

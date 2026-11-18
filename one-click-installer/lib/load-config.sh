@@ -3,7 +3,8 @@
 #
 # Reads a flat KEY=VALUE config file (see config/example.env) and EXPORTS each key — but never overrides a variable that is
 # already set in the environment, so automation can still do `sudo env IS_CLOUD_DEPLOYMENT=true bash install.sh --config …`.
-# Unknown keys are reported (a typo like IS_CLOUD_DEPLOYEMENT would otherwise be silently ignored) — IMAGE_* keys are free-form.
+# Unknown keys are reported (a typo like IS_CLOUD_DEPLOYEMENT would otherwise be silently ignored) — IMAGE_* keys are free-form, and
+# BECKN_* keys belong to the Beckn add-on (install-beckn.sh; lib/beckn/beckn-lib.sh validates them).
 CCE_CONFIG_KEYS=" ENVCODE OVERLAY_NAME OVERLAY_TEMPLATE INGRESS_HOST ACME_EMAIL IS_CLOUD_DEPLOYMENT SSH_ALLOWED_CIDR UFW_EXTRA_ALLOW
  K3S_CLUSTER_CIDR K3S_SERVICE_CIDR USE_LOCAL_INFISICAL LOCAL_INFISICAL_RUNTIME INFISICAL_CORE_VERSION INFISICAL_DOMAIN SEED_ENV_FILE CCE_INFISICAL_CREDS_DIR
  K3S_VERSION INFISICAL_CLI_VERSION CLICKHOUSE_VERSION POSTGRES_VERSION KAFKA_VERSION DEBEZIUM_VERSION
@@ -24,7 +25,7 @@ cce_load_config() {
     key="$(printf '%s' "$key" | tr -d '[:space:]')"
     val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
     [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || { echo "WARNING: ignoring invalid key '$key'" >&2; continue; }
-    case "$known" in *" $key "*) ;; *) [[ "$key" == IMAGE_* ]] || unknown+=("$key");; esac
+    case "$known" in *" $key "*) ;; *) [[ "$key" == IMAGE_* || "$key" == BECKN_* ]] || unknown+=("$key");; esac
     if [ -z "${!key+x}" ]; then export "$key=$val"; else export "$key"; fi   # environment wins
   done < "$file"
   [ "${#unknown[@]}" -gt 0 ] && echo "WARNING: unknown config key(s) — typo? ${unknown[*]}" >&2

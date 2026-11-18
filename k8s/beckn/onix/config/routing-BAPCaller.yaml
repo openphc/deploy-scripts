@@ -1,0 +1,15 @@
+# onix-bap /bap/caller/<action>: requests this participant sends as consumer go to the provider named in the message
+# (context.bppUri, checked against the network registry).
+routingRules:
+  - version: "2.0.0"
+    targetType: "bpp"
+    endpoints:
+      - select
+      - init
+      - confirm
+      - status
+      - cancel
+      - support
+      - track
+      - update
+      - rate

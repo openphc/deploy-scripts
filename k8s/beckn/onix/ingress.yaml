@@ -1,0 +1,34 @@
+# The two public Beckn addresses of one participant: https://<host>/bap/receiver and https://<host>/bpp/receiver.
+# These are the URLs registered for its BAP and BPP subscribers in the network registry.
+# The callers (/bap/caller, /bpp/caller) are NOT published: only the participant's own services use them, in-cluster.
+# ${BECKN_HOST} is filled per participant by one-click-installer/lib/beckn/beckn-deploy.sh.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: onix-ingress
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: le
+spec:
+  tls:
+    - hosts:
+        - ${BECKN_HOST}
+  rules:
+    - host: ${BECKN_HOST}
+      http:
+        paths:
+          - path: /bap/receiver
+            pathType: Prefix
+            backend:
+              service:
+                name: onix-bap
+                port:
+                  number: 8081
+          - path: /bpp/receiver
+            pathType: Prefix
+            backend:
+              service:
+                name: onix-bpp
+                port:
+                  number: 8082

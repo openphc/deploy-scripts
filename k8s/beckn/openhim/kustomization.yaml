@@ -1,0 +1,15 @@
+# The HIE as a Beckn participant, in its own namespace (BECKN_OPENHIM_NAMESPACE, default "openhim"): OpenHIM (MongoDB, Core,
+# console), the Beckn build of the emitter adaptor, and the HIE's ONIX adapter. Applied by
+# one-click-installer/install-beckn.sh, which creates the namespace and passes it with kubectl apply -n.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../netpol
+  - ../onix
+  - openhim.yaml
+  - ingress.yaml
+  - openhim-cce-emitter-adaptor.yaml
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: openhim-beckn
+    includeTemplates: true

@@ -1,0 +1,169 @@
+# ONIX adapter config for the BPP side of one Beckn participant — a TEMPLATE.
+# one-click-installer/lib/beckn/beckn-deploy.sh fills the ${...} values per participant (from the installer config and
+# Infisical) and stores the result in the Secret onix-config; nothing rendered is written to the repository.
+# Based on the devkit config of beckn-onix (local-simple-bpp.yaml). What differs, and why:
+#   - responseHeaderTimeout per module: one event crosses about nine hops in a single HTTP call, and every hop must wait
+#     longer than the hop behind it (the default 5 s breaks that). The values come from the installer.
+#   - http.timeout: must be longer than the longest of those waits.
+#   - storeBody "false": the stored copy of a message would hold patient data.
+#   - cache: the participant's own Redis (Service onix-redis).
+#   - allowedNetworkIDs: a subscriber found in the registry is accepted only if it is a member of one of these networks
+#     (its record's network_memberships). The installer sets it to BECKN_NETWORK_ID and leaves the line out when that is empty.
+appName: "onix-bpp"
+log:
+  level: ${ONIX_LOG_LEVEL}
+  destinations:
+    - type: stdout
+  contextKeys:
+    - transactionId
+    - messageId
+    - subscriber_id
+    - module_id
+http:
+  port: 8082
+  timeout:
+    read: ${ONIX_HTTP_TIMEOUT}
+    write: ${ONIX_HTTP_TIMEOUT}
+    idle: ${ONIX_HTTP_TIMEOUT}
+pluginManager:
+  root: ./plugins
+modules:
+  # Requests from the network (update): signature and schema checked, then passed to this participant's own service.
+  - name: bppTxnReceiver
+    path: /bpp/receiver/
+    handler:
+      type: std
+      role: bpp
+      httpClientConfig:
+        maxIdleConns: 1000
+        maxIdleConnsPerHost: 200
+        idleConnTimeout: 300s
+        responseHeaderTimeout: ${ONIX_BPP_RECEIVER_TIMEOUT}
+      plugins:
+        registry:
+          id: dediregistry
+          config:
+            url: ${BECKN_REGISTRY_URL}
+            registryName: ${BECKN_REGISTRY_NAME}
+            allowedNetworkIDs: "${BECKN_ALLOWED_NETWORK_IDS}"
+            timeout: 10
+        keyManager:
+          id: simplekeymanager
+          config:
+            networkParticipant: ${ONIX_BPP_SUBSCRIBER_ID}
+            keyId: ${ONIX_BPP_KEY_ID}
+            signingPrivateKey: ${ONIX_BPP_SIGNING_PRIVATE_KEY}
+            signingPublicKey: ${ONIX_BPP_SIGNING_PUBLIC_KEY}
+            encrPrivateKey: ${ONIX_BPP_ENCR_PRIVATE_KEY}
+            encrPublicKey: ${ONIX_BPP_ENCR_PUBLIC_KEY}
+        cache:
+          id: cache
+          config:
+            addr: onix-redis:6379
+        payloadStore:
+          id: payloadstore
+          config:
+            ttl: "24h"
+            indexTTL: "25h"
+            maxBodyBytes: "1048576"
+            storeBody: "false"
+            storeSignature: "true"
+            compress: "true"
+        schemaValidator:
+          id: schemav2validator
+          config:
+            type: url
+            location: ${BECKN_CORE_SCHEMA_URL}
+            cacheTTL: "3600"
+            extendedSchema_enabled: "true"
+            extendedSchema_cacheTTL: "86400"
+            extendedSchema_maxCacheSize: "100"
+            extendedSchema_downloadTimeout: "30"
+            extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
+            extendedSchema_localSchemaPath: "config/schema"
+        signValidator:
+          id: signvalidator
+        router:
+          id: router
+          config:
+            routingConfig: ./config/routing-BPPReceiver.yaml
+        signer:
+          id: signer
+        middleware:
+          - id: reqpreprocessor
+            config:
+              contextKeys: transactionId,messageId
+              role: bpp
+      steps:
+        - validateSign
+        - addRoute
+        - validateSchema
+
+  # Callbacks this participant sends as PROVIDER (on_update, on_status): signed, then sent to the consumer's bapUri.
+  - name: bppTxnCaller
+    path: /bpp/caller/
+    handler:
+      type: std
+      role: bpp
+      httpClientConfig:
+        maxIdleConns: 1000
+        maxIdleConnsPerHost: 200
+        idleConnTimeout: 300s
+        responseHeaderTimeout: ${ONIX_BPP_CALLER_TIMEOUT}
+      plugins:
+        registry:
+          id: dediregistry
+          config:
+            url: ${BECKN_REGISTRY_URL}
+            registryName: ${BECKN_REGISTRY_NAME}
+            allowedNetworkIDs: "${BECKN_ALLOWED_NETWORK_IDS}"
+            timeout: 10
+        keyManager:
+          id: simplekeymanager
+          config:
+            networkParticipant: ${ONIX_BPP_SUBSCRIBER_ID}
+            keyId: ${ONIX_BPP_KEY_ID}
+            signingPrivateKey: ${ONIX_BPP_SIGNING_PRIVATE_KEY}
+            signingPublicKey: ${ONIX_BPP_SIGNING_PUBLIC_KEY}
+            encrPrivateKey: ${ONIX_BPP_ENCR_PRIVATE_KEY}
+            encrPublicKey: ${ONIX_BPP_ENCR_PUBLIC_KEY}
+        cache:
+          id: cache
+          config:
+            addr: onix-redis:6379
+        payloadStore:
+          id: payloadstore
+          config:
+            ttl: "24h"
+            indexTTL: "25h"
+            maxBodyBytes: "1048576"
+            storeBody: "false"
+            storeSignature: "true"
+            compress: "true"
+        schemaValidator:
+          id: schemav2validator
+          config:
+            type: url
+            location: ${BECKN_CORE_SCHEMA_URL}
+            cacheTTL: "3600"
+            extendedSchema_enabled: "true"
+            extendedSchema_cacheTTL: "86400"
+            extendedSchema_maxCacheSize: "100"
+            extendedSchema_downloadTimeout: "30"
+            extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
+            extendedSchema_localSchemaPath: "config/schema"
+        router:
+          id: router
+          config:
+            routingConfig: ./config/routing-BPPCaller.yaml
+        signer:
+          id: signer
+        middleware:
+          - id: reqpreprocessor
+            config:
+              contextKeys: transactionId,messageId
+              role: bpp
+      steps:
+        - addRoute
+        - sign
+        - validateSchema
