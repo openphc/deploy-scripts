@@ -71,6 +71,30 @@ print(json.dumps({"beckn": {"subscribers": subs}}, separators=(",", ":")))
 PY
 )"; export OPENHIM_ADAPTOR_SPRING_JSON
 fi
+# CCE's alert recipients (hmis.yml of cce-beckn-service): the HIE, OpenMRS when its id is known, Spice once configured. An
+# alert goes to an HMIS as on_status, a transaction of its own; contract-id is optional (the HIE keeps its own).
+if [ "$COMPONENT" = cce ]; then
+  CCE_BECKN_HMIS_ENTRIES="$(python3 - <<'PY'
+import os
+E = lambda k: (os.environ.get(k) or "").strip()
+entries = [(E("BECKN_OPENHIM_BAP_ID"), E("BECKN_OPENHIM_BAP_URI"), E("BECKN_HIE_CCE_CONTRACT_ID"))]
+if E("BECKN_OPENMRS_BAP_ID") and E("BECKN_OPENMRS_BAP_URI"):
+    entries.append((E("BECKN_OPENMRS_BAP_ID"), E("BECKN_OPENMRS_BAP_URI"), ""))
+if E("BECKN_SPICE_CONFIGURED") == "true":
+    entries.append((E("BECKN_SPICE_BAP_ID"), E("BECKN_SPICE_BAP_URI"), ""))
+pad = " " * 10
+lines = []
+for sid, uri, contract in entries:
+    if not sid:
+        continue
+    lines.append(f"{pad}- subscriber-id: {sid}")
+    lines.append(f"{pad}  subscriber-uri: {uri}")
+    if contract:
+        lines.append(f"{pad}  contract-id: {contract}")
+print("\n".join(lines))
+PY
+)"; export CCE_BECKN_HMIS_ENTRIES
+fi
 export BECKN_REFERRALS_OUT_CONTRACT_ID="${BECKN_REFERRALS_OUT_CONTRACT_ID:-}" BECKN_REFERRALS_OUT_TRANSACTION_ID="${BECKN_REFERRALS_OUT_TRANSACTION_ID:-}"
 
 # Every ${VAR} a file references must have a value, or it would render as "" and fail later, far from the cause. The
@@ -169,3 +193,71 @@ for d in onix-bap onix-bpp; do
     "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"cce.openphc.org/onix-config-hash\":\"${ONIX_CONFIG_HASH}\"}},\"spec\":{\"hostAliases\":[{\"ip\":\"${TIP}\",\"hostnames\":[${ALIASES%,}]}]}}}}" >/dev/null
 done
 say "onix-bap / onix-bpp: local Beckn hosts -> Traefik $TIP"
+
+# ── 5. CCE: where the intelligence service sends alerts ─────────────────────────────────────────────────────────────────
+# One receiver-adaptor record and one destination mapping per alert destination: OPENMRS when OpenMRS's id is known, SPICE
+# once Spice is configured. Each points at cce-beckn-service's POST /v1/alerts, signed with the shared webhook secret, with
+# the destination's BAP id in X-CCE-Beckn-Subscriber-Id: cce-beckn-service sends the alert to that HMIS as on_status.
+# A protocol action reaches a destination by its intelligence-destination code (e.g. OPENMRS). Safe to re-run: an existing
+# record is updated, not duplicated.
+if [ "$COMPONENT" = cce ]; then
+  INTEL_IP="$($KUBECTL -n "$NS" get svc cce-intelligence-service -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)"
+  if [ -z "$INTEL_IP" ]; then
+    say "intelligence alert routes: cce-intelligence-service not found in $NS — skipped"
+  else
+    INTEL_URL="http://$INTEL_IP:8085" python3 - <<'PY' | sed 's/^/      /'
+import json, os, time, urllib.request, urllib.error
+E = lambda k: (os.environ.get(k) or "").strip()
+base = E("INTEL_URL")
+secret = E("CCE_BECKN_ALERTS_WEBHOOK_SECRET")
+dests = []
+if E("BECKN_OPENMRS_BAP_ID"):
+    dests.append(("OPENMRS", E("BECKN_OPENMRS_BAP_ID")))
+if E("BECKN_SPICE_CONFIGURED") == "true" and E("BECKN_SPICE_BAP_ID"):
+    dests.append(("SPICE", E("BECKN_SPICE_BAP_ID")))
+
+def call(method, path, body=None):
+    data = None if body is None else json.dumps(body).encode()
+    req = urllib.request.Request(base + path, data=data, method=method, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read() or b"{}")
+
+for attempt in range(30):                 # the service may still be starting
+    try:
+        call("GET", "/v1/receiver-adaptors"); break
+    except Exception:
+        time.sleep(5)
+else:
+    print("intelligence alert routes: cce-intelligence-service did not answer — skipped"); raise SystemExit(0)
+if not secret:
+    print("intelligence alert routes: CCE_BECKN_ALERTS_WEBHOOK_SECRET is empty — skipped"); raise SystemExit(0)
+
+adaptors = {a["name"]: a for a in call("GET", "/v1/receiver-adaptors").get("data", [])}
+mappings = {m["destination"]: m for m in call("GET", "/v1/destination-adaptor-mappings").get("data", [])}
+for dest, bap_id in dests:
+    name = "beckn-alerts-" + dest.lower()
+    record = {
+        "name": name,
+        "definition": {
+            "resourceType": "Endpoint", "id": name, "status": "active", "name": "CCE alerts to " + bap_id + " over Beckn",
+            "connectionType": {"system": "http://terminology.hl7.org/CodeSystem/endpoint-connection-type", "code": "hl7-fhir-rest"},
+            "payloadType": [{"coding": [{"system": "http://hl7.org/fhir/resource-types", "code": "CommunicationRequest"}]}],
+            "payloadMimeType": ["application/fhir+json"],
+            "address": "http://cce-beckn-service:8075/v1/alerts"},
+        "config": {"webhookSecret": secret, "customHeaders": {"X-CCE-Beckn-Subscriber-Id": bap_id}},
+        "status": "ACTIVE"}
+    if name in adaptors:
+        adaptor = call("PUT", "/v1/receiver-adaptors/" + adaptors[name]["id"], record)["data"]
+    else:
+        adaptor = call("POST", "/v1/receiver-adaptors", {k: record[k] for k in ("name", "definition", "config")})["data"]
+    if dest in mappings:
+        call("PUT", "/v1/destination-adaptor-mappings/" + mappings[dest]["id"],
+             {"receiverAdaptorId": adaptor["id"], "status": "ACTIVE"})
+    else:
+        call("POST", "/v1/destination-adaptor-mappings", {"destination": dest, "receiverAdaptorId": adaptor["id"]})
+    print(f"intelligence alert route: {dest} -> cce-beckn-service /v1/alerts -> {bap_id}")
+if not dests:
+    print("intelligence alert routes: no destination (OpenMRS id unknown, Spice not configured)")
+PY
+  fi
+fi
