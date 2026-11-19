@@ -477,8 +477,7 @@ sudo k3s kubectl -n cce-prod logs deploy/cce-matcher-service --since=10m | grep 
 
 ## Step 11. Connect OpenHIM to PROD
 
-OpenHIM sends CCE a copy of eBuzima's events through a **route** on one of its channels. Today that channel has a route to UAT
-only (`cceuat.moh.gov.rw`). This step adds PROD's route (`cce.moh.gov.rw`) next to it, with the script
+OpenHIM sends CCE a copy of eBuzima's events through a **route** on one of its channels. This step adds PROD's route (`cce.moh.gov.rw`), with the script
 `rw/tools/openhim/register-mediator.sh`. The script also registers CCE's mediator with OpenHIM; the emitter does that by itself
 at every start, so that part only confirms it. The OpenHIM logins come from the server's secret store: you type no password.
 
