@@ -65,6 +65,7 @@ $(for c in $BECKN_ALL_COMPONENTS; do p="$(printf '%s' "$c" | tr '[:lower:]' '[:u
  Spice:              $( [ "$BECKN_SPICE_CONFIGURED" = true ] && echo "$BECKN_SPICE_BAP_ID" || echo "not configured (placeholder ids)")   referral legs: $BECKN_REFERRALS_ENABLED
  Registry:           $BECKN_REGISTRY_URL  ($BECKN_REGISTRY_NAME)
  Schemas:            ${BECKN_SCHEMA_DIR:-$BECKN_SCHEMA_REPO @ $BECKN_SCHEMA_REF}
+ HIE redaction:      $( [ "$BECKN_OPENHIM_REDACTION_ENABLED" = false ] && echo "OFF — full clinical payloads go to CCE" || echo "on")
 ════════════════════════════════════════════════════════════════
 SUMMARY
 confirm "Proceed?" || { echo "Aborted."; exit 0; }

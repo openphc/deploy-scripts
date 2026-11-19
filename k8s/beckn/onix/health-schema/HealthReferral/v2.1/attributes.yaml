@@ -1,0 +1,356 @@
+openapi: 3.1.1
+$id: "https://schema.beckn.io/HealthReferral/v2.1/attributes.yaml"
+info:
+  title: HealthReferral Schema
+  version: "2.1.0"
+  description: >
+    The clinical referral contract (T1) for a Beckn health referral network. Extends
+    ServiceCoordination/v2.1 with a clinical narrowing of targetCriteria (specialty /
+    subSpecialty / equipment / procedure / consultationModality), structured clinical
+    consent with consentClass (A/B/C), a referralNote that specialises the generic
+    handoverDocument, government scheme membership (schemeRef), a clinical urgency
+    tier, and two health-specific lifecycle states and deviation codes. The coordinator
+    itself is discovered via the generic ServiceCoordinationResource — no health-specific
+    coordination Resource/Offer is required. Inherited base fields come from
+    ServiceCoordination/v2.1 (coordinationId, lifecycleState, targetCriteria,
+    recommendedTargetRef, targetBookingRef, handoverDocument, notificationRoster,
+    deviation, grievanceRef, handoff) and ServiceContract/v2.1.
+  x-beckn-container: contractAttributes
+
+components:
+  schemas:
+    HealthReferral:
+      type: object
+      x-beckn-container: contractAttributes
+      x-status: under-review
+      x-tags:
+        - health
+        - health-service
+        - referral
+        - contract
+      x-beckn-extends: "https://schema.beckn.io/ServiceCoordination/v2.1/attributes.yaml#/components/schemas/ServiceCoordination"
+      x-jsonld:
+        "@context": "https://schema.beckn.io/HealthReferral/v2.1/context.jsonld"
+        "@type": "hrf:HealthReferral"
+      required:
+        - targetCriteria
+      allOf:
+        - $ref: "https://schema.beckn.io/ServiceCoordination/v2.1/attributes.yaml#/components/schemas/ServiceCoordination"
+        # Health-specific lifecycle conditional requirements. Each if/then is a
+        # separate allOf[] entry — YAML forbids duplicate if/then keys at one level.
+        - if:
+            properties:
+              lifecycleState:
+                const: SCHEME_PREAUTH_PENDING
+            required: [lifecycleState]
+          then:
+            required: [schemeRef]
+        - if:
+            properties:
+              lifecycleState:
+                const: POST_FACTO_CONSENT_PENDING
+            required: [lifecycleState]
+          then:
+            required: [consent]
+      properties:
+        lifecycleState:
+          type: string
+          enum:
+            - DRAFT
+            - ACTIVE
+            - TARGET_SELECTED
+            - BOOKING_CONFIRMED
+            - TARGET_NOTIFIED
+            - ATTENDED
+            - NO_SHOW
+            - CANCELLED
+            - PROVIDER_CANCELLED
+            - OUTCOME_RECEIVED
+            - SLA_BREACHED
+            - LAPSED
+            - REVOKED
+            - WITHDRAWN
+            - CLOSED
+            - SCHEME_PREAUTH_PENDING
+            - POST_FACTO_CONSENT_PENDING
+          description: >
+            Lifecycle state of the referral. Extends the generic ServiceCoordination
+            state set with two health-specific states:
+            SCHEME_PREAUTH_PENDING: awaiting government scheme pre-authorisation.
+            POST_FACTO_CONSENT_PENDING: awaiting post-facto ratification of deemed
+            (class C) consent.
+          x-jsonld-id: "hrf:lifecycleState"
+        targetCriteria:
+          type: object
+          description: >
+            Clinical narrowing of the generic ServiceCoordination.targetCriteria — what
+            the downstream clinical target must satisfy. Required within a HealthReferral.
+          x-jsonld-id: "hrf:targetCriteria"
+          properties:
+            specialty:
+              $ref: "#/components/schemas/Specialty"
+              description: >
+                Required clinical specialty (self-owned CodedValue; default @context is
+                this schema's context.jsonld, @type Specialty).
+              x-jsonld-id: "hrf:tc_specialty"
+            subSpecialty:
+              $ref: "#/components/schemas/SubSpecialty"
+              description: Required clinical sub-specialty (self-owned CodedValue, @type SubSpecialty)
+              x-jsonld-id: "hrf:tc_subSpecialty"
+            equipmentNeeds:
+              type: array
+              items:
+                type: string
+              description: Equipment the target must have available (e.g. ["ECHO", "TREADMILL"])
+              x-jsonld-id: "hrf:tc_equipmentNeeds"
+            procedureNeeds:
+              type: array
+              items:
+                type: string
+              description: Procedures the target must be able to perform
+              x-jsonld-id: "hrf:tc_procedureNeeds"
+            consultationModality:
+              type: string
+              enum:
+                - IN_PERSON
+                - TELECONSULT
+              description: Required consultation modality
+              x-jsonld-id: "hrf:tc_consultationModality"
+        consent:
+          type: object
+          description: >
+            Clinical consent for the referral. Reuses the HealthContract.consent field
+            set as its base and adds consentClass (A/B/C, self-owned CodedValue) plus
+            class-specific fields. Class A is explicit, mediated; class B is
+            treatment-relationship; class C is deemed, post-facto ratified.
+          x-jsonld-id: "hrf:consent"
+          properties:
+            consentClass:
+              $ref: "#/components/schemas/ConsentClass"
+              description: >
+                Consent basis class (self-owned CodedValue; default @context this
+                schema's context.jsonld, @type ConsentClass; members A / B / C).
+              x-jsonld-id: "hrf:consentClass"
+            consentDocRef:
+              type: string
+              description: Label of the consent Document in the contract's Descriptor.docs[]
+              x-jsonld-id: "hrf:consentDocRef"
+            consentId:
+              type: string
+              format: uuid
+              description: Globally unique identifier for this consent artifact
+              x-jsonld-id: "hrf:consentId"
+            patientParticipantId:
+              type: string
+              description: Beckn Participant ID of the patient the consent concerns
+              x-jsonld-id: "hrf:patientParticipantId"
+            consentStandard:
+              type: string
+              description: Standard governing the consent format (e.g. "HealthConsent/v1", "DISHA/v1")
+              x-jsonld-id: "hrf:consentStandard"
+            consentedAt:
+              type: string
+              format: date-time
+              description: Timestamp when consent was given (ISO 8601)
+              x-jsonld-id: "hrf:consentedAt"
+            consentedBy:
+              type: string
+              description: ID of the person who recorded or witnessed the consent
+              x-jsonld-id: "hrf:consentedBy"
+            purposeOfCollection:
+              type: array
+              items:
+                type: string
+              description: Purposes for which patient data is shared under this referral
+              x-jsonld-id: "hrf:purposeOfCollection"
+            withdrawnAt:
+              type: string
+              format: date-time
+              description: Timestamp if consent was subsequently withdrawn (ISO 8601)
+              x-jsonld-id: "hrf:withdrawnAt"
+            mediatorCredentialRef:
+              type: string
+              description: >
+                Credential id / DID of the mediator who obtained consent. Applicable to
+                consentClass A (explicit, mediated). A plain string, not an embedded Credential.
+              x-jsonld-id: "hrf:mediatorCredentialRef"
+            originatingConsentRef:
+              type: string
+              description: >
+                Reference to the originating consent established by an existing treatment
+                relationship. Applicable to consentClass B.
+              x-jsonld-id: "hrf:originatingConsentRef"
+            deemedBasisCode:
+              type: string
+              description: >
+                Code for the legal/clinical basis under which consent is deemed.
+                Applicable to consentClass C (deemed, post-facto).
+              x-jsonld-id: "hrf:deemedBasisCode"
+            clinicalJustification:
+              type: string
+              maxLength: 1000
+              description: Clinical justification for deemed consent. Applicable to consentClass C.
+              x-jsonld-id: "hrf:clinicalJustification"
+            ratifiedAt:
+              type: string
+              format: date-time
+              description: Timestamp the deemed consent was ratified post-facto (ISO 8601). Class C.
+              x-jsonld-id: "hrf:ratifiedAt"
+        referralNote:
+          type: object
+          description: >
+            Specialises ServiceCoordination.handoverDocument — inherits the
+            credential-scope / access-window / revocation reference semantics and adds
+            the clinical header (specialty, urgency, links to prior results). The
+            clinical body is never inline: artifactRef is a label resolving to a Document
+            in the contract's Descriptor.docs[], whose url carries the actual note.
+          x-jsonld-id: "hrf:referralNote"
+          properties:
+            artifactRef:
+              type: string
+              description: Label of the referral-note Document in the contract's Descriptor.docs[]
+              x-jsonld-id: "hrf:rn_artifactRef"
+            credentialScope:
+              type: string
+              description: Credential id / DID gating who may fetch the referral-note Document (plain string)
+              x-jsonld-id: "hrf:rn_credentialScope"
+            accessWindowStart:
+              type: string
+              format: date-time
+              description: Start of the access window for the referral note (ISO 8601)
+              x-jsonld-id: "hrf:rn_accessWindowStart"
+            accessWindowEnd:
+              type: string
+              format: date-time
+              description: End of the access window for the referral note (ISO 8601)
+              x-jsonld-id: "hrf:rn_accessWindowEnd"
+            revocationStatus:
+              type: string
+              enum:
+                - ACTIVE
+                - REVOKED
+              description: Whether access to the referral note is currently active or revoked
+              x-jsonld-id: "hrf:rn_revocationStatus"
+            revokedAt:
+              type: string
+              format: date-time
+              description: Timestamp access was revoked, if applicable (ISO 8601)
+              x-jsonld-id: "hrf:rn_revokedAt"
+            specialty:
+              type: string
+              description: Clinical specialty the note is addressed to (human-readable clinical header)
+              x-jsonld-id: "hrf:rn_specialty"
+            urgency:
+              type: string
+              enum:
+                - ROUTINE
+                - URGENT
+                - EMERGENCY
+              description: Clinical urgency stated in the referral-note header
+              x-jsonld-id: "hrf:rn_urgency"
+            priorResultRefs:
+              type: array
+              items:
+                type: string
+              description: Labels of prior result Documents in Descriptor.docs[] referenced by the note
+              x-jsonld-id: "hrf:rn_priorResultRefs"
+        schemeRef:
+          $ref: "https://schema.beckn.io/CodedValue/v2.1/attributes.yaml#/components/schemas/CodedValue"
+          description: >
+            Government scheme membership for this referral (externally governed CodedValue,
+            e.g. PMJAY / a state scheme authority).
+          x-jsonld-id: "hrf:schemeRef"
+        clinicalUrgencyTier:
+          type: string
+          enum:
+            - ROUTINE
+            - URGENT
+            - EMERGENCY
+          description: Clinical urgency tier of the referral (plain enum)
+          x-jsonld-id: "hrf:clinicalUrgencyTier"
+        deviation:
+          type: object
+          description: >
+            In-band deviation signal. reasonCode is a self-owned, network-specific CodedValue:
+            a referral-facing health vocabulary (hrf:DeviationReasonCode) that is a subClassOf
+            the generic scoord:DeviationReasonCode and is mapped to it member-by-member via
+            skos:exactMatch (see vocab.jsonld). Health participants emit native referral codes;
+            the registry stores them as-is and cross-network reconciliation is an analytics-layer
+            concern.
+          x-jsonld-id: "hrf:deviation"
+          properties:
+            reasonCode:
+              $ref: "https://schema.beckn.io/ServiceCoordination/v2.1/attributes.yaml#/components/schemas/DeviationReasonCode"
+              description: >
+                Coded deviation reason. Self-owned CodedValue; default @context is this schema's
+                context.jsonld and @type is DeviationReasonCode. Members use referral-facing names
+                (e.g. PATIENT_CANCELLED, REFERRAL_LAPSED, CC_UNAVAILABLE) plus the health-only
+                CONSENT_WITHDRAWN and ELIGIBILITY_EXPIRED; each non-health-only member maps to its
+                generic ServiceCoordination code via skos:exactMatch. A network may override
+                @context to publish its own vocabulary.
+              x-jsonld-id: "hrf:dv_reasonCode"
+            detectedBy:
+              type: string
+              description: Network participant ID that detected the deviation
+              x-jsonld-id: "hrf:dv_detectedBy"
+            detectedAt:
+              type: string
+              format: date-time
+              description: Timestamp the deviation was detected (ISO 8601)
+              x-jsonld-id: "hrf:dv_detectedAt"
+            note:
+              type: string
+              maxLength: 500
+              description: Human-readable note describing the deviation
+              x-jsonld-id: "hrf:dv_note"
+
+    ConsentClass:
+      description: >
+        Typed code for ConsentClass. @type is fixed (const) to ConsentClass; @context defaults to this
+        pack's context.jsonld and may be overridden by the emitting network to point at its
+        own vocabulary. `code` is a member of that vocabulary. Detecting an unaccepted code
+        system is a network edge rule, not a schema constraint.
+      allOf:
+        - $ref: "https://schema.beckn.io/CodedValue/v2.1/attributes.yaml#/components/schemas/CodedValue"
+        - type: object
+          properties:
+            "@type":
+              const: "ConsentClass"
+            "@context":
+              type: string
+              format: uri
+              default: "https://schema.beckn.io/HealthReferral/v2.1/context.jsonld"
+
+    Specialty:
+      description: >
+        Typed code for Specialty. @type is fixed (const) to Specialty; @context defaults to this
+        pack's context.jsonld and may be overridden by the emitting network to point at its
+        own vocabulary. `code` is a member of that vocabulary. Detecting an unaccepted code
+        system is a network edge rule, not a schema constraint.
+      allOf:
+        - $ref: "https://schema.beckn.io/CodedValue/v2.1/attributes.yaml#/components/schemas/CodedValue"
+        - type: object
+          properties:
+            "@type":
+              const: "Specialty"
+            "@context":
+              type: string
+              format: uri
+              default: "https://schema.beckn.io/HealthReferral/v2.1/context.jsonld"
+
+    SubSpecialty:
+      description: >
+        Typed code for SubSpecialty. @type is fixed (const) to SubSpecialty; @context defaults to this
+        pack's context.jsonld and may be overridden by the emitting network to point at its
+        own vocabulary. `code` is a member of that vocabulary. Detecting an unaccepted code
+        system is a network edge rule, not a schema constraint.
+      allOf:
+        - $ref: "https://schema.beckn.io/CodedValue/v2.1/attributes.yaml#/components/schemas/CodedValue"
+        - type: object
+          properties:
+            "@type":
+              const: "SubSpecialty"
+            "@context":
+              type: string
+              format: uri
+              default: "https://schema.beckn.io/HealthReferral/v2.1/context.jsonld"

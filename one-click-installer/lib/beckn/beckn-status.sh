@@ -67,5 +67,6 @@ cat <<IDS
    Spice: $( [ "$BECKN_SPICE_CONFIGURED" = true ] && echo "$BECKN_SPICE_BAP_ID / ${BECKN_SPICE_BPP_ID:-?}" || echo "not configured — placeholder ids; referral legs $BECKN_REFERRALS_ENABLED" )
    Network id (context.networkId; the adapters accept its members only): ${BECKN_NETWORK_ID:-(not set)}
    Schema base URL (the same for every participant): $BECKN_SCHEMA_BASE_URL
+   HIE redaction (BECKN_OPENHIM_REDACTION_ENABLED): $( [ "${BECKN_OPENHIM_REDACTION_ENABLED:-false}" = false ] && echo "OFF — full clinical payloads go to CCE" || echo "on")
 IDS
 [ "$BAD" = 0 ] && echo && echo "OK" || { echo; echo "Problems above."; exit 1; }

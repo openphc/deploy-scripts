@@ -1,0 +1,142 @@
+openapi: 3.1.1
+$id: "https://schema.beckn.io/HealthParticipant/v2.1/attributes.yaml"
+info:
+  title: HealthParticipant Schema
+  version: "2.1.0"
+  description: >
+    Participant-level attributes for individuals and organisations involved in a
+    health service engagement. Covers patients, field workers,
+    specialists, payers, and implementing agencies. Extends ServiceParticipant to
+    inherit credentialRefs for runtime credential proof.
+  x-beckn-container: participantAttributes
+
+components:
+  schemas:
+    HealthParticipant:
+      type: object
+      x-beckn-container: participantAttributes
+      x-status: under-review
+      x-tags:
+        - health
+        - health-service
+        - participant
+      x-jsonld:
+        "@context": "https://schema.beckn.io/HealthParticipant/v2.1/context.jsonld"
+        "@type": "hpa:HealthParticipant"
+      allOf:
+        - $ref: "https://schema.beckn.io/ServiceParticipant/v2.1/attributes.yaml#/components/schemas/ServiceParticipant"
+        - type: object
+          required:
+            - participantRole
+          properties:
+            participantRole:
+              type: string
+              enum:
+                - PATIENT
+                - CARE_GIVER
+                - SPECIALIST
+                - GENERAL_PRACTITIONER
+                - FIELD_WORKER
+                - PAYER
+                - IMPLEMENTING_AGENCY
+                - CARE_COORDINATOR
+              description: >
+                Role of this participant in the health service engagement.
+                PATIENT: the individual receiving the service.
+                CARE_GIVER: guardian or carer acting on behalf of the patient.
+                SPECIALIST: licensed specialist practitioner delivering the service.
+                GENERAL_PRACTITIONER: general / primary-care physician (e.g. the
+                referring practitioner); no specialist accreditation required.
+                FIELD_WORKER: community health worker or field facilitator.
+                PAYER: entity bearing the cost (individual or organisational).
+                IMPLEMENTING_AGENCY: organisation that procured the service capacity.
+                CARE_COORDINATOR: care coordinator addressing the referral-coordination
+                transaction (T1). Observers ride the existing FIELD_WORKER role.
+              x-jsonld-id: "hpa:participantRole"
+            healthIds:
+              type: array
+              description: >
+                Health-sector identifiers for this participant. An array of {system, value}
+                pairs covering any health registry, not limited to national bodies.
+                Examples by role:
+                  PATIENT — ABHA (India), NHS number (UK), MRN (facility-issued)
+                  SPECIALIST — NMC registration (India), NPI (USA), GMC number (UK)
+                  FIELD_WORKER — community health worker ID, State Health Worker ID
+                  PAYER — TPA ID, insurer registration, scheme code (e.g. PMJAY)
+                  IMPLEMENTING_AGENCY — NGO registration, HFR facility ID
+                The `system` field names the issuing registry; agreed values are
+                deployment-specific.
+              items:
+                type: object
+                required:
+                  - system
+                  - value
+                properties:
+                  system:
+                    type: string
+                    description: >
+                      Name of the issuing registry or identifier system.
+                      Examples: ABHA, NMC, HFR, NPI, GMC, NHS, CHW-ID, State-HID,
+                      PMJAY, IRDAI, TPA-REG, NGO-REG
+                    example: "ABHA"
+                  value:
+                    type: string
+                    description: The identifier value within the named system
+                    example: "12-3456-7890-1234"
+              x-jsonld-id: "hpa:healthIds"
+            dateOfBirth:
+              type: string
+              format: date
+              description: Date of birth of the participant (ISO 8601). Applicable to PATIENT role.
+              x-jsonld-id: "hpa:dateOfBirth"
+            gender:
+              type: string
+              enum:
+                - MALE
+                - FEMALE
+                - OTHER
+                - PREFER_NOT_TO_SAY
+              description: Gender of the participant. Applicable to PATIENT role.
+              x-jsonld-id: "hpa:gender"
+            primaryLanguage:
+              type: string
+              description: >
+                Primary language of the participant as a BCP 47 language tag (e.g. en, hi, kn).
+                Applicable to all roles; particularly used for FIELD_WORKER to route
+                AI-generated reports and instructions to the correct language version.
+              x-jsonld-id: "hpa:primaryLanguage"
+            specialistAccreditation:
+              type: object
+              description: >
+                Professional accreditation details for the practitioner. Required when
+                participantRole is SPECIALIST. Provides structured, query-friendly
+                credential metadata for the contract record, complementing any W3C VC
+                in credentialRefs which serves as the runtime cryptographic proof.
+              x-jsonld-id: "hpa:specialistAccreditation"
+              required:
+                - accreditationBody
+                - registrationNumber
+                - specialty
+              properties:
+                accreditationBody:
+                  type: string
+                  description: Name of the licensing or accreditation body (e.g. NMC, MCI, AERB, GMC)
+                registrationNumber:
+                  type: string
+                  description: Professional registration or licence number
+                specialty:
+                  type: string
+                  description: Clinical specialty (e.g. Pulmonology, Radiology, General Medicine)
+                validUntil:
+                  type: string
+                  format: date
+                  description: Expiry date of the registration or licence (ISO 8601)
+
+          # Role-based conditional requirements
+          allOf:
+            - if:
+                properties:
+                  participantRole:
+                    const: SPECIALIST
+              then:
+                required: [specialistAccreditation]

@@ -1,0 +1,90 @@
+openapi: 3.1.1
+$id: "https://schema.beckn.io/HealthOffer/v2.1/attributes.yaml"
+info:
+  title: HealthOffer Schema
+  version: "2.1.0"
+  description: >
+    Offer-level attributes for a health service.
+    Extends ServiceOffer/v2.1 with health service type discriminator and
+    health-specific offer types (SINGLE_EVENT, BULK_PROCUREMENT, CAMP).
+    Inherited base fields (minimumQuantity, maximumQuantity, requiresAdvanceBooking,
+    bulkDiscountAvailable, eligibilityCriteria, validityPeriodDays, cancellationPolicies)
+    come from ServiceOffer/v2.1.
+  x-beckn-container: offerAttributes
+
+components:
+  schemas:
+    HealthOffer:
+      type: object
+      x-beckn-container: offerAttributes
+      x-status: under-review
+      x-tags:
+        - health
+        - health-service
+        - offer
+      x-beckn-extends: "https://schema.beckn.io/ServiceOffer/v2.1/attributes.yaml#/components/schemas/ServiceOffer"
+      x-jsonld:
+        "@context": "https://schema.beckn.io/HealthOffer/v2.1/context.jsonld"
+        "@type": "hof:HealthOffer"
+      allOf:
+        - $ref: "https://schema.beckn.io/ServiceOffer/v2.1/attributes.yaml#/components/schemas/ServiceOffer"
+      required:
+        - healthServiceType
+        - offerType
+      properties:
+        healthServiceType:
+          type: string
+          enum:
+            - DIAGNOSTIC_ANALYTICS
+            - TELECONSULTATION
+            - PHYSICAL_CONSULTATION
+            - RADIOLOGY
+            - LAB_TEST
+            - PHARMACY_DISPENSING
+          description: Health service type this offer is for
+          x-jsonld-id: "hof:healthServiceType"
+        offerType:
+          type: string
+          enum:
+            - SINGLE_EVENT
+            - BULK_PROCUREMENT
+            - CAMP
+          description: >
+            Type of offer.
+            SINGLE_EVENT: one engagement for one patient (UC1 pay-at-counter).
+            BULK_PROCUREMENT: pre-purchase of multiple units by an implementing agency (UC0).
+            CAMP: fixed-date multi-patient camp engagement (UC2).
+          x-jsonld-id: "hof:offerType"
+        outcomeCommitment:
+          type: object
+          description: >
+            The provider's declared outcome SLA for referred/booked patients. Optional in
+            schema. "Mandatory for participation" is enforced by network publish-time
+            policy or a conditional rule, NOT by unconditional required (matching the
+            pack's treatment of analyticsEngineSpecs / clinicalValidation). Surfaced into
+            the T1 recommendedTargetRef.termsSnapshot at Discover 1.
+          x-jsonld-id: "hof:outcomeCommitment"
+          properties:
+            attendanceToOutcomeSlaHours:
+              type: integer
+              minimum: 0
+              description: Hours within which the structured outcome note is delivered after attendance
+              x-jsonld-id: "hof:attendanceToOutcomeSlaHours"
+            outcomeNoteFormatStandard:
+              type: string
+              description: Standard the outcome note conforms to (e.g. "FHIR/DiagnosticReport")
+              x-jsonld-id: "hof:outcomeNoteFormatStandard"
+            mandatory:
+              type: boolean
+              description: >
+                Whether the provider declares the outcome commitment as mandatory for
+                participation. Informational declaration only — not a schema constraint.
+              x-jsonld-id: "hof:outcomeCommitmentMandatory"
+
+      # BULK_PROCUREMENT offers must specify minimum and maximum quantity and validity
+      if:
+        properties:
+          offerType:
+            const: BULK_PROCUREMENT
+      then:
+        required: [minimumQuantity, maximumQuantity, validityPeriodDays]

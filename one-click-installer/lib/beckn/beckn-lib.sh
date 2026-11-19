@@ -67,6 +67,16 @@ beckn_defaults() {
   _beckn_default BECKN_SCHEMA_ALLOWED_DOMAINS "beckn.org,raw.githubusercontent.com,schema.beckn.io"
   _beckn_default BECKN_ONIX_LOG_LEVEL info
   _beckn_default BECKN_REFERRALS_ENABLED false
+  # Health referrals from Spice (select / init / confirm): the OpenMRS identifier type for each patient health id system,
+  # as SYSTEM=type pairs separated by ";". Default NID=national-id: Spice sends the patient's national id as system NID,
+  # and stored as national-id it is the id the OpenMRS emitter puts on events to CCE (the patient id CCE knows from
+  # Spice's own events). A system without a pair is used as the type name (OpenMRS creates it).
+  _beckn_default BECKN_HEALTH_ID_TYPES "NID=national-id"
+  # The HIE adaptor's clinical-data redaction (REDACTION_ENABLED). Off by default: the protocol triggers read free text
+  # that redaction removes (the RMNCH referral steps read ServiceRequest.patientInstruction / orderDetail and the
+  # Encounter source-referral-order extension), so full payloads, patient data included, go to CCE. true removes
+  # clinical content (values, free text, Encounter extensions, ...) before an event goes to CCE.
+  _beckn_default BECKN_OPENHIM_REDACTION_ENABLED false
   # The network this deployment belongs to: <namespace>/<registry> of the network's membership registry. It is sent as
   # context.networkId by every service, and each adapter accepts only subscribers that are members of it (allowedNetworkIDs;
   # BECKN_ALLOWED_NETWORK_IDS, comma-separated, to accept more than one network). Empty = no networkId, no membership check.
@@ -121,6 +131,7 @@ beckn_validate() {
     [ -n "${!k:-}" ] || { echo "CONFIG: $k is required (a neighbour of a component in BECKN_COMPONENTS; set it, or that participant's BECKN_*_HOST)" >&2; bad=1; }
   done
   case "${BECKN_REFERRALS_ENABLED:-false}" in true|false) ;; *) echo "CONFIG: BECKN_REFERRALS_ENABLED must be true or false" >&2; bad=1;; esac
+  case "${BECKN_OPENHIM_REDACTION_ENABLED:-false}" in true|false) ;; *) echo "CONFIG: BECKN_OPENHIM_REDACTION_ENABLED must be true or false" >&2; bad=1;; esac
   if [ "${BECKN_REFERRALS_ENABLED:-false}" = true ] && beckn_hosted openmrs; then
     for k in BECKN_SPICE_BAP_URI BECKN_SPICE_BPP_ID BECKN_SPICE_BPP_URI BECKN_SPICE_FACILITY_CODES; do
       [ -n "${!k:-}" ] || { echo "CONFIG: $k is required with BECKN_REFERRALS_ENABLED=true" >&2; bad=1; }

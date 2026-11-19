@@ -1,0 +1,215 @@
+openapi: 3.1.1
+$id: "https://schema.beckn.io/HealthContract/v2.1/attributes.yaml"
+info:
+  title: HealthContract Schema
+  version: "2.1.0"
+  description: >
+    Contract-level attributes for a health service engagement.
+    Extends ServiceContract/v2.1 with health service type discriminator, camp linkage,
+    patient input artifact references, and structured patient consent sub-object.
+    Inherited base fields (bookingChannel, clientNotes, cancellationReason,
+    facilitatorId, reminderSentAt) come from ServiceContract/v2.1.
+  x-beckn-container: contractAttributes
+
+components:
+  schemas:
+    HealthContract:
+      type: object
+      x-beckn-container: contractAttributes
+      x-status: under-review
+      x-tags:
+        - health
+        - health-service
+        - contract
+      x-beckn-extends: "https://schema.beckn.io/ServiceContract/v2.1/attributes.yaml#/components/schemas/ServiceContract"
+      x-jsonld:
+        "@context": "https://schema.beckn.io/HealthContract/v2.1/context.jsonld"
+        "@type": "hct:HealthContract"
+      allOf:
+        - $ref: "https://schema.beckn.io/ServiceContract/v2.1/attributes.yaml#/components/schemas/ServiceContract"
+        # Referral wiring: when this booking is the downstream (T2) leg of a referral
+        # (coordinationRef present), the declared consent must be carried so the
+        # referred provider sees the consent basis at booking. Enforced conditionally
+        # (never unconditional required) to keep non-referral UC0/1/2 contracts valid.
+        - if:
+            required: [coordinationRef]
+          then:
+            required: [consent]
+      required:
+        - healthServiceType
+      properties:
+        coordinationRef:
+          type: string
+          description: >
+            Pointer to the T1 HealthReferral id (= Referral ID) this booking fulfils.
+            Present only on the downstream (T2) booking of a referral. A pointer only —
+            never the embedded T1 object (privacy / single source of truth).
+          x-jsonld-id: "hct:coordinationRef"
+        healthServiceType:
+          type: string
+          enum:
+            - DIAGNOSTIC_ANALYTICS
+            - TELECONSULTATION
+            - PHYSICAL_CONSULTATION
+            - RADIOLOGY
+            - LAB_TEST
+            - PHARMACY_DISPENSING
+          description: >
+            Discriminator identifying the category of health service being contracted.
+            Drives conditional mandatory field rules across HealthResource, HealthPerformance,
+            and HealthConsideration schemas.
+          x-jsonld-id: "hct:healthServiceType"
+        campId:
+          type: string
+          description: >
+            ID of the camp engagement this contract belongs to. Present only for
+            UC2 camp consumption contracts linking to a camp-commitment entitlement.
+          x-jsonld-id: "hct:campId"
+        artifactAccessEndpoint:
+          type: string
+          format: uri
+          description: >
+            Provider-issued URI returned in on_select.contractAttributes. Semantics
+            vary by healthServiceType: for DIAGNOSTIC_ANALYTICS and RADIOLOGY it is
+            the upload target to which the Seeker NP POSTs clinical input artifacts
+            (e.g. cough audio for AI cough analysis, imaging files for radiology interpretation)
+            before or during the init cycle; for TELECONSULTATION it carries the video
+            session join URL issued by the provider platform, which the Seeker NP
+            surfaces to the patient at the scheduled time. If absent, the Seeker NP
+            may supply PHR-sourced artifact references directly via inputArtifacts[].
+          x-jsonld-id: "hct:artifactAccessEndpoint"
+        inputArtifacts:
+          type: array
+          description: >
+            References to patient input artifacts (audio samples, imaging files,
+            prior reports, prescriptions) that the Provider NP needs to retrieve
+            and process for this engagement. Each entry labels a Document in the
+            Contract's Descriptor.docs[] array. Submitted at confirm or via update
+            after confirm if the artifact is captured post-booking.
+          x-jsonld-id: "hct:inputArtifacts"
+          items:
+            type: object
+            required:
+              - artifactRef
+              - artifactType
+            properties:
+              artifactRef:
+                type: string
+                description: Label of the Document in Descriptor.docs[] containing the input artifact
+                x-jsonld-id: "hct:artifactRef"
+              artifactType:
+                type: string
+                enum:
+                  - AUDIO_SAMPLE
+                  - IMAGING_SCAN
+                  - LAB_REPORT
+                  - PRESCRIPTION
+                  - REFERRAL
+                  - PHOTO
+                  - OTHER
+                description: Type of clinical input artifact
+                x-jsonld-id: "hct:artifactType"
+              mimeType:
+                type: string
+                description: Expected MIME type of the artifact (e.g. "audio/wav", "image/dicom")
+                x-jsonld-id: "hct:mimeType"
+              sourceCoordinationRef:
+                type: string
+                description: >
+                  Referral (T1) id this artifact was handed over from. Present when the
+                  artifact is the receiving side of a referral handover — the T2 provider
+                  retrieves the referral note via this pointer. Optional.
+                x-jsonld-id: "hct:sourceCoordinationRef"
+              accessWindowEnd:
+                type: string
+                format: date-time
+                description: >
+                  End of the bounded access window during which the T2 provider may fetch
+                  this handed-over artifact (ISO 8601). Optional.
+                x-jsonld-id: "hct:artifactAccessWindowEnd"
+              revocationStatus:
+                type: string
+                enum:
+                  - ACTIVE
+                  - REVOKED
+                description: >
+                  Whether access to this handed-over artifact is currently active or
+                  revoked. Optional access metadata layered on the reference.
+                x-jsonld-id: "hct:artifactRevocationStatus"
+        consent:
+          type: object
+          description: >
+            Patient consent artifact metadata. Required when healthServiceType is
+            DIAGNOSTIC_ANALYTICS. Optional for other service types where explicit
+            structured consent is captured.
+          x-jsonld-id: "hct:consent"
+          required:
+            - consentDocRef
+            - consentId
+            - consentStandard
+            - consentedAt
+            - purposeOfCollection
+          properties:
+            consentClass:
+              $ref: "https://schema.beckn.io/CodedValue/v2.1/attributes.yaml#/components/schemas/CodedValue"
+              description: >
+                Declared consent basis class (self-owned CodedValue; members A / B / C as
+                defined by HealthReferral). Optional — carried on T2 so the referred
+                provider sees the consent basis declared at booking.
+              x-jsonld-id: "hct:consentClass"
+            consentDocRef:
+              type: string
+              description: >
+                Label of the consent Document in the Contract's Descriptor.docs[] array.
+                References the signed consent artifact (PDF, form, etc.).
+              x-jsonld-id: "hct:consentDocRef"
+            consentId:
+              type: string
+              format: uuid
+              description: Globally unique identifier for this consent artifact
+              x-jsonld-id: "hct:consentId"
+            patientParticipantId:
+              type: string
+              description: Beckn Participant ID of the patient giving or for whom consent is given
+              x-jsonld-id: "hct:patientParticipantId"
+            consentStandard:
+              type: string
+              description: >
+                Standard or specification governing the consent format
+                (e.g. "HealthConsent/v1", "DISHA/v1").
+              x-jsonld-id: "hct:consentStandard"
+            consentedAt:
+              type: string
+              format: date-time
+              description: Timestamp when consent was given (ISO 8601)
+              x-jsonld-id: "hct:consentedAt"
+            consentedBy:
+              type: string
+              description: >
+                ID of the person who recorded or witnessed the consent.
+                May be the patient (self-consent) or a field worker (FLW-mediated consent).
+              x-jsonld-id: "hct:consentedBy"
+            purposeOfCollection:
+              type: array
+              items:
+                type: string
+              description: >
+                Purposes for which patient data and samples are collected
+                (e.g. ["DIAGNOSTIC", "QUALITY_ASSURANCE", "ANONYMISED_RESEARCH"]).
+              x-jsonld-id: "hct:purposeOfCollection"
+            dataRetentionDays:
+              type: integer
+              minimum: 0
+              description: >
+                Days the provider may retain raw patient data after service delivery.
+                0 means deletion immediately upon report generation.
+              x-jsonld-id: "hct:dataRetentionDays"
+            withdrawnAt:
+              type: string
+              format: date-time
+              description: >
+                Timestamp if the patient subsequently withdrew consent (ISO 8601).
+                Presence triggers deletion attestation obligations in HealthPerformance.
+              x-jsonld-id: "hct:withdrawnAt"
+
+

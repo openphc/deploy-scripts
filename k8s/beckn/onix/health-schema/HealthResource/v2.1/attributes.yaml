@@ -1,0 +1,164 @@
+openapi: 3.1.1
+$id: "https://schema.beckn.io/HealthResource/v2.1/attributes.yaml"
+info:
+  title: HealthResource Schema
+  version: "2.1.0"
+  description: >
+    Resource-level attributes for a health service provider.
+    Extends ServiceResource/v2.1 with health-specific clinical delivery unit,
+    clinical validation, service prerequisites, and AI analytics engine specs.
+    Inherited base fields (serviceUnit, coverageArea, capacityPerDay, capacityPerWeek,
+    availabilitySchedule, availabilityRecurrenceRule, minimumBookingAdvanceHours,
+    languagesSupported) come from ServiceResource/v2.1.
+  x-beckn-container: resourceAttributes
+
+components:
+  schemas:
+    HealthResource:
+      type: object
+      x-beckn-container: resourceAttributes
+      x-status: under-review
+      x-tags:
+        - health
+        - health-service
+        - resource
+      x-beckn-extends: "https://schema.beckn.io/ServiceResource/v2.1/attributes.yaml#/components/schemas/ServiceResource"
+      x-jsonld:
+        "@context": "https://schema.beckn.io/HealthResource/v2.1/context.jsonld"
+        "@type": "hr:HealthResource"
+      allOf:
+        - $ref: "https://schema.beckn.io/ServiceResource/v2.1/attributes.yaml#/components/schemas/ServiceResource"
+      required:
+        - healthServiceType
+      properties:
+        healthServiceType:
+          type: string
+          enum:
+            - DIAGNOSTIC_ANALYTICS
+            - TELECONSULTATION
+            - PHYSICAL_CONSULTATION
+            - RADIOLOGY
+            - LAB_TEST
+            - PHARMACY_DISPENSING
+          description: >
+            Health service type this resource delivers. Acts as discriminator —
+            drives conditional mandatory field rules for clinicalValidation and
+            analyticsEngineSpecs.
+          x-jsonld-id: "hr:healthServiceType"
+        clinicalDeliveryUnit:
+          type: string
+          enum:
+            - ANALYSIS
+            - CONSULTATION
+            - SCREENING
+            - REPORT
+            - SESSION
+            - TEST
+          description: >
+            Clinical modality of service delivery.
+            ANALYSIS: AI or automated analytical output (DIAGNOSTIC_ANALYTICS).
+            CONSULTATION: practitioner consultation (TELECONSULTATION, PHYSICAL_CONSULTATION).
+            SCREENING: systematic multi-patient screening (RADIOLOGY, LAB_TEST, camp).
+            REPORT: interpreted report delivery (RADIOLOGY).
+            SESSION: time-bounded service session.
+            TEST: laboratory or pathology test (LAB_TEST).
+          x-jsonld-id: "hr:clinicalDeliveryUnit"
+        acceptedSchemes:
+          type: array
+          description: >
+            Government / insurance schemes this resource accepts (externally governed
+            CodedValue, e.g. PMJAY / state scheme authority). Filterable at Discover 1
+            so a referrer or coordinator can target providers honouring the patient's scheme.
+            Optional.
+          x-jsonld-id: "hr:acceptedSchemes"
+          items:
+            $ref: "https://schema.beckn.io/CodedValue/v2.1/attributes.yaml#/components/schemas/CodedValue"
+        clinicalValidation:
+          type: object
+          description: >
+            Professional accreditation or regulatory validation of this resource.
+            Required by network policy when healthServiceType is DIAGNOSTIC_ANALYTICS.
+            Applicable to all health service types where the resource is a practitioner
+            or regulated analytical service.
+          x-jsonld-id: "hr:clinicalValidation"
+          properties:
+            accreditationBody:
+              type: string
+              description: Name of the licensing or accreditation body (e.g. NMC, NABL, AERB, CDSCO)
+            registrationNumber:
+              type: string
+              description: Registration or licence number
+            specialty:
+              type: string
+              description: Clinical specialty or service category (e.g. Pulmonology, Radiology, AI Diagnostics)
+            validUntil:
+              type: string
+              format: date
+              description: Expiry of accreditation or licence (ISO 8601)
+        servicePrerequisites:
+          type: array
+          description: >
+            Prerequisites a patient or client must satisfy to avail this service.
+            Health-generic: applies to all service types (device requirements for
+            teleconsultation, fasting requirements for lab tests, audio samples for
+            AI cough analysis, prior referral for physical consultation, etc.)
+          x-jsonld-id: "hr:servicePrerequisites"
+          items:
+            type: object
+            required:
+              - prerequisiteType
+              - description
+            properties:
+              prerequisiteType:
+                type: string
+                enum:
+                  - DEVICE
+                  - DOCUMENT
+                  - PHYSICAL_CONDITION
+                  - SAMPLE
+                  - REFERRAL
+                  - OTHER
+                description: >
+                  Category of prerequisite.
+                  DEVICE: hardware or connectivity needed (e.g. smartphone with microphone).
+                  DOCUMENT: document to bring or upload (e.g. prior prescription, ID).
+                  PHYSICAL_CONDITION: patient state required (e.g. fasting for 8 hours).
+                  SAMPLE: biological sample to provide (e.g. cough audio, blood sample).
+                  REFERRAL: referral letter or prior authorisation required.
+                  OTHER: any other prerequisite.
+              description:
+                type: string
+                description: Human-readable description of the prerequisite
+              mandatory:
+                type: boolean
+                description: Whether this prerequisite is mandatory (true) or recommended (false)
+        analyticsEngineSpecs:
+          type: object
+          description: >
+            Specifications of the AI or automated analytical engine.
+            Required by network policy when healthServiceType is DIAGNOSTIC_ANALYTICS.
+          x-jsonld-id: "hr:analyticsEngineSpecs"
+          properties:
+            modelName:
+              type: string
+              description: Name or identifier of the analytical model (e.g. "CoughAI-v2", "RetinalNet-v3")
+            modelVersion:
+              type: string
+              description: Version of the model
+            confidenceThreshold:
+              type: number
+              minimum: 0
+              maximum: 1
+              description: Minimum confidence score above which the model's output is considered reportable
+            supportedInputFormats:
+              type: array
+              items:
+                type: string
+              description: Accepted input media types (e.g. ["audio/wav", "audio/mp4", "audio/mpeg"])
+            regulatoryApproval:
+              type: string
+              description: Regulatory approval reference (e.g. CDSCO device registration number)
+
+      # NOTE: When healthServiceType = DIAGNOSTIC_ANALYTICS, both analyticsEngineSpecs
+      # and clinicalValidation are required by network policy. Enforced at publish-time
+      # by network validators; omitted here to maintain example portability.

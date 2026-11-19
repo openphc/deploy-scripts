@@ -189,6 +189,8 @@ All in the environment's config file. `lib/load-config.sh` accepts any key that 
 | `BECKN_OPENMRS_HOST_DIR` | `/opt/openmrs` | node folder with OpenMRS's frontend site files |
 | `BECKN_ONIX_LOG_LEVEL` | `info` | `debug` prints message bodies, which hold patient data |
 | `BECKN_OPENHIM_FACILITY_FILTER_IDS` | empty | the HIE adaptor's facility filter; empty = every facility |
+| `BECKN_HEALTH_ID_TYPES` | `NID=national-id` | health referrals from Spice: the OpenMRS identifier type for each patient health id system (`SYSTEM=type`, `;`-separated). The default stores Spice's national id (system `NID`) as `national-id`, the id the OpenMRS emitter sends to CCE |
+| `BECKN_OPENHIM_REDACTION_ENABLED` | `false` | the HIE adaptor's clinical-data redaction (`REDACTION_ENABLED`). Off by default: full payloads, patient data included, go to CCE, because protocol triggers read free text redaction removes, e.g. the RMNCH referral steps (`ServiceRequest.patientInstruction` / `orderDetail`, the Encounter `source-referral-order` extension). `true` redacts, where no trigger needs that content |
 
 `IMAGE_REGISTRY` applies to the four images above as it does to the CCE services. The ONIX image
 (`fidedocker/onix-adapter:1.6.1`), OpenHIM, MongoDB, MariaDB and OpenMRS versions are fixed in the manifests.
