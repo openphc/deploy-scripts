@@ -355,10 +355,15 @@ without any, and the emitter sends events to the HIE only.
 
 - **Prometheus** does not scrape the Beckn services: the base config has a fixed target list, and the two extra
   namespaces are closed to it. The pods carry the usual `prometheus.io/*` annotations.
-- **Alerts from CCE to an HMIS** (`on_status`): `cce-beckn-service` is ready for them (`hmis.yml` lists the HIE, the
-  webhook secret exists), but no receiver-adaptor record is registered in the intelligence service, and the HIE adaptor
-  answers `on_status` with `NOT_SUPPORTED`. See the `cce-beckn-service` deployment guide, §6.
-- **One HIE entry in `hmis.yml`**, and one HMIS peer (Spice) for OpenMRS.
+- **Alerts from CCE to an HMIS** (`on_status`) go straight to that HMIS, not through the HIE (the HIE adaptor answers
+  `on_status` with `NOT_SUPPORTED`). `beckn-deploy.sh cce` builds `cce-beckn-service`'s `hmis.yml` (the HIE, OpenMRS
+  when its id is known, Spice once configured) and registers, in the intelligence service, one receiver adaptor and one
+  destination mapping per alert destination: `OPENMRS`, and `SPICE` once configured, each pointing at
+  `cce-beckn-service`'s `/v1/alerts`. A protocol action reaches them with `intelligence-destination` `OPENMRS` or
+  `SPICE`. Needs the `cce-beckn-service` build with per-alert transaction ids and the `stepStatus` alert schema: an older
+  image refuses the new `hmis.yml` at start, and every adapter's `CceCareAlert` schema must be the new one
+  (`BECKN_SCHEMA_DIR` or `BECKN_SCHEMA_REPO`).
+- **One HMIS peer (Spice) for OpenMRS.**
 - **A machine that hosts only `openhim` or `openmrs`** still needs `install.sh` to have run, for k3s, Traefik and
   Infisical.
 - **OpenHIM channel ports are not published.** Systems that post FHIR to an OpenHIM channel directly, as on the dev
