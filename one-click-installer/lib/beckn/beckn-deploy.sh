@@ -233,8 +233,15 @@ if not secret:
     print("intelligence alert routes: CCE_BECKN_ALERTS_WEBHOOK_SECRET is empty — skipped"); raise SystemExit(0)
 
 adaptors = {a["name"]: a for a in call("GET", "/v1/receiver-adaptors").get("data", [])}
-mappings = {m["destination"]: m for m in call("GET", "/v1/destination-adaptor-mappings").get("data", [])}
-for dest, bap_id in dests:
+# Listing the mappings fails in the intelligence service once one exists (it reads each mapping's adaptor outside a
+# transaction). Without the list, a mapping is created, and one that already exists is left as it is: it points at the
+# adaptor by id, and an existing adaptor keeps its id (it is updated in place below).
+try:
+    mappings = {m["destination"]: m for m in call("GET", "/v1/destination-adaptor-mappings").get("data", [])}
+except Exception:
+    mappings = None
+
+def route(dest, bap_id):
     name = "beckn-alerts-" + dest.lower()
     record = {
         "name": name,
@@ -250,12 +257,24 @@ for dest, bap_id in dests:
         adaptor = call("PUT", "/v1/receiver-adaptors/" + adaptors[name]["id"], record)["data"]
     else:
         adaptor = call("POST", "/v1/receiver-adaptors", {k: record[k] for k in ("name", "definition", "config")})["data"]
-    if dest in mappings:
+    if mappings is not None and dest in mappings:
         call("PUT", "/v1/destination-adaptor-mappings/" + mappings[dest]["id"],
              {"receiverAdaptorId": adaptor["id"], "status": "ACTIVE"})
-    else:
+    elif mappings is not None:
         call("POST", "/v1/destination-adaptor-mappings", {"destination": dest, "receiverAdaptorId": adaptor["id"]})
+    else:
+        try:
+            call("POST", "/v1/destination-adaptor-mappings", {"destination": dest, "receiverAdaptorId": adaptor["id"]})
+        except urllib.error.HTTPError:
+            pass                              # the mapping exists already (destination is unique)
     print(f"intelligence alert route: {dest} -> cce-beckn-service /v1/alerts -> {bap_id}")
+
+# A failure here is reported, never fatal: the alert routes can be fixed and the deploy re-run.
+for dest, bap_id in dests:
+    try:
+        route(dest, bap_id)
+    except Exception as e:
+        print(f"WARNING intelligence alert route {dest}: {e}")
 if not dests:
     print("intelligence alert routes: no destination (OpenMRS id unknown, Spice not configured)")
 PY

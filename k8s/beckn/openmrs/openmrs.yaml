@@ -211,8 +211,9 @@ spec:
       containers:
         - name: frontend
           image: openmrs/openmrs-reference-application-3-frontend:3.6.0
-          # Splice the custom modules into the image's import map and routes registry, then start as the image does.
-          command: ["sh", "-c", "/docker-entrypoint.d/40-merge-custom-esms.sh; exec /usr/local/bin/startup.sh"]
+          # Splice the custom modules into the image's import map and routes registry, patch known bugs in the image's
+          # bundles, then start as the image does.
+          command: ["sh", "-c", "/docker-entrypoint.d/40-merge-custom-esms.sh; /docker-entrypoint.d/45-patch-core-esms.sh; exec /usr/local/bin/startup.sh"]
           ports:
             - containerPort: 80
           env:
@@ -228,6 +229,10 @@ spec:
             - name: scripts
               mountPath: /docker-entrypoint.d/40-merge-custom-esms.sh
               subPath: 40-merge-custom-esms.sh
+              readOnly: true
+            - name: scripts
+              mountPath: /docker-entrypoint.d/45-patch-core-esms.sh
+              subPath: 45-patch-core-esms.sh
               readOnly: true
             # No 1-year cache for /custom-esms/: those bundles keep their file names across rebuilds.
             - name: scripts

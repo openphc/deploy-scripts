@@ -12,6 +12,7 @@ configMapGenerator:
   - name: openmrs-frontend-scripts
     files:
       - frontend/40-merge-custom-esms.sh
+      - frontend/45-patch-core-esms.sh
       - frontend/nginx.conf
 generatorOptions:
   disableNameSuffixHash: true
