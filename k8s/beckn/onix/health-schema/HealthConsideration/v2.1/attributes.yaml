@@ -1,0 +1,45 @@
+openapi: 3.1.1
+$id: "https://schema.beckn.io/HealthConsideration/v2.1/attributes.yaml"
+info:
+  title: HealthConsideration Schema
+  version: "2.1.0"
+  description: >
+    Consideration (pricing and payment) attributes for a health service engagement.
+    Extends ServiceConsideration/v2.1, inheriting all base fields
+    (pricePerUnit, currency, totalAmount, discountRef, netAmount, paymentMethodsAccepted,
+    selectedPaymentMethod, transactionRef, payerArchetype, paymentSchedule,
+    paymentAuthorisation, entitlementRef) and the bifurcation rule.
+    Adds health-specific per-patient billing amount for UC2 camp engagements and
+    camp cash collection reference.
+  x-beckn-container: considerationAttributes
+
+components:
+  schemas:
+    HealthConsideration:
+      type: object
+      x-beckn-container: considerationAttributes
+      x-status: under-review
+      x-tags:
+        - health
+        - health-service
+        - consideration
+      x-beckn-extends: "https://schema.beckn.io/ServiceConsideration/v2.1/attributes.yaml#/components/schemas/ServiceConsideration"
+      x-jsonld:
+        "@context": "https://schema.beckn.io/HealthConsideration/v2.1/context.jsonld"
+        "@type": "hcn:HealthConsideration"
+      allOf:
+        - $ref: "https://schema.beckn.io/ServiceConsideration/v2.1/attributes.yaml#/components/schemas/ServiceConsideration"
+      properties:
+        perPatientAmount:
+          type: number
+          minimum: 0
+          description: >
+            Per-patient unit amount for camp (UC2) engagements where billing is
+            on a per-head basis. Used to calculate on-actuals adjustment at end of camp.
+          x-jsonld-id: "hcn:perPatientAmount"
+        campCashCollectionRef:
+          type: string
+          description: >
+            Reference to the field cash collection ledger for camp engagements where
+            patients pay individually at the camp venue (UC2 pay-at-counter within camp).
+          x-jsonld-id: "hcn:campCashCollectionRef"

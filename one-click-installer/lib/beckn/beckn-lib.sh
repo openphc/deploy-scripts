@@ -67,6 +67,9 @@ beckn_defaults() {
   _beckn_default BECKN_SCHEMA_ALLOWED_DOMAINS "beckn.org,raw.githubusercontent.com,schema.beckn.io"
   _beckn_default BECKN_ONIX_LOG_LEVEL info
   _beckn_default BECKN_REFERRALS_ENABLED false
+  # Health referrals from Spice (select / init / confirm): the OpenMRS identifier type for each patient health id system,
+  # as SYSTEM=type pairs, e.g. "ABHA=national-id". Empty = the system name is the type (OpenMRS creates it).
+  _beckn_default BECKN_HEALTH_ID_TYPES ""
   # The network this deployment belongs to: <namespace>/<registry> of the network's membership registry. It is sent as
   # context.networkId by every service, and each adapter accepts only subscribers that are members of it (allowedNetworkIDs;
   # BECKN_ALLOWED_NETWORK_IDS, comma-separated, to accept more than one network). Empty = no networkId, no membership check.

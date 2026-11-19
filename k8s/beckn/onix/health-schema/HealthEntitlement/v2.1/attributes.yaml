@@ -1,0 +1,84 @@
+openapi: 3.1.1
+$id: "https://schema.beckn.io/HealthEntitlement/v2.1/attributes.yaml"
+info:
+  title: HealthEntitlement Schema
+  version: "2.1.0"
+  description: >
+    Health-domain extension of ServiceEntitlement. Extends ServiceEntitlement/v2.1,
+    inheriting all base fields (entitlementId, issuerId, holderId, serviceScope,
+    totalCapacity, usedCapacity, remainingCapacity, validFrom, validUntil,
+    geographyScope, counterpartyScope, redemptionRules, refundRules, forfeitureRules,
+    lockedTermsSnapshot, grievanceRef, state).
+    Adds health service type scoping and an optional camp commitment sub-object
+    for UC2 multi-patient camp engagements.
+  x-beckn-container: contractAttributes
+
+components:
+  schemas:
+    HealthEntitlement:
+      type: object
+      x-beckn-container: contractAttributes
+      x-status: under-review
+      x-tags:
+        - health
+        - health-service
+        - contract
+      x-beckn-extends: "https://schema.beckn.io/ServiceEntitlement/v2.1/attributes.yaml#/components/schemas/ServiceEntitlement"
+      x-jsonld:
+        "@context": "https://schema.beckn.io/HealthEntitlement/v2.1/context.jsonld"
+        "@type": "he:HealthEntitlement"
+      allOf:
+        - $ref: "https://schema.beckn.io/ServiceEntitlement/v2.1/attributes.yaml#/components/schemas/ServiceEntitlement"
+      required:
+        - healthServiceType
+      properties:
+        healthServiceType:
+          type: string
+          enum:
+            - DIAGNOSTIC_ANALYTICS
+            - TELECONSULTATION
+            - PHYSICAL_CONSULTATION
+            - RADIOLOGY
+            - LAB_TEST
+            - PHARMACY_DISPENSING
+          description: Health service type this entitlement is scoped to
+          x-jsonld-id: "he:healthServiceType"
+        campCommitment:
+          type: object
+          description: >
+            Camp-specific commitment details. Present when this entitlement represents
+            a UC2 camp engagement rather than a bulk individual-service procurement.
+          x-jsonld-id: "he:campCommitment"
+          properties:
+            campId:
+              type: string
+              description: Unique identifier for this camp engagement
+              x-jsonld-id: "he:campId"
+            campDate:
+              type: string
+              format: date
+              description: Scheduled date of the camp (ISO 8601)
+              x-jsonld-id: "he:campDate"
+            campLocation:
+              type: string
+              description: Human-readable location of the camp (village, PHC, facility name)
+              x-jsonld-id: "he:campLocation"
+            committedPatients:
+              type: integer
+              minimum: 1
+              description: Number of patients the implementing agency has committed to bring
+              x-jsonld-id: "he:committedPatients"
+            confirmedPatients:
+              type: integer
+              minimum: 0
+              description: Actual number of patients who attended and received the service
+              x-jsonld-id: "he:confirmedPatients"
+            campStatus:
+              type: string
+              enum:
+                - SCHEDULED
+                - ACTIVE
+                - COMPLETED
+                - CANCELLED
+              description: Current lifecycle status of the camp
+              x-jsonld-id: "he:campStatus"

@@ -1,0 +1,130 @@
+openapi: 3.1.1
+$id: "https://raw.githubusercontent.com/beckn/DHP-Specs/main/devkit/stub/attributes.yaml"
+info:
+  title: DevKit CodedValue Validation Stub
+  version: "0.1.0"
+  description: >
+    TEMPORARY DevKit validation shim. Not a normative Beckn schema. One class per
+    CodedValue @type used in the referral reference flows, each exposing a single
+    `code` enum (vocab values + values used in the flows) plus an optional `display`.
+    Referenced only via the {{codedvalue_ctx}} Postman variable so DevKit can resolve
+    a context.jsonld->attributes.yaml sibling and validate the code value.
+components:
+  schemas:
+    ConsentClass:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "A"
+            - "B"
+            - "C"
+        display:
+          type: string
+    DeviationReasonCode:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "CC_UNAVAILABLE"
+            - "CONSENT_WITHDRAWN"
+            - "COORDINATOR_UNAVAILABLE"
+            - "ELIGIBILITY_EXPIRED"
+            - "LAPSED"
+            - "NO_SHOW"
+            - "PATIENT_CANCELLED"
+            - "PROVIDER_CANCELLED"
+            - "REFERRAL_LAPSED"
+            - "REFERRAL_REFUSED"
+            - "REFERRAL_REVOKED"
+            - "RESCHEDULED"
+            - "REVOKED"
+            - "SERVICE_FAILURE"
+            - "SLA_BREACHED"
+            - "SUBJECT_CANCELLED"
+            - "TARGET_REFUSED"
+        display:
+          type: string
+    LGDDistrict:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "507"
+            - "519"
+            - "521"
+            - "572"
+        display:
+          type: string
+    ReferralCategory:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "CLINICAL"
+            - "DIAGNOSTIC"
+            - "FINANCIAL"
+            - "SOCIAL_SUPPORT"
+        display:
+          type: string
+    Scheme:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "PMJAY"
+        display:
+          type: string
+    ServiceCategory:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "ADMISSION"
+            - "CONSULTATION"
+            - "INVESTIGATION"
+            - "PROCEDURE"
+        display:
+          type: string
+    Specialty:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "CARDIOLOGY"
+            - "NEPHROLOGY"
+            - "ONCOLOGY"
+            - "ORTHOPAEDICS"
+            - "PULMONOLOGY"
+        display:
+          type: string
+    SubSpecialty:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "ELECTROPHYSIOLOGY"
+            - "INTERVENTIONAL_CARDIOLOGY"
+        display:
+          type: string
+    TargetServiceType:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+            - "ADMISSION"
+            - "CONSULTATION"
+            - "DISPENSING"
+            - "INVESTIGATION"
+            - "PROCEDURE"
+        display:
+          type: string

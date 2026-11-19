@@ -1,0 +1,51 @@
+openapi: 3.1.1
+$id: "https://schema.beckn.io/HealthSettlement/v2.1/attributes.yaml"
+info:
+  title: HealthSettlement Schema
+  version: "2.1.0"
+  description: >
+    Settlement attributes for a health service engagement.
+    Extends ServiceSettlement/v2.1, inheriting all base fields (paymentReceivedByProvider,
+    paymentRecordedAt, receiptRef, paymentNotes, adjustmentType, adjustmentAmount,
+    adjustmentReason, adjustedAt, finalSettlementRef, disputeRef).
+    Adds health-specific entitlement traceability and camp cash ledger reference.
+  x-beckn-container: settlementAttributes
+
+components:
+  schemas:
+    HealthSettlement:
+      type: object
+      x-beckn-container: settlementAttributes
+      x-status: under-review
+      x-tags:
+        - health
+        - health-service
+        - settlement
+      x-beckn-extends: "https://schema.beckn.io/ServiceSettlement/v2.1/attributes.yaml#/components/schemas/ServiceSettlement"
+      x-jsonld:
+        "@context": "https://schema.beckn.io/HealthSettlement/v2.1/context.jsonld"
+        "@type": "hst:HealthSettlement"
+      allOf:
+        - $ref: "https://schema.beckn.io/ServiceSettlement/v2.1/attributes.yaml#/components/schemas/ServiceSettlement"
+      properties:
+        entitlementRef:
+          type: string
+          description: >
+            ID of the HealthEntitlement drawn against in this engagement.
+            Used to trace settlement back to the procurement contract and
+            trigger capacity credit-back calculations.
+          x-jsonld-id: "hst:entitlementRef"
+        entitlementCreditBack:
+          type: integer
+          minimum: 0
+          description: >
+            Number of entitlement capacity units credited back to the entitlement
+            after on-actuals reconciliation (e.g. 8 units credited back when only
+            42 of 50 committed camp patients were seen).
+          x-jsonld-id: "hst:entitlementCreditBack"
+        campLedgerRef:
+          type: string
+          description: >
+            Reference to the end-of-camp cash collection ledger for UC2 engagements
+            where individual patient payments were collected at the venue.
+          x-jsonld-id: "hst:campLedgerRef"

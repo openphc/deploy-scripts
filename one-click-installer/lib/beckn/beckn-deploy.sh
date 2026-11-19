@@ -5,7 +5,8 @@
 # What it does, in the component's namespace:
 #   1. Secret onix-config     the adapter's two configs + four routing files, rendered from k8s/beckn/onix/config/ with this
 #                             participant's ids, keys, timeouts and webhook addresses
-#   2. ConfigMap onix-schema  the extra schema folders (BECKN_SCHEMA_DIR), one key per file, "/" written "__"
+#   2. ConfigMap onix-schema  the extra schema folders, one key per file, "/" written "__": the CCE schemas (BECKN_SCHEMA_DIR)
+#                             and the Health* referral pack in k8s/beckn/onix/health-schema (schema.beckn.io no longer serves it)
 #   3. kubectl apply          k8s/beckn/<component> rendered with kustomize, ${VARS} filled with envsubst
 #   4. host aliases           on the two onix pods: the public Beckn hosts that live on THIS machine -> Traefik's ClusterIP
 #                             (a pod cannot reach the machine's own public address)
@@ -74,7 +75,7 @@ export BECKN_REFERRALS_OUT_CONTRACT_ID="${BECKN_REFERRALS_OUT_CONTRACT_ID:-}" BE
 
 # Every ${VAR} a file references must have a value, or it would render as "" and fail later, far from the cause. The
 # few that may be empty are listed.
-OPTIONAL=" BECKN_NETWORK_ID BECKN_ALLOWED_NETWORK_IDS BECKN_OPENHIM_FACILITY_FILTER_IDS BECKN_SPICE_BPP_ID BECKN_SPICE_BPP_URI BECKN_SPICE_FACILITY_CODES BECKN_REFERRALS_OUT_CONTRACT_ID BECKN_REFERRALS_OUT_TRANSACTION_ID BECKN_CONFIG_HASH ONIX_CONFIG_HASH "
+OPTIONAL=" BECKN_NETWORK_ID BECKN_ALLOWED_NETWORK_IDS BECKN_OPENHIM_FACILITY_FILTER_IDS BECKN_SPICE_BPP_ID BECKN_SPICE_BPP_URI BECKN_SPICE_FACILITY_CODES BECKN_REFERRALS_OUT_CONTRACT_ID BECKN_REFERRALS_OUT_TRANSACTION_ID BECKN_HEALTH_ID_TYPES BECKN_CONFIG_HASH ONIX_CONFIG_HASH "
 check_vars() {   # <file...> -> prints the envsubst variable list; exits if a non-optional one is empty
   local v missing=() list=""
   for v in $(grep -ho '\${[A-Z_0-9]*}' "$@" | tr -d '${}' | sort -u); do
@@ -98,12 +99,19 @@ for f in "$REPO"/k8s/beckn/onix/config/*.yaml; do envsubst "$VARS" < "$f" > "$TM
 export ONIX_CONFIG_HASH; ONIX_CONFIG_HASH="$(cat "$TMP"/onix/*.yaml | sha256sum | cut -c1-16)"
 
 # ── 2. schema folders -> ConfigMap onix-schema ───────────────────────────────────────────────────────────────────────────
-SCHEMA_ARGS=(); n=0
-while IFS= read -r f; do
-  rel="${f#"$BECKN_SCHEMA_DIR"/}"; SCHEMA_ARGS+=("--from-file=${rel//\//__}=$f"); n=$((n + 1))
-done < <(find "$BECKN_SCHEMA_DIR" -mindepth 3 -maxdepth 3 -type f \( -name '*.yaml' -o -name '*.jsonld' -o -name '*.json' \) | sort)
+# The adapters load these at start (extendedSchema_localSchemaPath) and look a schema up as <Schema>/attributes.yaml, so a
+# folder name must appear once across both sources.
+HEALTH_SCHEMA_DIR="$REPO/k8s/beckn/onix/health-schema"
+SCHEMA_ARGS=(); n=0; SCHEMA_FILES=()
+for dir in "$BECKN_SCHEMA_DIR" "$HEALTH_SCHEMA_DIR"; do
+  while IFS= read -r f; do
+    rel="${f#"$dir"/}"; SCHEMA_ARGS+=("--from-file=${rel//\//__}=$f"); SCHEMA_FILES+=("$f"); n=$((n + 1))
+  done < <(find "$dir" -mindepth 3 -maxdepth 3 -type f \( -name '*.yaml' -o -name '*.jsonld' -o -name '*.json' \) | sort)
+done
 [ "$n" -gt 0 ] || { echo "ERROR: no schema files under $BECKN_SCHEMA_DIR (expected <Schema>/<version>/attributes.yaml and context.jsonld)"; exit 1; }
-SCHEMA_HASH="$(find "$BECKN_SCHEMA_DIR" -mindepth 3 -maxdepth 3 -type f | sort | xargs cat | sha256sum | cut -c1-8)"
+DUP="$(printf '%s\n' "${SCHEMA_ARGS[@]}" | sed 's/^--from-file=//; s/=.*//' | sort | uniq -d | head -1)"
+[ -z "$DUP" ] || { echo "ERROR: schema file $DUP is in both $BECKN_SCHEMA_DIR and $HEALTH_SCHEMA_DIR"; exit 1; }
+SCHEMA_HASH="$(cat "${SCHEMA_FILES[@]}" | sha256sum | cut -c1-8)"
 ONIX_CONFIG_HASH="${ONIX_CONFIG_HASH}-${SCHEMA_HASH}"
 
 # ── 3. the component's manifests ─────────────────────────────────────────────────────────────────────────────────────────

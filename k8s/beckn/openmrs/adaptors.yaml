@@ -234,6 +234,9 @@ spec:
               value: "${BECKN_SPICE_BAP_ID}"
             - name: OPENMRS_RECEIVER_BECKN_SPICE_BAP_URI
               value: "${BECKN_SPICE_BAP_URI}"
+            # Health referrals (select / init / confirm / status): OpenMRS identifier type per patient health id system.
+            - name: OPENMRS_RECEIVER_BECKN_HEALTH_ID_TYPES
+              value: "${BECKN_HEALTH_ID_TYPES}"
           resources:
             requests:
               cpu: 50m
