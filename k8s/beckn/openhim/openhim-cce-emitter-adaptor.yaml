@@ -87,6 +87,10 @@ spec:
               value: "spice-facility-client"
             - name: FACILITY_FILTER_IDS
               value: "${BECKN_OPENHIM_FACILITY_FILTER_IDS}"
+            # Clinical-data redaction before CCE (BECKN_OPENHIM_REDACTION_ENABLED, default false: full payloads, which
+            # the protocol triggers need; the adaptor logs "Clinical-data redaction DISABLED" at start). true redacts.
+            - name: REDACTION_ENABLED
+              value: "${BECKN_OPENHIM_REDACTION_ENABLED}"
             # ── Collector path: not used here. Every source's output is Beckn (beckn.enabled=true and no source sets
             #    output: collector), and the HIE's namespace cannot reach a CCE collector anyway. The prod profile still
             #    requires the variable, so it gets an address that fails loudly if a source is ever switched back.
