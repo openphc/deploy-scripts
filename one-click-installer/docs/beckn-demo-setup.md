@@ -264,7 +264,7 @@ emitter. The values are in [beckn.md → The timeout budget](beckn.md#the-timeou
 | Keys | Each adapter signs with a private key. The matching public key is in the registry record | public: `BECKN_SIGNING_PUBLIC_KEY`, `BECKN_ENCR_PUBLIC_KEY`. private: Infisical `/beckn`, never in git |
 | Schemas | `CceClinicalEvent` and `CceCareAlert`. Every adapter holds a local copy and checks messages against it. The `@context` address inside a message only has to be the same for everyone | `BECKN_SCHEMA_DIR` or `BECKN_SCHEMA_REPO` / `BECKN_SCHEMA_REF`; `BECKN_SCHEMA_BASE_URL` |
 | Health referral schemas | The Health* pack (`HealthReferral`, `HealthParticipant`, ...) that Spice's health-referral flow (`select` / `init` / `confirm` / `status`) uses. `schema.beckn.io` no longer serves it, so every adapter holds the copy in `k8s/beckn/onix/health-schema/` | Shipped with deploy-scripts; nothing to set |
-| Health id types | The OpenMRS identifier type for each patient health id system in a health referral, e.g. `ABHA=national-id` | `BECKN_HEALTH_ID_TYPES` (optional) |
+| Health id types | The OpenMRS identifier type for each patient health id system in a health referral, as `SYSTEM=type` pairs separated by `;`. Default `NID=national-id`: Spice's national id (system `NID`) is stored as `national-id`, the id the OpenMRS emitter sends to CCE | `BECKN_HEALTH_ID_TYPES` (default `NID=national-id`) |
 
 The services in front of and behind the adapters do not sign or verify anything themselves. That is why their Beckn
 endpoints must stay unreachable from outside their namespace.

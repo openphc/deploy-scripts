@@ -68,8 +68,10 @@ beckn_defaults() {
   _beckn_default BECKN_ONIX_LOG_LEVEL info
   _beckn_default BECKN_REFERRALS_ENABLED false
   # Health referrals from Spice (select / init / confirm): the OpenMRS identifier type for each patient health id system,
-  # as SYSTEM=type pairs, e.g. "ABHA=national-id". Empty = the system name is the type (OpenMRS creates it).
-  _beckn_default BECKN_HEALTH_ID_TYPES ""
+  # as SYSTEM=type pairs separated by ";". Default NID=national-id: Spice sends the patient's national id as system NID,
+  # and stored as national-id it is the id the OpenMRS emitter puts on events to CCE (the patient id CCE knows from
+  # Spice's own events). A system without a pair is used as the type name (OpenMRS creates it).
+  _beckn_default BECKN_HEALTH_ID_TYPES "NID=national-id"
   # The HIE adaptor's clinical-data redaction (REDACTION_ENABLED). Off by default: the protocol triggers read free text
   # that redaction removes (the RMNCH referral steps read ServiceRequest.patientInstruction / orderDetail and the
   # Encounter source-referral-order extension), so full payloads, patient data included, go to CCE. true removes
