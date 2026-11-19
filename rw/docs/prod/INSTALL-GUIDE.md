@@ -3,9 +3,9 @@
 This guide replaces the old CCE system (1.x) on the Rwanda **PROD** server, **102.215.10.20**, with a fresh CCE 2.0 install.
 The server keeps its Ubuntu, its users and its SSH login; step 2 removes everything of the old CCE system from it. One script
 then does almost all the work. Your job is to prepare a few things, start the script, check the result, and put back the old
-facilities and logins.
+facilities and logins, load the clinical protocol, and connect OpenHIM.
 
-- **Time needed:** about 2½ hours: about 45 minutes of your work, plus 1 to 1½ hours while the script runs.
+- **Time needed:** about 3 hours: about 1¼ hours of your work, plus 1 to 1½ hours while the script runs.
 - **Skills needed:** logging in to a server with SSH, and copying and pasting commands. Nothing else.
 - **How to use this guide:** do the steps in order. Each step tells you **what to type**, **what you should see**, and
   **what to do if you see something else**. If a step does not give the result it describes, stop and contact the technical
@@ -28,11 +28,12 @@ Tick each one off. Do not start until you have all of them.
 | # | What | Why |
 |---|---|---|
 | 1 | The two **backup files from 2026-11-11**: `prod-keycloak-20261111-020004.sql.gz` (the old logins) and `prod-facility-2026-11-11.sql` (the facilities) | Step 2 deletes the old databases; step 9 puts these back. They are the only copy |
-| 2 | Confirmation that **the old system may be removed now**, in an agreed **maintenance window** | CCE PROD is down from step 2 until step 9 |
+| 2 | Confirmation that **the old system may be removed now**, in an agreed **maintenance window** | CCE PROD is down from step 2 until step 11 |
 | 3 | The **SSH login** for `cceadmin@102.215.10.20` (the existing one) | To log in |
 | 4 | A **GitLab token** (a long text, starting with `glpat-`) with *read_repository* access to `repository.moh.gov.rw/cce` | To download the install scripts and the CCE code |
 | 5 | The **seed file content**: a block of `NAME=value` lines (the Appendix shows what it looks like) | E-mail settings, the OpenHIM connection, and the passwords that must stay the same |
 | 6 | The **GitLab address of the install scripts**, with the branch `deploy-scripts-rw` in it. Expected: `https://repository.moh.gov.rw/cce/deploy-scripts.git` | Step 4 downloads them from there |
+| 7 | A **technical-team member you can reach during step 11** | Step 11 needs them to put OpenHIM's password into the server's secret store. You never see that password |
 
 ---
 
@@ -326,7 +327,7 @@ and the command prompt (`cceadmin@…$`) is back.
 
 **If it stopped with a line starting with `ERROR`:** run **exactly the same command again** (7b). The install continues from
 where it stopped; work already done is not repeated. If it stops with an `ERROR` **a second time at the same place**, stop and
-send the log file to the technical team (see step 10 for where it is).
+send the log file to the technical team (see step 12 for where it is).
 
 ---
 
@@ -379,8 +380,8 @@ This restores two things from the 2026-11-11 backups (item 1):
 - the **Keycloak logins**: OpenHIM's login (`openhim-emitter-inbound`, with its password) and the Insights users, so nobody,
   OpenHIM included, has to change a password
 
-**Do it right after step 8:** until it is done, OpenHIM's calls get `401` and no new events arrive. The Keycloak restore replaces
-the new, empty Keycloak data; the install's first backup (step 8d) keeps a copy of that.
+**Do it right after step 8.** OpenHIM's calls need these logins; OpenHIM itself is connected to PROD in step 11. The Keycloak
+restore replaces the new, empty Keycloak data; the install's first backup (step 8d) keeps a copy of that.
 
 **9a.** On **your computer**, copy both files to the server (they hold password hashes: never by e-mail or chat):
 
@@ -437,23 +438,135 @@ sudo rm /root/prod-facility-2026-11-11.sql /root/prod-keycloak-20261111-020004.s
 
 ---
 
-## Step 10. Hand over to the technical team
+## Step 10. Load the clinical protocol
+
+The protocol tells CCE which clinical events start a patient's journey and which steps must follow. Until it is loaded, events
+are stored but nothing is measured. Load it **now, before step 11 connects OpenHIM**, so that the very first event is measured.
+The file is `rw/protocols/emr-service-protocol.json`, the same definition UAT runs. Background and other protocol tasks:
+[`../PROTOCOLS.md`](../PROTOCOLS.md).
+
+**10a.** Load it. Paste this whole box:
+
+```sh
+cd ~/deploy-scripts
+NS=cce-prod
+FILE=rw/protocols/emr-service-protocol.json
+B=http://$(sudo k3s kubectl -n $NS get svc cce-protocol-service -o jsonpath='{.spec.clusterIP}'):8080/v1/protocol/protocol-definitions
+python3 -c 'import json,sys; print(json.dumps({"planDefinitionJson": open(sys.argv[1]).read()}))' "$FILE" \
+  | curl -s -o /tmp/pd-load.json -w 'HTTP %{http_code}\n' -X POST -H 'Content-Type: application/json' --data-binary @- "$B"
+python3 -c 'import json; d=json.load(open("/tmp/pd-load.json")); print(d.get("canonical"), d.get("status"), d.get("id")) if "id" in d else print(d)'
+rm -f /tmp/pd-load.json
+```
+
+**You should see** `HTTP 201`, then a line starting `http://openphc.org/PlanDefinition/emr-service-protocol|1.0.0 ACTIVE`.
+**If you see** `HTTP 400` with `already exists`: it was loaded before (for example, you pasted the box twice). That is fine;
+go on. **Any other result:** send the screen to the technical team.
+
+**10b.** Check it is in use. Wait **2 minutes**, then:
+
+```sh
+sudo -u postgres psql -tA -d ccedb -c "select count(*) || ' trigger index rows' from trigger_index"
+sudo k3s kubectl -n cce-prod logs deploy/cce-matcher-service --since=10m | grep 'Protocol cache refresh' | tail -1
+```
+
+**You should see** `10 trigger index rows`, then a line ending `1 definition(s) loaded or reloaded, 0 dropped, 1 active`.
+**If the second line is missing:** wait 2 more minutes and run it again. Still missing: run
+`sudo k3s kubectl -n cce-prod rollout restart deploy/cce-matcher-service`, wait 3 minutes, and run 10b again.
+
+---
+
+## Step 11. Connect OpenHIM to PROD
+
+OpenHIM sends CCE a copy of eBuzima's events through a **route** on one of its channels. Today that channel has a route to UAT
+only (`cceuat.moh.gov.rw`). This step adds PROD's route (`cce.moh.gov.rw`) next to it, with the script
+`rw/tools/openhim/register-mediator.sh`. The script also registers CCE's mediator with OpenHIM; the emitter does that by itself
+at every start, so that part only confirms it. The OpenHIM logins come from the server's secret store: you type no password.
+
+**11a.** Ask the technical team to put **OpenHIM's password** into the secret store now, and wait for their "done".
+
+> **For the technical team.** In PROD's Infisical (`ssh -L 8080:localhost:8080 cceadmin@102.215.10.20`, then
+> `http://localhost:8080`; the login is in `/opt/cce-local-infisical/admin.env`), project `cce-prod`, folder `/keycloak`, set
+> `EMITTER_INBOUND_PASSWORD` to the password of `openhim-emitter-inbound`. It is the **same value as UAT's**
+> `/keycloak EMITTER_INBOUND_PASSWORD`: UAT's Keycloak user was copied from the old PROD, which step 9 restored here. Until
+> then this key holds a generated value that is not the password.
+
+**11b.** Check that the password works. Paste:
+
+```sh
+cd ~/deploy-scripts && sudo bash one-click-installer/lib/infisical-run.sh prod sh -c \
+  'printf "user = \"%s:%s\"\n" "$EMITTER_INBOUND_USER" "$EMITTER_INBOUND_PASSWORD" | curl -s -K - -o /dev/null -w "HTTP %{http_code}\n" -X POST -H "Content-Type: application/json" -d "{}" https://cce.moh.gov.rw/v1/openhim-emitter-adaptor/inbound' 2>&1 \
+  | grep '^HTTP'
+```
+
+**You should see** `HTTP 200`. (This sends an empty test message with OpenHIM's login. CCE accepts the login and ignores the
+message; nothing is stored.) **If you see** `HTTP 401`: the password in the secret store is not OpenHIM's. Tell the technical
+team and wait; repeat 11b after they fix it. **Do not go on to 11d with a 401**: the route would carry a wrong password.
+
+**11c.** Look at OpenHIM's channel. Paste:
+
+```sh
+cd ~/deploy-scripts && sudo bash one-click-installer/lib/infisical-run.sh prod sh -c \
+  'bash rw/tools/openhim/register-mediator.sh "$OPENHIM_CORE_HOST" "$OPENHIM_CORE_API_PORT" "$OPENHIM_CORE_SCHEME" "$OPENHIM_USERNAME" "$OPENHIM_PASSWORD" --list' 2>&1 \
+  | grep -A4 'OpenMRS to SHR channel'
+```
+
+**You should see** the channel with its routes, including UAT's:
+
+```
+  - OpenMRS to SHR channel
+      route: OpenMRS to SHR endpoint  ->  …  (primary, enabled)
+      route: CCE Emitter Adaptor  ->  cceuat.moh.gov.rw:443/v1/openhim-emitter-adaptor/inbound  (secondary, enabled)
+```
+
+**If nothing is printed**, run the box again without its last line (`| grep -A4 …`) and send the screen to the technical team:
+either OpenHIM could not be reached (`AUTH FAILED`) or the channel has another name.
+
+**11d.** Add PROD's route. Paste:
+
+```sh
+cd ~/deploy-scripts && sudo bash one-click-installer/lib/infisical-run.sh prod sh -c \
+  'CCE_BASIC_USER="$EMITTER_INBOUND_USER" CCE_BASIC_PASS="$EMITTER_INBOUND_PASSWORD" bash rw/tools/openhim/register-mediator.sh "$OPENHIM_CORE_HOST" "$OPENHIM_CORE_API_PORT" "$OPENHIM_CORE_SCHEME" "$OPENHIM_USERNAME" "$OPENHIM_PASSWORD" "OpenMRS to SHR channel"' 2>&1 \
+  | grep -E '^(MEDIATOR|NOTE|ROUTE|CHANNEL|AUTH|ERROR)'
+```
+
+**You should see** three lines:
+
+```
+MEDIATOR: HTTP 201 — registered 'urn:mediator:cce-emitter-adaptor' at …      (200 instead of 201 is fine)
+NOTE: channel 'OpenMRS to SHR channel' also has 'CCE Emitter Adaptor' -> cceuat.moh.gov.rw/… (left as it is).
+ROUTE: HTTP 200 — added 'CCE Emitter Adaptor (cce.moh.gov.rw)' -> cce.moh.gov.rw/v1/openhim-emitter-adaptor/inbound (secondary) to channel 'OpenMRS to SHR channel'.
+```
+
+Pasting it again is harmless: the last line then says `already present … — no change`. **If you see** `CHANNEL NOT FOUND`,
+`AUTH FAILED`, `ROUTE FAILED` or `ERROR`: send the screen to the technical team.
+
+**11e.** Check that events arrive. Events come whenever eBuzima sends them; during working hours, expect the first within an hour.
+
+```sh
+sudo -u postgres psql -tA -d ccedb -c "select count(*) || ' events, the last at ' || coalesce(max(received_at)::text, '-') from inbound_event_log"
+```
+
+**You should see** a number above 0 and a recent time (UTC: Rwanda time minus 2 hours). If it is still `0 events` after an hour
+in working hours, tell the technical team. You can do step 12 meanwhile.
+
+---
+
+## Step 12. Hand over to the technical team
 
 Close the safe window (type `exit` inside tmux), then tell the technical team the install is finished and send them:
 
 1. **The log file.** It is on the server in `/home/cceadmin/`, named `prod-install-<date>-<time>.log`. To see its exact name:
    `ls ~/prod-install-*.log`
-2. **The results of steps 8 and 9** (a screenshot of 8a, 9b and 9d is enough).
+2. **The results of steps 8 to 11** (a screenshot of 8a, 9b, 9d, 10a, 11b and 11d is enough).
 
 The technical team then finishes these items, which are **not** part of your job:
 
 - copy the secret-store key files off the server (`/opt/cce-local-infisical/.env` and `admin.env`, and
   `/home/cceadmin/.cce-infisical/prod.*`); without them the passwords cannot be recovered
-- load the clinical protocol: `rw/protocols/emr-service-protocol.json`, the same definition UAT .21 runs (how:
-  `rw/docs/uat/OPERATIONS-RUNBOOK.md` §12, with namespace `cce-prod`)
-- put OpenHIM's real password into Infisical as `EMITTER_INBOUND_PASSWORD` once known; until then Infisical holds a generated
-  value that is not the password (`show-credentials.sh` shows that one)
-- confirm that OpenHIM traffic is arriving, and that Insights lists the facilities
+- confirm that OpenHIM traffic is arriving (step 11e), that the matcher builds journeys from it, and that Insights lists the
+  facilities
+- decide whether UAT keeps receiving live events: OpenHIM now sends a copy to **both** UAT and PROD. To stop UAT's copy,
+  disable the route `CCE Emitter Adaptor` (the one pointing at `cceuat.moh.gov.rw`) in OpenHIM's console
 - give new people access to the dashboard with `rw/docs/uat/USER-ONBOARDING.md`, using `cce.moh.gov.rw` (users from the old
   system come back with step 9)
 - decide when to delete the old system's leftovers: `/var/backups/cce-prod-old-*` (it holds the old, unredacted clinical
@@ -482,7 +595,12 @@ Finally, log out of the server: `exit`.
 | Browser shows a certificate warning | the certificate is still being issued | step 8b |
 | No `FACILITIES OK` in step 9b | the facility load stopped | paste the `sudo sed` and the last line of 9b again (the files are already in `/root`); if it fails again, send the screen |
 | No `RESTORE OK` in step 9c | the Keycloak restore stopped | run step 9c again from its first line; Keycloak stays at 0 until it succeeds. If it fails again, send the screen |
-| OpenHIM's calls get `401` after step 9 | OpenHIM uses another password, or the client secret differs | tell the technical team, with the output of 9d |
+| `HTTP 400` in step 10a, not `already exists` | the protocol was rejected | send the screen to the technical team |
+| `0 trigger index rows` in step 10b | the protocol is loaded but its index is missing | tell the technical team (`../PROTOCOLS.md`, "rebuild its trigger index") |
+| `HTTP 401` in step 11b | the secret store does not hold OpenHIM's password yet | step 11a: ask the technical team, then repeat 11b |
+| `HTTP 000` in step 11b | CCE is not answering on `cce.moh.gov.rw` | repeat step 8c; if that fails too, tell the technical team |
+| `AUTH FAILED` in step 11c or 11d | the server cannot log in to OpenHIM | tell the technical team (the `OPENHIM_*` seed values, Appendix) |
+| OpenHIM's calls get `401` after step 11 | OpenHIM uses another password, or the client secret differs | tell the technical team, with the output of 9d and 11b |
 
 **Do not**, under any circumstances: edit files in `/opt/cce-src` or `~/deploy-scripts`, use `rw/config/uat.env` on this
 server, or run anything on 102.215.10.21.
@@ -513,7 +631,7 @@ KEYCLOAK_ADMIN_USER=
 KEYCLOAK_ADMIN_PASSWORD=
 BASIC_AUTH_CLIENT_SECRET=
 
-# CCE → OpenHIM core API (mediator registration), as on the old PROD
+# CCE → OpenHIM core API (mediator registration and step 11's route), as on the old PROD
 OPENHIM_CORE_HOST=
 OPENHIM_CORE_API_PORT=
 OPENHIM_CORE_SCHEME=
@@ -531,7 +649,8 @@ old Infisical); all of these keys are in it. Delete any optional line you do not
 
 **Not in the seed file: OpenHIM's login** (`EMITTER_INBOUND_USER`/`EMITTER_INBOUND_PASSWORD`). Its password is not in the
 export; it exists only in the old Keycloak database (as a hash) and in OpenHIM's channel, and the step 9 restore brings it back
-unchanged. The install stores a generated `EMITTER_INBOUND_PASSWORD` in Infisical, which is not that password (step 10).
+unchanged. The install stores a generated `EMITTER_INBOUND_PASSWORD` in Infisical, which is not that password; step 11a replaces
+it with the real one (the same value as UAT's), which step 11d then gives to OpenHIM's new PROD route.
 
 What the script uses, for reference: config `rw/config/prod.env` (namespace `cce-prod`, overlay `k8s/overlays/rw-prod`, public
 name `cce.moh.gov.rw`, PROD's replica counts, the same code branches as UAT .21). Details: `../ONE-CLICK-INSTALL.md`.

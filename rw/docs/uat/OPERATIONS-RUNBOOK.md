@@ -227,10 +227,20 @@ library only):
 
 | Tool | Use |
 |---|---|
-| `register-mediator.sh <host> <api_port> <http\|https> <user> <password> [channel\|--list]` | registers the CCE emitter mediator with OpenHIM Core. With a channel name it also adds the "CCE Emitter Adaptor" route (secondary) to that channel, pointing at `CCE_ENDPOINT_HOST` (set `cceuat.moh.gov.rw` for UAT; the default is PROD's). Adding the route needs `CCE_BASIC_PASS`, the password of `openhim-emitter-inbound`. `--list` lists the channels. |
+| `register-mediator.sh <host> <api_port> <http\|https> <user> <password> [channel\|--list]` | registers the CCE emitter mediator with OpenHIM Core (the emitter also does this by itself at every start). With a channel name it also adds a secondary route `CCE Emitter Adaptor (<host>)` to that channel, pointing at `CCE_ENDPOINT_HOST` (`cceuat.moh.gov.rw` for UAT; the default is PROD's `cce.moh.gov.rw`). A route already pointing at that host and path is left alone, so UAT's and PROD's routes can sit side by side. Adding the route needs `CCE_BASIC_PASS`, the password of `openhim-emitter-inbound`. `--list` lists the channels and where each route points. |
 | `openhim_non2xx_primary.py` | lists a channel's transactions whose primary route answered non-2xx (`OPENHIM_*` settings in the file's header) |
 
-The OpenHIM admin login is not CCE's. Get it from the OpenHIM admins, and never put it in a file in the repo.
+UAT's channel is `OpenMRS to SHR channel`; its CCE route (`CCE Emitter Adaptor`) points at `cceuat.moh.gov.rw` (checked
+2026-11-19). The OpenHIM API login the emitter uses is in Infisical (`OPENHIM_CORE_*`, `OPENHIM_USERNAME`, `OPENHIM_PASSWORD`),
+so run the tool through `infisical-run.sh` instead of typing it, for example:
+
+```bash
+sudo bash one-click-installer/lib/infisical-run.sh uat sh -c \
+  'bash rw/tools/openhim/register-mediator.sh "$OPENHIM_CORE_HOST" "$OPENHIM_CORE_API_PORT" "$OPENHIM_CORE_SCHEME" "$OPENHIM_USERNAME" "$OPENHIM_PASSWORD" --list'
+```
+
+PROD's route is added the same way, in [`../prod/INSTALL-GUIDE.md`](../prod/INSTALL-GUIDE.md) step 11. Never put the OpenHIM
+login in a file in the repo.
 
 ## 9. Data pipeline (CDC → ClickHouse)
 
@@ -283,23 +293,11 @@ The protocol on UAT is `rw/protocols/emr-service-protocol.json`: "Rwanda Health 
 step group is "Outpatient Visit", one per visit. `consultation` is a step with child steps, not a group (it has no
 `groupingBehavior: logical-group`), so no consultation groups are created.
 
-Protocols are managed through the protocol-service API. Inside the cluster it needs no token, so use a port-forward:
+Protocols are managed through the protocol-service API: loading, listing, retiring, deleting and rebuilding the trigger index
+are in [`../PROTOCOLS.md`](../PROTOCOLS.md), with `NS=cce-uat`.
 
-```bash
-sudo k3s kubectl -n cce-uat port-forward svc/cce-protocol-service 18091:8080 >/dev/null 2>&1 &
-B=http://localhost:18091/v1/protocol/protocol-definitions
-curl -s $B | python3 -m json.tool | head -40                         # list
-python3 -c 'import json,sys;print(json.dumps({"planDefinitionJson":open(sys.argv[1]).read()}))' \
-  rw/protocols/emr-service-protocol.json > /tmp/pd.json
-curl -s -X POST $B -H 'Content-Type: application/json' --data-binary @/tmp/pd.json   # load: 201, ACTIVE, trigger index built
-curl -s -X POST $B/<id>/retire                                       # retire
-curl -s -X POST $B/<id>/rebuild-index                                # rebuild the trigger index
-curl -s -X DELETE $B/<id>                                            # delete: 204; 409 while it has protocol instances
-kill %1; rm -f /tmp/pd.json
-```
-
-**After any protocol change, restart the matcher.** It reads the protocols once at startup:
-`sudo k3s kubectl -n cce-uat rollout restart deploy/cce-matcher-service`.
+The matcher re-reads the active protocols every 60 seconds (`CCE_PROTOCOL_REFRESH_INTERVAL_MS`), so a change needs no restart;
+its log then says `Protocol cache refresh: … loaded or reloaded`.
 
 Keep the file in `rw/protocols/` identical to what is loaded, so PROD can be given the same definition.
 
@@ -324,7 +322,7 @@ instances, 142 visit groups, 931 steps and 503 deviations, with the same counts 
             step_instance_history, step_sla_state_transition, deviation, intelligence_delivery,
             intelligence_delivery_audit_log, intelligence_event_log;
    ```
-5. **Delete the old protocol** with the API (`DELETE`, above). That also deletes its trigger index. Wait about 20 s, so the CDC
+5. **Delete the old protocol** with the API ([`../PROTOCOLS.md`](../PROTOCOLS.md), "Other operations"). That also deletes its trigger index. Wait about 20 s, so the CDC
    delete reaches ClickHouse.
 6. **Purge the derived Kafka topics** to their end, with `/opt/kafka/bin/kafka-delete-records.sh`:
    - `cce.public.` + `deviation`, `matcher_event_log`, `protocol_definition`, `protocol_instance`, `protocol_instance_history`,
@@ -340,7 +338,7 @@ instances, 142 visit groups, 931 steps and 503 deviations, with the same counts 
      `mv_facility_summary`, `mv_ingestion_quality`, `mv_patient_facility_latest`, `mv_practitioner_summary`
 
    Then `SYSTEM RELOAD DICTIONARIES`. Run `clickhouse-client` as in §5.
-8. **Load the new protocol** with the API (`POST`, above).
+8. **Load the new protocol** ([`../PROTOCOLS.md`](../PROTOCOLS.md), "Load a protocol").
 9. **Replay:** reset the matcher's offsets, then start the consumers. The matcher skips any event already in
    `matcher_event_log`, which is why step 4 empties it.
 
