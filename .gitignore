@@ -44,6 +44,7 @@ rw/tools/openhim/*
 rw/docs/*
 !rw/docs/ONE-CLICK-INSTALL.md
 !rw/docs/ARCHITECTURE.md
+!rw/docs/PROTOCOLS.md
 !rw/docs/uat/
 rw/docs/uat/*
 !rw/docs/uat/*.md

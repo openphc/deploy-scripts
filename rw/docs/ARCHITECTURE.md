@@ -1406,7 +1406,7 @@ Nine CCE application deployments, plus the supporting stack.
 | `openhim-emitter-adaptor` | 8082 | 1 · 2–3 | Inbound volume | Stateless. Redacts clinical content before forwarding ([§7.5](#75-data-protection)) |
 | `cce-collector-service` | 8080 | 1 · 2–3 | Inbound volume | Owns `inbound_event_log` |
 | `cce-protocol-service` | 8080 | 1 · 1–3 | Not throughput-bound | Protocol loads only; a second replica buys availability, not throughput. Needs DDL rights |
-| `cce-matcher-service` | 8080 | 1 · 1–3 | **Kafka partitions** (25) | No REST API; Kafka-driven. Needs DDL rights. Reads protocols at startup: restart it after a protocol change |
+| `cce-matcher-service` | 8080 | 1 · 1–3 | **Kafka partitions** (25) | No REST API; Kafka-driven. Needs DDL rights. Re-reads the active protocols every 60 s (`CCE_PROTOCOL_REFRESH_INTERVAL_MS`) |
 | `cce-step-sla-service` | 8092 | 1 · 1–3 | **Backlog**, not traffic | Creates no tables, needs **no DDL rights**, no REST API. Extra replicas add throughput directly (no leader election, no lease) |
 | `cce-intelligence-service` | 8085 | 1 · 1–3 | — | Deployed; delivers nothing today ([§8.9](#89-known-items)) |
 | `cce-insights-service` | 8084 | 1 · 1–3 | Query load | Read-only analytics API |
@@ -1582,6 +1582,7 @@ branch; update it with `git pull`). Start with [`../README.md`](../README.md); t
 | [`uat/DISASTER-RECOVERY.md`](uat/DISASTER-RECOVERY.md) | data and machine loss, restore tests |
 | [`uat/CONFIG-REFERENCE.md`](uat/CONFIG-REFERENCE.md) | event flow, ports, every configuration key |
 | [`uat/USER-ONBOARDING.md`](uat/USER-ONBOARDING.md) | giving someone access to the Insights dashboard |
+| [`PROTOCOLS.md`](PROTOCOLS.md) | loading, listing, retiring and replacing care protocols |
 | [`prod/INSTALL-GUIDE.md`](prod/INSTALL-GUIDE.md) | installing PROD, step by step |
 | [`ONE-CLICK-INSTALL.md`](ONE-CLICK-INSTALL.md) | how the installer works |
 
@@ -1705,7 +1706,8 @@ Each item is verifiable: you should be able to demonstrate it, not assume it. Fo
 
 **Function**
 
-- [ ] Load the protocol (`rw/protocols/emr-service-protocol.json`) and check `trigger_index` rows appear
+- [ ] Load the protocol (`rw/protocols/emr-service-protocol.json`, [`PROTOCOLS.md`](PROTOCOLS.md)) and check `trigger_index` rows appear
+- [ ] OpenHIM's channel has a CCE route to this environment's host (`register-mediator.sh … --list`)
 - [ ] Trace a clinical event from OpenHIM to a `step_instance` row
 - [ ] A step past its due date reaches `sla_status = OVERDUE` with a matching `deviation` row
 - [ ] The SLA backlog query returns a stable number (§8.8)
@@ -1766,6 +1768,7 @@ All in the `rw/` folder of `deploy-scripts`, branch `deploy-scripts-rw` (mirrore
 | [`uat/DISASTER-RECOVERY.md`](uat/DISASTER-RECOVERY.md) | Data and machine loss, restore tests |
 | [`uat/CONFIG-REFERENCE.md`](uat/CONFIG-REFERENCE.md) | Event flow, ports, every configuration key and where it lives |
 | [`uat/USER-ONBOARDING.md`](uat/USER-ONBOARDING.md) | Giving someone access to the Insights dashboard, with screenshots |
+| [`PROTOCOLS.md`](PROTOCOLS.md) | Loading, listing, retiring and replacing care protocols |
 | [`prod/INSTALL-GUIDE.md`](prod/INSTALL-GUIDE.md) | Installing PROD on 102.215.10.20, step by step |
 
 ---

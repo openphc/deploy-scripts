@@ -126,7 +126,7 @@ from Postgres. If the replication slot shows `lost` (§14), drop `cce_analytics`
 8. **The checks in §5.**
 
 Without a Keycloak dump, the users must be re-created (§13) and OpenHIM given a new password. Without a `ccedb` dump, UAT
-starts empty: load the protocol (§12) and wait for new events.
+starts empty: load the protocol ([`../PROTOCOLS.md`](../PROTOCOLS.md)) and wait for new events.
 
 ## 5. Checks after any recovery
 
@@ -136,7 +136,7 @@ starts empty: load the protocol (§12) and wait for new events.
 - [ ] `https://cceuat.moh.gov.rw/insights` loads with a Let's Encrypt certificate, and a user can log in
 - [ ] OpenHIM's events arrive: 202 in the emitter's log (§8)
 - [ ] The emitter logs `Clinical-data redaction ACTIVE` (`SECURITY.md` §10)
-- [ ] The protocol is ACTIVE and the matcher started after it (§12)
+- [ ] The protocol is ACTIVE and the matcher has picked it up ([`../PROTOCOLS.md`](../PROTOCOLS.md), "Load a protocol", checks 2 and 3)
 - [ ] The next 02:00 backup ran (§7)
 
 ## 6. Test the backups

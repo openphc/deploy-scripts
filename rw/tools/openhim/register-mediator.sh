@@ -16,9 +16,18 @@
 #   ./register-mediator.sh <openhim-host> 8080 http <openhim-admin-user> '<password>' "OpenMRS to SHR channel"
 #
 # The CCE endpoint the route forwards to (override via env if needed):
-#   CCE_ENDPOINT_HOST (default cce.moh.gov.rw)   CCE_ENDPOINT_PATH (default /v1/openhim-emitter-adaptor/inbound)
-#   CCE_ENDPOINT_PORT (default 443)   CCE_BASIC_USER (default openhim-emitter-inbound)
+#   CCE_ENDPOINT_HOST (default cce.moh.gov.rw = PROD; cceuat.moh.gov.rw for UAT)
+#   CCE_ENDPOINT_PATH (default /v1/openhim-emitter-adaptor/inbound)   CCE_ENDPOINT_PORT (default 443)
+#   CCE_BASIC_USER (default openhim-emitter-inbound)
 #   CCE_BASIC_PASS (required to add the route: that user's password; no default)
+#   CCE_ROUTE_NAME (default "CCE Emitter Adaptor (<CCE_ENDPOINT_HOST>)")
+#
+# One channel can carry a CCE route per environment (UAT and PROD each get a copy of the traffic). A route counts as
+# already present only when it points at the same host AND path, so adding PROD's route next to UAT's works; re-running
+# for an environment that already has its route changes nothing. --list shows where every route points.
+#
+# The emitter also registers the mediator by itself at every start (OPENHIM_CORE_* settings); registering it here
+# again is harmless. The part only this script does is adding the route.
 set -euo pipefail
 HOST="${1:?usage: register-mediator.sh <host> <port> <http|https> <user> <pass> [channel_name|--list]}"
 PORT="${2:?port}"; SCHEME="${3:?http|https}"; USER="${4:?username}"; PASS="${5:?password}"
@@ -30,9 +39,10 @@ fi
 
 python3 - "$HOST" "$PORT" "$SCHEME" "$USER" "$PASS" "$CHANNEL" \
   "${CCE_ENDPOINT_HOST:-cce.moh.gov.rw}" "${CCE_ENDPOINT_PATH:-/v1/openhim-emitter-adaptor/inbound}" \
-  "${CCE_ENDPOINT_PORT:-443}" "${CCE_BASIC_USER:-openhim-emitter-inbound}" "${CCE_BASIC_PASS:-}" <<'PY'
+  "${CCE_ENDPOINT_PORT:-443}" "${CCE_BASIC_USER:-openhim-emitter-inbound}" "${CCE_BASIC_PASS:-}" \
+  "${CCE_ROUTE_NAME:-CCE Emitter Adaptor (${CCE_ENDPOINT_HOST:-cce.moh.gov.rw})}" <<'PY'
 import sys, hashlib, datetime, uuid, json, ssl, urllib.request, urllib.parse, urllib.error
-host, port, scheme, user, pw, channel, chost, cpath, cport, cuser, cpass = sys.argv[1:12]
+host, port, scheme, user, pw, channel, chost, cpath, cport, cuser, cpass, rname = sys.argv[1:13]
 base = f"{scheme}://{host}:{port}"
 ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
 
@@ -47,7 +57,7 @@ pwhash = hashlib.sha512((salt + pw).encode()).hexdigest()
 
 def auth_headers():
     rsalt = str(uuid.uuid4())
-    rts = datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+    rts = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
     token = hashlib.sha512((pwhash + rsalt + rts).encode()).hexdigest()
     return {"auth-username": user, "auth-ts": rts, "auth-salt": rsalt, "auth-token": token}
 
@@ -59,7 +69,7 @@ def call(method, path, payload=None):
     req = urllib.request.Request(f"{base}{path}", data=data, method=method, headers=h)
     return urllib.request.urlopen(req, timeout=20, context=ctx)
 
-CCE_ROUTE = {"name": "CCE Emitter Adaptor", "status": "enabled", "type": "http", "secured": True,
+CCE_ROUTE = {"name": rname, "status": "enabled", "type": "http", "secured": True,
              "host": chost, "port": int(cport), "path": cpath, "primary": False,
              "username": cuser, "password": cpass, "forwardAuthHeader": False}
 
@@ -68,7 +78,11 @@ if channel == "--list":
     chans = json.loads(call("GET", "/channels").read())
     print("CHANNELS:")
     for c in chans:
-        print(f"  - {c.get('name')}  (routes: {', '.join(r.get('name','?') for r in c.get('routes', []))})")
+        print(f"  - {c.get('name')}")
+        for r in c.get("routes", []):
+            where = f"{r.get('host')}:{r.get('port')}{r.get('path') or ''}" if r.get("host") else "-"
+            role = "primary" if r.get("primary") else "secondary"
+            print(f"      route: {r.get('name','?')}  ->  {where}  ({role}, {r.get('status','?')})")
     sys.exit(0)
 
 # --- 1) register the mediator (idempotent upsert by urn) ---
@@ -88,8 +102,16 @@ if channel:
     if ch is None:
         print(f"CHANNEL NOT FOUND: '{channel}'. Run with --list to see names."); sys.exit(3)
     routes = ch.get("routes", [])
-    if any(r.get("name") == CCE_ROUTE["name"] or (r.get("host") == chost and r.get("path") == cpath) for r in routes):
-        print(f"ROUTE: already present on channel '{channel}' — no change.")
+    same = [r for r in routes if r.get("host") == chost and r.get("path") == cpath]
+    clash = [r for r in routes if r.get("name") == rname and not (r.get("host") == chost and r.get("path") == cpath)]
+    for r in routes:
+        if r not in same and "/openhim-emitter-adaptor/" in (r.get("path") or ""):
+            print(f"NOTE: channel '{channel}' also has '{r.get('name')}' -> {r.get('host')}{r.get('path')} (left as it is).")
+    if same:
+        print(f"ROUTE: '{same[0].get('name')}' -> {chost}{cpath} already present on channel '{channel}' — no change.")
+    elif clash:
+        print(f"ROUTE NAME TAKEN: '{rname}' already exists on '{channel}' pointing elsewhere. Set CCE_ROUTE_NAME to another name.")
+        sys.exit(4)
     else:
         cid = ch["_id"]
         for k in ("_id", "__v"):
@@ -97,7 +119,7 @@ if channel:
         ch["routes"] = routes + [CCE_ROUTE]
         try:
             r = call("PUT", f"/channels/{cid}", ch)
-            print(f"ROUTE: HTTP {r.status} — added 'CCE Emitter Adaptor' (secondary) to channel '{channel}'.")
+            print(f"ROUTE: HTTP {r.status} — added '{rname}' -> {chost}{cpath} (secondary) to channel '{channel}'.")
         except urllib.error.HTTPError as e:
             print(f"ROUTE FAILED: HTTP {e.code} -> {e.read()[:300].decode(errors='replace')}"); sys.exit(1)
 PY
