@@ -600,6 +600,8 @@ Other scripts add keys outside this table:
 
 Notes:
 
+- The folder `/beckn` is not in these tables. It belongs to the Beckn add-on and is filled by its own seed script from
+  `BECKN_SEED_ENV_FILE`: see [beckn.md](beckn.md#secrets-infisical-beckn).
 - `POSTGRES_DATABASE` is used by the services and the Debezium connector template. The native install steps use
   `POSTGRES_DB` (never seeded, so always `ccedb`). Do not change the database name.
 - `CLICKHOUSE_PORT`, `POSTGRES_PORT`, `CONNECT_URL` describe the standard ports the native steps use. Changing them in

@@ -249,7 +249,9 @@ was installed with an overlay name other than `<env>`; it is used to name the em
 **Reads.**
 - From Infisical (every folder): `KEYCLOAK_ADMIN_*`, `GRAFANA_ADMIN_*`, `PORTAINER_ADMIN_PASSWORD`, `POSTGRES_*`,
   `CLICKHOUSE_*`, `EMITTER_INBOUND_*`, `BASIC_AUTH_CLIENT_*`, `CCE_COLLECTOR_AUTH_TOKEN`, `CCE_INTELLIGENCE_SMTP_*`,
-  `OPENHIM_*`.
+  `OPENHIM_*`. With the [Beckn add-on](beckn.md#secrets-infisical-beckn), also from `/beckn`: `OPENHIM_ROOT_*`,
+  `OPENHIM_CLIENT_PASSWORD_*`, `OPENHIM_PUBLIC_URL`, `OPENMRS_ADMIN_*`, `OPENMRS_DB_*`, `OPENMRS_PUBLIC_URL`,
+  `CCE_BECKN_ALERTS_WEBHOOK_SECRET`.
 - `CCE_PUBLIC_URL` from [host-ip.sh](lib-infisical.md#host-ipsh) (`https://<INGRESS_HOST>`, or `http://<host IP>`).
 - `/opt/cce-local-infisical/admin.env` (local Infisical only; `CCE_LOCAL_INFISICAL_DIR` overrides the directory).
 - The overlay's `kustomization.yaml`, to find the emitter adaptor and so the inbound URL.
@@ -274,6 +276,18 @@ was installed with an overlay name other than `<env>`; it is used to name the em
 | ClickHouse `default` user | `clickhouse-client` on the host | no password; loopback only |
 | Emitter inbound (give to the source system) | `<CCE_PUBLIC_URL>/v1/<emitter deployment>/inbound`, HTTP Basic | Infisical `/keycloak` |
 | Service-to-service secrets | used by the services: gateway Basic-auth client secret, collector token, SMTP, OpenHIM | Infisical `/keycloak`, `/platform`, `/openhim-emitter-adaptor` |
+
+With the Beckn add-on it also lists, for the components this machine hosts:
+
+| Entry | Where | Stored in |
+|---|---|---|
+| OpenHIM console | `<OPENHIM_PUBLIC_URL>/` | Infisical `/beckn` `OPENHIM_ROOT_*` |
+| OpenMRS, the account the adaptors use | `<OPENMRS_PUBLIC_URL>/openmrs/spa` | Infisical `/beckn` `OPENMRS_ADMIN_*`. It must match the account in OpenMRS; changing it in Infisical changes nothing in OpenMRS |
+| OpenMRS MariaDB | in-cluster Service `openmrs-db:3306`, database `openmrs` | Infisical `/beckn` `OPENMRS_DB_PASSWORD`, `OPENMRS_DB_ROOT_PASSWORD` |
+| OpenHIM channel client passwords | HTTP Basic on the OpenHIM channels | Infisical `/beckn` `OPENHIM_CLIENT_PASSWORD_<CLIENTID>` |
+| Alert webhook secret | between the intelligence service and `cce-beckn-service` | Infisical `/beckn` `CCE_BECKN_ALERTS_WEBHOOK_SECRET` |
+
+The adapters' private keys (`BECKN_*_PRIVATE_KEY`) are never printed, with or without `--reveal`.
 
 Kafka and Kafka Connect have no login. Connect listens on `127.0.0.1` only; Kafka's 9092 must stay closed to the outside
 (UFW, or the cloud security group).
