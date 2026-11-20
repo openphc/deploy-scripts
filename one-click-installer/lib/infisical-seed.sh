@@ -30,7 +30,11 @@ infisical_login
 
 # --- 1) parse the seed file into an associative array -----------------------------------------
 declare -A SEED=()   # "=()": a never-assigned array is UNBOUND under set -u (an empty/absent seed file crashed here)
-while IFS='=' read -r key val; do
+# Split at the FIRST "=" by hand: `IFS='=' read -r key val` also drops a trailing "=" from the value, which silently corrupts a
+# base64 value (a key or password ending in "=").
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in *=*) ;; *) continue ;; esac
+  key="${line%%=*}"; val="${line#*=}"
   key="$(echo "$key" | tr -d '[:space:]')"
   [ -z "$key" ] && continue
   case "$key" in \#*) continue ;; esac
