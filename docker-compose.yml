@@ -745,6 +745,8 @@ services:
       # Sweep — prod profile polls every 15s
       CCE_SLA_INSTANCE_ID: ${CCE_SLA_INSTANCE_ID:-cce-step-sla-service-dev}
       CCE_SLA_BATCH_SIZE: ${CCE_SLA_BATCH_SIZE:-100}
+      # Kafka — publishes the intelligence triggers of the OVERDUE / MISSED deviations it records
+      KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       # Observability
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
       MANAGEMENT_METRICS_TAGS_APPLICATION: cce-step-sla-service
