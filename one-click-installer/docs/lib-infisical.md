@@ -8,21 +8,36 @@ Verify · Notes.**
 
 ## How the pieces fit
 
-```
-phase 2   infisical-native.sh up        (or infisical-local.sh up, or nothing for a remote Infisical)
-            -> Infisical on 127.0.0.1:8080 + /opt/cce-local-infisical/admin.env (org-admin login)
-          infisical-bootstrap.sh <env>  (only if <env>.creds/.meta do not exist yet)
-            -> project cce-<env>, machine identity cce-<env>-identity
-            -> <creds dir>/<env>.creds   INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET
-               <creds dir>/<env>.meta    PROJECT_ID / INFISICAL_ENV_SLUG=prod
-phase 3   infisical-run.sh <env> infisical-seed.sh <env> <seed>
-            -> secrets and defaults written into the project folders
-phase 5+  infisical-run.sh <env> <command>
-            -> logs in as the machine identity, `infisical run --recursive` injects every secret as an
-               environment variable, host-ip-exec.sh fills the IP variables, then runs <command>
+```mermaid
+flowchart TD
+    subgraph P2["Phase 2"]
+        direction TB
+        UP["infisical-native.sh up<br/>(or infisical-local.sh up, or nothing for a remote Infisical)"]
+        SRV[("Infisical on 127.0.0.1:8080<br/>/opt/cce-local-infisical/admin.env = org-admin login")]
+        BOOT["infisical-bootstrap.sh &lt;env&gt;<br/>only if &lt;env&gt;.creds / .meta do not exist yet"]
+        PROJ["project cce-&lt;env&gt;<br/>machine identity cce-&lt;env&gt;-identity"]
+        CREDS["&lt;creds dir&gt;/&lt;env&gt;.creds: INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET<br/>&lt;creds dir&gt;/&lt;env&gt;.meta: PROJECT_ID / INFISICAL_ENV_SLUG=prod"]
+        UP --> SRV --> BOOT --> PROJ --> CREDS
+    end
+    subgraph P3["Phase 3"]
+        SEED["infisical-run.sh &lt;env&gt; infisical-seed.sh &lt;env&gt; &lt;seed&gt;<br/>secrets and defaults written into the project folders"]
+    end
+    subgraph P5["Phase 5 and later"]
+        direction TB
+        RUN["infisical-run.sh &lt;env&gt; &lt;command&gt;"]
+        LOGIN["logs in as the machine identity"]
+        INJ["infisical run --recursive<br/>every secret becomes an environment variable"]
+        HIP["host-ip-exec.sh fills the IP variables"]
+        CMD["runs &lt;command&gt;"]
+        RUN --> LOGIN --> INJ --> HIP --> CMD
+    end
+    CREDS --> SEED --> RUN
 ```
 
 The creds files are the only "secret zero" on disk. Everything else is fetched from Infisical each time.
+
+The [Beckn add-on](beckn.md#secrets-infisical-beckn) uses the same project and the same `infisical-run.sh`. Its own
+seed script, `lib/beckn/beckn-seed.sh`, fills one more folder, `/beckn`.
 
 Contents:
 [creds-dir.sh](#creds-dirsh) ·

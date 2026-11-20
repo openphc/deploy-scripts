@@ -8,7 +8,7 @@ how to check it worked.
 ## Documents
 
 - [architecture.md](architecture.md) — what ends up on the machine: native services vs the k3s namespace, data flow,
-  secrets flow, network exposure, important paths.
+  secrets flow, what the Beckn add-on adds, network exposure, important paths.
 - [config.md](config.md) — every config key, the environment-only variables, the seed file (`SEED_ENV_FILE`) and
   `config/.gitignore`.
 - [lib-install.md](lib-install.md) — install-time scripts: config loading, prerequisites, overlay generation, image

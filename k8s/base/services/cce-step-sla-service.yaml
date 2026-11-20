@@ -1,6 +1,7 @@
 # CCE 2.0.0 — Step SLA replaces the retired 1.x cce-scheduler-service: sweeps
-# step_sla_state_transition and records OVERDUE / MISSED. No Kafka, no DDL of its own (ddl-auto:
-# validate against Matcher's schema). Replicas are safe side by side (FOR UPDATE SKIP LOCKED fetch),
+# step_sla_state_transition and records OVERDUE / MISSED, and publishes the intelligence triggers of
+# those deviations to Kafka. No DDL of its own (ddl-auto: validate against Matcher's schema).
+# Replicas are safe side by side (FOR UPDATE SKIP LOCKED fetch),
 # so no leader election and no special rollout strategy.
 # Must NOT run while Matcher works through an event backlog (a replay, or its first start after the
 # upgrade): it would judge steps whose completing event is still queued, and never revises a verdict.
