@@ -79,6 +79,10 @@ grafana.cce.mdtlabs.org {
 }
 
 insights.cce.mdtlabs.org {
+    # The UI is built to live under /insights (router basename), so the bare site root renders
+    # a blank page — and Keycloak returns a user to the URL they started from.
+    redir / /insights/ 302
+
     reverse_proxy localhost:3001 {
         header_up Host {host}
         header_up X-Forwarded-For {remote}
