@@ -59,6 +59,12 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: DB_POOL_SIZE
               value: "3"
+            # Publishes the intelligence triggers of the OVERDUE / MISSED deviations it records.
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: cce-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
             # CCE_SLA_INSTANCE_ID is left unset: it defaults to HOSTNAME, the pod name, so each
             # replica gets its own id.
             - name: CCE_SLA_BATCH_SIZE
