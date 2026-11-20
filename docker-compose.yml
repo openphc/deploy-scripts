@@ -745,13 +745,21 @@ services:
       # Sweep — prod profile polls every 15s
       CCE_SLA_INSTANCE_ID: ${CCE_SLA_INSTANCE_ID:-cce-step-sla-service-dev}
       CCE_SLA_BATCH_SIZE: ${CCE_SLA_BATCH_SIZE:-100}
+      # Kafka — publishes the intelligence triggers of the OVERDUE / MISSED deviations it records
+      KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       # Observability
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,prometheus,metrics
       MANAGEMENT_METRICS_TAGS_APPLICATION: cce-step-sla-service
       # JVM memory tuning (Paketo buildpack)
       BPL_JVM_THREAD_COUNT: 50
-    # No healthcheck: the image is a Paketo buildpack (bootBuildImage) with no wget/curl, so a
-    # wget probe would always report unhealthy. Probe /actuator/health (port 8098) externally.
+    # The image ships its own healthcheck on port 8080; the service listens on SERVER_PORT 8092,
+    # so without this override the container always reports unhealthy.
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8092/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
     networks:
       - cce-net
 
