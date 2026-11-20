@@ -9,15 +9,20 @@
 #
 # Examples:
 #   # register the mediator only
-#   ./register-mediator.sh 197.243.24.138 8080 http isaac.ntakirutimana@medtroniclabs.org 'Isaac@123!'
+#   ./register-mediator.sh 197.xxx.24.xxx 8080 http isaac@abc.org 'Isaac@123!'
 #   # list channel names (to find the one to attach to)
-#   ./register-mediator.sh 197.243.24.138 8080 http isaac.ntakirutimana@medtroniclabs.org 'Isaac@123!' --list
+#   ./register-mediator.sh 197.xxx.24.xxx 8080 http isaac@abc.org 'Abc@123!' --list
 #   # register the mediator AND add the CCE route (secondary) to a named channel
-#   ./register-mediator.sh 197.243.24.138 8080 http isaac.ntakirutimana@medtroniclabs.org 'Isaac@123!' "OpenMRS to SHR channel"
+#   ./register-mediator.sh 197.xxx.24.xxx 8080 http isaac@abc.org 'Abc@123!' "OpenMRS to SHR channel"
 #
 # The CCE endpoint the route forwards to (override via env if needed):
 #   CCE_ENDPOINT_HOST (default cce.moh.gov.rw)   CCE_ENDPOINT_PATH (default /v1/openhim-emitter-adaptor/inbound)
 #   CCE_ENDPOINT_PORT (default 443)   CCE_BASIC_USER (default openhim-emitter-inbound)   CCE_BASIC_PASS
+
+
+# CCE_ENDPOINT_HOST=cce.moh.gov.rw ./register-mediator.sh $PROD_OPENHIM_CORE_MGMT_API_HOST_IP $PROD_OPENHIM_CORE_MGMT_API_PORT http $USERNAME '$PASSWORD' "$CHANNEL_NAME"
+
+
 set -euo pipefail
 HOST="${1:?usage: register-mediator.sh <host> <port> <http|https> <user> <pass> [channel_name|--list]}"
 PORT="${2:?port}"; SCHEME="${3:?http|https}"; USER="${4:?username}"; PASS="${5:?password}"
