@@ -1,6 +1,6 @@
-# The two public Beckn addresses of one participant: https://<host>/bap/receiver and https://<host>/bpp/receiver.
-# These are the URLs registered for its BAP and BPP subscribers in the network registry.
-# The callers (/bap/caller, /bpp/caller) are NOT published: only the participant's own services use them, in-cluster.
+# The public Sygnal address of one participant: https://<host>/sygnal/receiver. This is the URL in its subscriber record in
+# the network registry, and the context.receiverUri its peers put in the messages they send it (onix appends the action).
+# The caller (/sygnal/caller) is NOT published: only the participant's own services use it, in-cluster.
 # ${BECKN_HOST} is filled per participant by one-click-installer/lib/beckn/beckn-deploy.sh.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -18,17 +18,10 @@ spec:
     - host: ${BECKN_HOST}
       http:
         paths:
-          - path: /bap/receiver
+          - path: /sygnal/receiver
             pathType: Prefix
             backend:
               service:
-                name: onix-bap
-                port:
-                  number: 8081
-          - path: /bpp/receiver
-            pathType: Prefix
-            backend:
-              service:
-                name: onix-bpp
+                name: onix-sygnal
                 port:
                   number: 8082

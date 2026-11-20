@@ -5,7 +5,8 @@
     "OPENHIM_CLIENT_PASSWORD_<CLIENTID in upper case, '-' as '_'>.",
     "The four FHIR channels are the ones of the dev environment. 'CCE Beckn feed' is the channel the adaptor's Beckn endpoint posts",
     "to (openhim-cce-emitter-adaptor docs/openhim-channel-setup.md §9): /inbound must be its PRIMARY route, so that its answer",
-    "comes back, and its timeout must sit between the adaptor's 25 s (onix) and 35 s (channel) waits.",
+    "comes back, and its timeout (22.5 s) must sit between the adaptor's 20 s wait for its onix (which sends the event on to CCE",
+    "as sygnal/event/report) and its 25 s wait for this channel (one-click-installer/lib/beckn/beckn-deploy.sh, timeout chain).",
     "Every route host is the adaptor's Service name (k8s/beckn/openhim/openhim-cce-emitter-adaptor.yaml)."
   ],
   "clients": [
@@ -23,7 +24,7 @@
       "type": "http",
       "allow": ["cce-beckn"],
       "authType": "private",
-      "timeout": 30000,
+      "timeout": 22500,
       "status": "enabled",
       "routes": [
         { "name": "CCE Emitter Adaptor (Beckn)", "type": "http", "status": "enabled", "secured": false,

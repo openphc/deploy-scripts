@@ -2,24 +2,22 @@
 # one-click-installer/lib/beckn/beckn-seed.sh <envcode> [seed-file] — put the Beckn add-on's secrets into Infisical, folder /beckn
 # of the environment's project. Run under infisical-run.sh (install-beckn.sh does). Safe to re-run: a value that exists is kept.
 #
-# Like lib/infisical-seed.sh: a value in the seed file is stored as given; a missing one is generated, defaulted, or left
-# blank, by kind. Kinds here:
+# Like lib/infisical-seed.sh: a value in the seed file is stored as given; a missing one is generated or defaulted, by
+# kind. Kinds here:
 #   secret    random 32 characters
-#   uuid      a random UUID — the contract id and transactionId a sender puts in its messages. Nothing issues them (there is
-#             no confirm) and they are not secret, but each must be generated ONCE and then stay the same.
+#   uuid      a random UUID — a contract id / transactionId a sender puts in its Beckn referral messages. Nothing issues
+#             them (there is no confirm) and they are not secret, but each must be generated ONCE and then stay the same.
 #   default   a fixed value
 #   blank     nothing stored until the operator supplies it
 #   required  must be in the seed file (or already in Infisical): the adapters' private keys, issued with the registry records
 #
+# The CCE flows (Sygnal) carry no contract ids: every transactionId and messageId is a new UUID made by the sender. The ids
+# an earlier install stored for them (BECKN_HIE_CCE_*, BECKN_HIE_FEED_OPENMRS_*) are no longer read and may be deleted.
+# The Spice <-> OpenMRS referrals (standard Beckn) keep theirs, when openmrs is hosted here:
 #   Contract                 consumer -> provider      keys                       who reads them
-#   HIE to CCE               HIE -> CCE                BECKN_HIE_CCE_*            HIE adaptor (sends them); CCE's hmis.yml (alerts)
-#   HIE feed, OpenMRS        OpenMRS -> HIE            BECKN_HIE_FEED_OPENMRS_*   OpenMRS emitter (sends them)
-#   HIE feed, Spice          Spice -> HIE              —                          nobody here: Spice chooses its own
 #   Referrals in             Spice -> OpenMRS          BECKN_REFERRALS_IN_*       OpenMRS emitter, in on_status to Spice (agree with Spice)
 #   Referrals out            OpenMRS -> Spice          BECKN_REFERRALS_OUT_*      OpenMRS emitter, in update to Spice (blank until Spice
 #                                                                                 supplies them)
-# A receiver (CCE, the HIE adaptor, the OpenMRS receiver) accepts any non-blank contract id and echoes it in its on_update;
-# what it checks is who sent the message.
 set -euo pipefail
 ENVCODE="${1:?usage: beckn-seed.sh <envcode> [seed-file]}"
 SEED_FILE="${2:-}"
@@ -52,22 +50,22 @@ if [ -n "$SEED_FILE" ]; then
 fi
 
 F=/beckn
-SPEC=(
-  # every id a sender here uses, whatever is hosted here (the HIE adaptor and CCE's hmis.yml read the same HIE_CCE pair)
-  "BECKN_HIE_CCE_CONTRACT_ID:uuid" "BECKN_HIE_CCE_TRANSACTION_ID:uuid"
-  "BECKN_HIE_FEED_OPENMRS_CONTRACT_ID:uuid" "BECKN_HIE_FEED_OPENMRS_TRANSACTION_ID:uuid"
-  "BECKN_REFERRALS_IN_CONTRACT_ID:uuid" "BECKN_REFERRALS_IN_TRANSACTION_ID:uuid"
-  "BECKN_REFERRALS_OUT_CONTRACT_ID:blank" "BECKN_REFERRALS_OUT_TRANSACTION_ID:blank"
-)
+SPEC=()
+if beckn_hosted openmrs; then
+  SPEC+=("BECKN_REFERRALS_IN_CONTRACT_ID:uuid" "BECKN_REFERRALS_IN_TRANSACTION_ID:uuid"
+         "BECKN_REFERRALS_OUT_CONTRACT_ID:blank" "BECKN_REFERRALS_OUT_TRANSACTION_ID:blank")
+fi
 # Private keys: one pair per participant (BECKN_<P>_SIGNING_PRIVATE_KEY / BECKN_<P>_ENCR_PRIVATE_KEY), or — when every
 # participant on this machine was registered with the same key pair — one shared pair (BECKN_SIGNING_PRIVATE_KEY /
-# BECKN_ENCR_PRIVATE_KEY). A role-specific key (BECKN_<P>_BAP_… / BECKN_<P>_BPP_…) wins over both. beckn-deploy.sh resolves them.
+# BECKN_ENCR_PRIVATE_KEY). The key of the participant's former record (BECKN_CCE_BPP_…, BECKN_OPENHIM_BAP_…,
+# BECKN_OPENMRS_BAP_…; beckn_role) wins over both. beckn-deploy.sh resolves them the same way (OpenMRS's referral pair:
+# BECKN_OPENMRS_BAP_… / BECKN_OPENMRS_BPP_…, then the same two fallbacks).
 KEYS_OK=1
 for c in $BECKN_COMPONENTS; do
-  p="$(printf '%s' "$c" | tr '[:lower:]' '[:upper:]')"
+  p="$(printf '%s' "$c" | tr '[:lower:]' '[:upper:]')"; role="$(beckn_role "$p")"
   for kind in SIGNING ENCR; do
     found=""
-    for k in "BECKN_${p}_BAP_${kind}_PRIVATE_KEY" "BECKN_${p}_${kind}_PRIVATE_KEY" "BECKN_${kind}_PRIVATE_KEY"; do
+    for k in "BECKN_${p}_${role}_${kind}_PRIVATE_KEY" "BECKN_${p}_${kind}_PRIVATE_KEY" "BECKN_${kind}_PRIVATE_KEY"; do
       if [ -n "${SEED[$k]:-}" ] || [ -n "$(infisical_get "$F" "$k" "$PROJECT_ID" "$INFISICAL_ENV_SLUG")" ]; then found="$k"; break; fi
     done
     [ -n "$found" ] || { echo "  ✗ no ${kind,,} private key for $c: put BECKN_${p}_${kind}_PRIVATE_KEY (or the shared BECKN_${kind}_PRIVATE_KEY) in the seed file"; KEYS_OK=0; }
@@ -89,7 +87,7 @@ if beckn_hosted openmrs; then
 fi
 
 FROM_FILE=() GENERATED=() DEFAULTED=() KEPT=() BLANK=()
-for entry in "${SPEC[@]}"; do
+for entry in ${SPEC[@]+"${SPEC[@]}"}; do
   IFS=':' read -r key kind extra <<< "$entry"
   if [ -n "${SEED[$key]:-}" ]; then
     infisical_set "$F" "$key" "$PROJECT_ID" "$INFISICAL_ENV_SLUG" "${SEED[$key]}"; FROM_FILE+=("$key"); continue
@@ -107,7 +105,7 @@ done
 if beckn_hosted openhim; then infisical_set "$F" OPENHIM_PUBLIC_URL "$PROJECT_ID" "$INFISICAL_ENV_SLUG" "https://${BECKN_OPENHIM_HOST}"; fi
 if beckn_hosted openmrs; then infisical_set "$F" OPENMRS_PUBLIC_URL "$PROJECT_ID" "$INFISICAL_ENV_SLUG" "https://${BECKN_OPENMRS_HOST}"; fi
 # anything else in the seed file that belongs to the add-on (the private keys, a Spice id, …) is stored as given
-KNOWN=" $(printf '%s ' "${SPEC[@]}" | sed 's#:[^ ]*# #g') "
+KNOWN=" $(printf '%s ' ${SPEC[@]+"${SPEC[@]}"} | sed 's#:[^ ]*# #g') "
 for key in "${!SEED[@]}"; do
   case "$KNOWN" in *" $key "*) continue ;; esac
   case "$key" in BECKN_*|OPENHIM_*|OPENMRS_*|CCE_BECKN_*) ;; *) echo "  note: seed key $key is not a Beckn key — ignored (use SEED_ENV_FILE of install.sh for it)"; continue ;; esac

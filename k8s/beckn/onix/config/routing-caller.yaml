@@ -1,0 +1,8 @@
+# sygnalCaller /sygnal/caller/<action>: a message this participant sends goes to the receiver named in it — context.receiverUri
+# (the peer's https://<host>/sygnal/receiver) + "/" + the action. ${ONIX_CALLER_ACTION} is set per participant by
+# beckn-deploy.sh: cce sends sygnal/signal/emit; openhim and openmrs send sygnal/event/report.
+routingRules:
+  - version: "2.0.0"
+    targetType: "receiver"
+    endpoints:
+      - ${ONIX_CALLER_ACTION}

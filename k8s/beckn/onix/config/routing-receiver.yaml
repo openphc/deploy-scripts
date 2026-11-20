@@ -1,0 +1,13 @@
+# sygnalReceiver /sygnal/receiver/<action>: a message from the network, signature and schema checked, is passed to this
+# participant's own service. The router appends the action to the URL, e.g. http://cce-beckn-service:8075/sygnal/event/report.
+# ${ONIX_RECEIVER_TARGET} (the service's base URL) and ${ONIX_RECEIVER_ACTION} are set per participant by beckn-deploy.sh:
+#   cce      sygnal/event/report -> http://cce-beckn-service:8075
+#   openhim  sygnal/event/report -> http://openhim-cce-emitter-adaptor:8082
+#   openmrs  sygnal/signal/emit  -> http://openmrs-cce-receiver-adaptor:8080
+routingRules:
+  - version: "2.0.0"
+    targetType: "url"
+    target:
+      url: "${ONIX_RECEIVER_TARGET}"
+    endpoints:
+      - ${ONIX_RECEIVER_ACTION}

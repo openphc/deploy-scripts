@@ -1,9 +1,8 @@
 # openhim-cce-emitter-adaptor, demo-beckn build (https://github.com/openphc/openhim-cce-emitter-adaptor/tree/demo-beckn):
-# the HIE's Beckn worker AND its OpenHIM mediator, in one service.
-#   unwrap:  onix-bpp -> POST /beckn/bpp-webhook/update -> OpenHIM channel /cce-beckn -> POST /inbound (the existing pipeline:
-#            source, patient, facility, redaction, CloudEvent)
-#   wrap:    /inbound -> onix-bap /bap/caller/update -> CCE's BPP
-#   callback: onix-bap -> POST /beckn/bap-webhook/on_update (logged)
+# the HIE's Sygnal worker AND its OpenHIM mediator, in one service. No callbacks: every answer comes back in the same call.
+#   unwrap:  onix-sygnal /sygnal/receiver -> POST /sygnal/event/report -> OpenHIM channel /cce-beckn -> POST /inbound (the existing
+#            pipeline: source, patient, facility, redaction, CloudEvent)
+#   wrap:    /inbound -> onix-sygnal /sygnal/caller/sygnal/event/report -> CCE's https://<host>/sygnal/receiver
 # It runs beside OpenHIM, in the HIE's namespace — not in a CCE namespace, and with no access to the CCE collector: every
 # source's output is Beckn (docs/beckn-integration.md §5.1). This is separate from k8s/emitters/openhim, the collector-path
 # adaptor inside a CCE environment.
@@ -25,9 +24,9 @@ kind: ConfigMap
 metadata:
   name: openhim-adaptor-config
 data:
-  # beckn.subscribers — one entry per HMIS that may send events to the HIE over Beckn: its consumer id and address, and the
-  # source its events are filed under. No contract ids: any non-blank one from a listed subscriber is accepted and echoed.
-  # A list, so it is given as JSON (built by beckn-deploy.sh) rather than as indexed environment variables.
+  # beckn.subscribers — one entry per HMIS that may send sygnal/event/report to the HIE: its subscriber id (checked against
+  # context.senderId) and the source its events are filed under. A list, so it is given as JSON (built by beckn-deploy.sh)
+  # rather than as indexed environment variables.
   SPRING_APPLICATION_JSON: '${OPENHIM_ADAPTOR_SPRING_JSON}'
 ---
 apiVersion: apps/v1
@@ -101,36 +100,27 @@ spec:
               value: "true"
             - name: OPENHIM_EMITTER_BECKN_SCHEMA_BASE_URL
               value: "${BECKN_SCHEMA_BASE_URL}"
-            - name: OPENHIM_EMITTER_BECKN_ONIX_BAP_CALLER_URL
-              value: "http://onix-bap:8081/bap/caller"
-            - name: OPENHIM_EMITTER_BECKN_ONIX_BPP_CALLER_URL
-              value: "http://onix-bpp:8082/bpp/caller"
-            # Timeout budget (docs/beckn-integration.md §8.3) — each hop waits longer than the hop behind it:
-            #   onix-bap -> CCE 20 s  <  this adaptor -> onix-bap 25 s  <  channel 30 s  <  unwrap -> channel 35 s  <  onix-bpp 40 s
+            # This namespace's onix; events to CCE are posted to <caller-url>/sygnal/event/report.
+            - name: OPENHIM_EMITTER_BECKN_ONIX_CALLER_URL
+              value: "http://onix-sygnal:8082/sygnal/caller"
+            # Timeout chain (one-click-installer/lib/beckn/beckn-deploy.sh) — each hop waits longer than the hop behind it:
+            #   onix caller -> CCE 20 s, this adaptor -> onix 20 s  <  OpenHIM channel 22.5 s  <  this adaptor -> channel 25 s
+            #   <  onix receiver -> this adaptor 30 s
             - name: OPENHIM_EMITTER_BECKN_ONIX_TIMEOUT_MS
-              value: "25000"
+              value: "20000"
             - name: OPENHIM_EMITTER_BECKN_OPENHIM_CHANNEL_TIMEOUT_MS
-              value: "35000"
+              value: "25000"
+            # The HIE's Sygnal id (context.senderId to CCE; checked as context.receiverId of what OpenMRS sends): the
+            # subscriber id of the keys in this namespace's onix (BECKN_OPENHIM_ID).
+            - name: OPENHIM_EMITTER_BECKN_SELF_ID
+              value: "${BECKN_OPENHIM_ID}"
             - name: OPENHIM_EMITTER_BECKN_SELF_NETWORK_ID
-              value: "${BECKN_NETWORK_ID}"
-            - name: OPENHIM_EMITTER_BECKN_SELF_BAP_ID
-              value: "${BECKN_OPENHIM_BAP_ID}"
-            - name: OPENHIM_EMITTER_BECKN_SELF_BAP_URI
-              value: "${BECKN_OPENHIM_BAP_URI}"
-            - name: OPENHIM_EMITTER_BECKN_SELF_BPP_ID
-              value: "${BECKN_OPENHIM_BPP_ID}"
-            - name: OPENHIM_EMITTER_BECKN_SELF_BPP_URI
-              value: "${BECKN_OPENHIM_BPP_URI}"
-            # CCE, and the contract id and transactionId the HIE puts in every update to CCE. Nothing issues them (no
-            # confirm): CCE accepts any non-blank contract id. The same pair is in CCE's hmis.yml, which CCE uses for alerts.
-            - name: OPENHIM_EMITTER_BECKN_CCE_BPP_ID
-              value: "${BECKN_CCE_BPP_ID}"
-            - name: OPENHIM_EMITTER_BECKN_CCE_BPP_URI
-              value: "${BECKN_CCE_BPP_URI}"
-            - name: OPENHIM_EMITTER_BECKN_CCE_CONTRACT_ID
-              value: "${BECKN_HIE_CCE_CONTRACT_ID}"
-            - name: OPENHIM_EMITTER_BECKN_CCE_TRANSACTION_ID
-              value: "${BECKN_HIE_CCE_TRANSACTION_ID}"
+              value: "${BECKN_SYGNAL_NETWORK_ID}"
+            # CCE: context.receiverId and context.receiverUri (its https://<host>/sygnal/receiver) of every event to CCE.
+            - name: OPENHIM_EMITTER_BECKN_CCE_ID
+              value: "${BECKN_CCE_ID}"
+            - name: OPENHIM_EMITTER_BECKN_CCE_URI
+              value: "${BECKN_CCE_URI}"
             # The unwrap endpoint posts the FHIR resource here. 5001 is OpenHIM's plain-HTTP channel port (5000 is the HTTPS
             # one): an https:// URL on 5001 gets no answer at all — Core logs "Parse Error: Invalid method encountered" and the
             # adaptor times out. In-namespace traffic only; the client still signs in with HTTP Basic.

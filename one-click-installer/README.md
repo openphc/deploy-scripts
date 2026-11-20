@@ -14,8 +14,9 @@ and the Kafka download (see Troubleshooting).
 
 Deploys **CCE 2.0** (protocol / matcher / step-sla). Verified end to end on a freshly wiped Ubuntu 26.04 VM, 2026-10-28.
 
-**Beckn add-on:** `install-beckn.sh` adds Beckn network participants to an installed machine — CCE's Beckn bridge, and
-optionally OpenHIM and OpenMRS with their adaptors, each behind its own ONIX adapter. See
+**Beckn add-on:** `install-beckn.sh` adds network participants to an installed machine — CCE's bridge, and optionally
+OpenHIM and OpenMRS with their adaptors, each behind its own ONIX adapter (Sygnal for the CCE flows; OpenMRS keeps a Beckn
+adapter pair for the Spice referrals). See
 [docs/beckn-demo-setup.md](docs/beckn-demo-setup.md) (architecture) and [docs/beckn.md](docs/beckn.md) (reference).
 
 **Detailed documentation:** [`docs/`](docs/README.md) — every script in `lib/`, `lib/native/` and `tools/`, every config

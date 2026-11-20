@@ -326,7 +326,7 @@ spec:
       targetPort: 80
 ---
 # https://<OpenMRS host>/ -> the O3 gateway (/openmrs/spa = the app, /openmrs = REST and FHIR).
-# /bap/receiver and /bpp/receiver on the same host are in k8s/beckn/onix/ingress.yaml.
+# /sygnal/receiver (k8s/beckn/onix/ingress.yaml) and /bap/receiver, /bpp/receiver (k8s/beckn/onix-beckn/ingress.yaml) on the same host.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

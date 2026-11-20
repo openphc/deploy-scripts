@@ -1,6 +1,7 @@
-# cce-beckn-service (https://github.com/openphc/cce-beckn-service): the bridge between CCE and its ONIX adapter.
-#   events in:   onix-bpp -> POST /api/bpp-webhook/update -> cce-collector-service /v1/events   (no gateway, no token)
-#   alerts out:  cce-intelligence-service -> POST /v1/alerts -> onix-bpp /bpp/caller/on_status
+# cce-beckn-service (https://github.com/openphc/cce-beckn-service): the bridge between CCE and its ONIX adapter (Sygnal).
+#   events in:   onix-sygnal /sygnal/receiver -> POST /sygnal/event/report -> cce-collector-service /v1/events   (no gateway, no
+#                token); the answer (202 Ack / Nack) goes back in the same call, no callback
+#   alerts out:  cce-intelligence-service -> POST /v1/alerts -> onix-sygnal /sygnal/caller/sygnal/signal/emit -> the HMIS
 # ClusterIP only: port 8075 must never be reachable from outside the CCE namespace (its deployment guide, §1).
 # ${...} values are filled by one-click-installer/lib/beckn/beckn-deploy.sh (installer config + Infisical /beckn).
 apiVersion: v1
@@ -17,9 +18,10 @@ kind: ConfigMap
 metadata:
   name: cce-beckn-hmis
 data:
-  # One entry per HMIS that CCE sends alerts to (on_status), built by beckn-deploy.sh: the HIE, OpenMRS when its id is
-  # known, Spice once configured. contract-id is optional; every alert is a transaction of its own. Events from an HMIS
-  # are accepted without an entry, with any non-blank contract id.
+  # One entry per HMIS that CCE sends alerts to (sygnal/signal/emit), built by beckn-deploy.sh: OpenMRS when its id and
+  # address are known, Spice once configured. subscriber-uri is the HMIS's https://<host>/sygnal/receiver
+  # (context.receiverUri). Every alert is a transaction of its own. Events are accepted from any sender CCE's adapter
+  # verified, without an entry.
   hmis.yml: |
     cce:
       beckn:
@@ -57,16 +59,20 @@ spec:
           ports:
             - containerPort: 8075
           env:
-            - name: CCE_BECKN_SELF_BPP_ID
-              value: "${BECKN_CCE_BPP_ID}"
-            - name: CCE_BECKN_SELF_BPP_URI
-              value: "${BECKN_CCE_BPP_URI}"
+            # CCE's Sygnal id: the subscriber id of the keys in this namespace's onix (BECKN_CCE_ID).
+            - name: CCE_BECKN_SELF_ID
+              value: "${BECKN_CCE_ID}"
             - name: CCE_BECKN_SELF_NETWORK_ID
-              value: "${BECKN_NETWORK_ID}"
+              value: "${BECKN_SYGNAL_NETWORK_ID}"
             - name: CCE_BECKN_SCHEMA_BASE_URL
               value: "${BECKN_SCHEMA_BASE_URL}"
+            # Alerts are posted to <caller-url>/sygnal/signal/emit.
             - name: CCE_BECKN_ONIX_CALLER_URL
-              value: "http://onix-bpp:8082/bpp/caller"
+              value: "http://onix-sygnal:8082/sygnal/caller"
+            # Longer than the onix caller's 6 s wait for the HMIS, shorter than the intelligence service's 10 s
+            # (one-click-installer/lib/beckn/beckn-deploy.sh, the timeout chain).
+            - name: CCE_BECKN_ONIX_READ_TIMEOUT_MS
+              value: "7000"
             - name: CCE_COLLECTOR_URL
               value: "http://cce-collector-service:8080"
             # Longer than the collector's Kafka publish time (3 s + 10 s), as for every emitter (CCE_COLLECTOR_TIMEOUT).

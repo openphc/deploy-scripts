@@ -1,7 +1,8 @@
 # Isolation of a participant namespace that is NOT a CCE namespace (OpenHIM, OpenMRS). Same idea as k8s/base/network-policy.yaml:
-# pods talk to their own namespace, to kube-system (DNS, and Traefik for the other participants' public Beckn addresses) and
-# to public addresses (network registry, schema downloads) — never directly to another participant's pods.
-# Other participants reach this one only through Traefik -> onix-bap / onix-bpp, where the Beckn signature is checked.
+# pods talk to their own namespace, to kube-system (DNS, and Traefik for the other participants' public Sygnal addresses)
+# and to public addresses (network registry, schema downloads) — never directly to another participant's pods.
+# Other participants reach this one only through Traefik -> its adapter, where the signature is checked: onix-sygnal
+# (/sygnal/receiver) and, for OpenMRS's Spice referrals, onix-bap / onix-bpp (/bap/receiver, /bpp/receiver).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
