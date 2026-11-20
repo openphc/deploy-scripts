@@ -487,6 +487,8 @@ Parsed by [infisical-seed.sh](lib-infisical.md#infisical-seedsh), not by the she
 - Unquoted, `#` is part of the value (`s3cret#2027` is kept whole). Only whitespace followed by `#` starts a
   trailing comment: `KEY=value   # note` stores `value`.
 - An empty value is the same as not giving the key.
+- The line is split at its first `=`; everything after it is the value, a trailing `=` included (base64 values end in
+  one).
 
 ### What happens to each key
 
