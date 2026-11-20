@@ -5,10 +5,11 @@
 #   sudo bash one-click-installer/install-beckn.sh --config one-click-installer/config/<envcode>.env [--yes] [--only <component,…>]
 #
 # The same config file as install.sh, with the BECKN_* keys filled in (config/example.env, "Beckn add-on"; docs/beckn.md).
-# Deploys the components in BECKN_COMPONENTS — each a network participant with its own ONIX adapter and public address:
+# Deploys the components in BECKN_COMPONENTS — each a Sygnal participant with its own ONIX adapter and public address:
 #   cce      cce-beckn-service + CCE's adapter, into the existing cce-<envcode> namespace
 #   openhim  OpenHIM + the Beckn build of the emitter adaptor + the HIE's adapter, in its own namespace
-#   openmrs  OpenMRS O3 + the emitter and receiver adaptors (Beckn builds) + OpenMRS's adapter, in its own namespace
+#   openmrs  OpenMRS O3 + the emitter and receiver adaptors (Beckn builds) + OpenMRS's Sygnal adapter and its Beckn adapter pair
+#            for the Spice referrals (standard Beckn, unchanged), in its own namespace
 #
 # Needs: install.sh run for this env code with INGRESS_HOST + ACME_EMAIL set (k3s, Traefik with Let's Encrypt, Infisical), and a
 # DNS name per component that points at this machine. Safe to re-run; --only limits a run to some components.
@@ -25,7 +26,7 @@ while [ $# -gt 0 ]; do
     --config) CONFIG="${2:?--config needs a file}"; shift 2;;
     --only)   ONLY="${2:?--only needs a component list}"; shift 2;;
     --yes|-y) export ASSUME_YES=1; shift;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0;;
     *) echo "unknown argument: $1  (usage: install-beckn.sh --config <file> [--yes] [--only cce,openhim,openmrs])"; exit 2;;
   esac
 done
@@ -59,22 +60,24 @@ cat <<SUMMARY
 ════════════════════════════════════════════════════════════════
  Beckn add-on                       environment: $ENVCODE
  Components here:    $BECKN_COMPONENTS$( [ "$RUN" != "$BECKN_COMPONENTS" ] && echo "   (this run: $RUN)" )
-$(for c in $BECKN_ALL_COMPONENTS; do p="$(printf '%s' "$c" | tr '[:lower:]' '[:upper:]')"; b="BECKN_${p}_BAP_ID"; q="BECKN_${p}_BPP_ID"; h="BECKN_${p}_HOST"
-    if beckn_hosted "$c"; then printf ' %-8s            https://%s   ns %s\n                     %s / %s\n' "$c" "${!h}" "$(beckn_component_ns "$c")" "${!b}" "${!q}"
-    else printf ' %-8s            elsewhere   %s / %s\n' "$c" "${!b:--}" "${!q:--}"; fi; done)
- Spice:              $( [ "$BECKN_SPICE_CONFIGURED" = true ] && echo "$BECKN_SPICE_BAP_ID" || echo "not configured (placeholder ids)")   referral legs: $BECKN_REFERRALS_ENABLED
- Registry:           $BECKN_REGISTRY_URL  ($BECKN_REGISTRY_NAME)
+$(for c in $BECKN_ALL_COMPONENTS; do p="$(printf '%s' "$c" | tr '[:lower:]' '[:upper:]')"; i="BECKN_${p}_ID"; u="BECKN_${p}_URI"
+    if beckn_hosted "$c"; then printf ' %-8s            %s   ns %s\n                     %s\n' "$c" "${!u}" "$(beckn_component_ns "$c")" "${!i}"
+    else printf ' %-8s            elsewhere   %s  %s\n' "$c" "${!i:--}" "${!u:-}"; fi; done)
+ Spice (Sygnal):     $( [ "$BECKN_SPICE_CONFIGURED" = true ] && echo "$BECKN_SPICE_ID  ${BECKN_SPICE_URI:-}" || echo "not configured")
+$(beckn_hosted openmrs && echo " Referrals (Beckn):  OpenMRS $BECKN_OPENMRS_BAP_ID / $BECKN_OPENMRS_BPP_ID   Spice $( [ "$BECKN_SPICE_REFERRALS_CONFIGURED" = true ] && echo "$BECKN_SPICE_BAP_ID" || echo "not configured (placeholder ids)")   legs: $BECKN_REFERRALS_ENABLED")
+ Registry:           $BECKN_REGISTRY_URL   Sygnal network $BECKN_SYGNAL_NETWORK_ID
  Schemas:            ${BECKN_SCHEMA_DIR:-$BECKN_SCHEMA_REPO @ $BECKN_SCHEMA_REF}
  HIE redaction:      $( [ "$BECKN_OPENHIM_REDACTION_ENABLED" = false ] && echo "OFF — full clinical payloads go to CCE" || echo "on")
 ════════════════════════════════════════════════════════════════
 SUMMARY
 confirm "Proceed?" || { echo "Aborted."; exit 0; }
 
-phase "1/4 Secrets: Infisical /beckn (keys, passwords, contract ids)"
+phase "1/4 Secrets: Infisical /beckn (keys, passwords, referral contract ids)"
 INF bash "$BLIB/beckn-seed.sh" "$ENVCODE" "${BECKN_SEED_ENV_FILE:-}"
 
-phase "2/4 Schemas for the adapters (CceClinicalEvent, CceCareAlert)"
+phase "2/4 Schemas for the adapters (the CCE Sygnal profile, CceClinicalEvent, CceCareAlert)"
 # The adapters check every message against these. A local folder wins; otherwise they are fetched, like the data pipeline.
+# The profile is <schema>/sygnal-profile/v1.0/cce-sygnal-apis.yaml unless BECKN_SYGNAL_PROFILE names another file.
 if [ -n "${BECKN_SCHEMA_DIR:-}" ]; then
   [ -d "$BECKN_SCHEMA_DIR" ] || { echo "ERROR: BECKN_SCHEMA_DIR=$BECKN_SCHEMA_DIR is not a directory"; exit 1; }
   echo "  using $BECKN_SCHEMA_DIR"
@@ -87,6 +90,10 @@ else
 fi
 export BECKN_SCHEMA_DIR
 for s in CceClinicalEvent CceCareAlert; do [ -d "$BECKN_SCHEMA_DIR/$s" ] || echo "  WARNING: no $s/ in $BECKN_SCHEMA_DIR — the adapters will refuse messages that use it"; done
+export BECKN_SYGNAL_PROFILE="${BECKN_SYGNAL_PROFILE:-$BECKN_SCHEMA_DIR/sygnal-profile/v1.0/cce-sygnal-apis.yaml}"
+[ -r "$BECKN_SYGNAL_PROFILE" ] || { echo "ERROR: no CCE Sygnal profile at $BECKN_SYGNAL_PROFILE — the adapters cannot start without it."
+  echo "       Use a cce-beckn-service ref that has schema/sygnal-profile/ (BECKN_SCHEMA_REF), or set BECKN_SYGNAL_PROFILE."; exit 1; }
+echo "  CCE Sygnal profile: $BECKN_SYGNAL_PROFILE"
 
 phase "3/4 Deploy: $RUN"
 for c in $RUN; do INF bash "$BLIB/beckn-deploy.sh" "$ENVCODE" "$c"; done
@@ -102,11 +109,11 @@ wait_for() {   # <ns> <timeout> <deployment…>: report, never abort — a slow 
 for c in $RUN; do
   NS="$(beckn_component_ns "$c")"
   case "$c" in
-    cce)     wait_for "$NS" 300s onix-redis onix-bap onix-bpp cce-beckn-service;;
-    openhim) wait_for "$NS" 600s openhim-mongo openhim-core onix-redis onix-bap onix-bpp
+    cce)     wait_for "$NS" 300s onix-redis onix-sygnal cce-beckn-service;;
+    openhim) wait_for "$NS" 600s openhim-mongo openhim-core onix-redis onix-sygnal
              INF bash "$BLIB/openhim-setup.sh" "$ENVCODE"
              wait_for "$NS" 300s openhim-console openhim-cce-emitter-adaptor;;
-    openmrs) wait_for "$NS" 300s openmrs-db onix-redis onix-bap onix-bpp openmrs-gateway openmrs-frontend
+    openmrs) wait_for "$NS" 300s openmrs-db onix-redis onix-sygnal onix-bap onix-bpp openmrs-gateway openmrs-frontend
              # the first start on an empty database installs the reference application (10-20 minutes)
              wait_for "$NS" 1500s openmrs-backend
              wait_for "$NS" 300s openmrs-cce-receiver-adaptor openmrs-cce-emitter-adaptor;;
@@ -121,9 +128,10 @@ done
 cat <<DONE
 
 Done.
-$(beckn_hosted cce && echo "  CCE Beckn:   https://$BECKN_CCE_HOST/bpp/receiver   ($BECKN_CCE_BPP_ID)")
-$(beckn_hosted openhim && echo "  OpenHIM:     https://$BECKN_OPENHIM_HOST/   (console; Core API under /openhim-api)   Beckn: /bap/receiver, /bpp/receiver")
-$(beckn_hosted openmrs && echo "  OpenMRS:     https://$BECKN_OPENMRS_HOST/openmrs/spa   Beckn: /bap/receiver, /bpp/receiver")
+$(beckn_hosted cce && echo "  CCE Sygnal:  $BECKN_CCE_URI   ($BECKN_CCE_ID)")
+$(beckn_hosted openhim && echo "  OpenHIM:     https://$BECKN_OPENHIM_HOST/   (console; Core API under /openhim-api)   Sygnal: $BECKN_OPENHIM_URI ($BECKN_OPENHIM_ID)")
+$(beckn_hosted openmrs && echo "  OpenMRS:     https://$BECKN_OPENMRS_HOST/openmrs/spa   Sygnal: $BECKN_OPENMRS_URI ($BECKN_OPENMRS_ID)   Beckn (referrals): /bap/receiver, /bpp/receiver")
+  Registry:    every Sygnal id must be a member of $BECKN_SYGNAL_NETWORK_ID — beckn-status.sh checks it
   Logins:      sudo bash $HERE/tools/show-credentials.sh $ENVCODE [--reveal]
   Check:       sudo bash $BLIB/run.sh --config $CONFIG beckn-status.sh
   Docs:        $HERE/docs/beckn.md   (the flow, what to exchange with the other participants, copying an OpenMRS)

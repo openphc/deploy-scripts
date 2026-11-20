@@ -1,0 +1,170 @@
+# ONIX adapter config of ONE network participant (Sygnal, CCE profile) — a TEMPLATE.
+# one-click-installer/lib/beckn/beckn-deploy.sh fills the ${...} values per participant (from the installer config and
+# Infisical) and stores the result in the Secret onix-config; nothing rendered is written to the repository.
+#
+# One identity (${ONIX_SUBSCRIBER_ID}) and two modules:
+#   sygnalReceiver  /sygnal/receiver/  role bpp: our id is context.receiverId. Checks the signature and the schema, passes
+#                   the message to this participant's own service (routing-receiver.yaml), signs the Ack.
+#                   Published: https://<host>/sygnal/receiver is the address in the participant's registry record.
+#   sygnalCaller    /sygnal/caller/    role bap: our id is context.senderId. Checks the schema, signs, sends the message to
+#                   context.receiverUri (routing-caller.yaml), checks the signature of the Ack. In-cluster only.
+# Based on the verified devkit config of DHP-Specs (cce-onix / openhim-onix / openmrs-onix branches). What is set, and why:
+#   - schemaValidator type "file": the CCE profile of Sygnal (config/sygnal/cce-sygnal-apis.yaml, ConfigMap onix-sygnal) is
+#     the only spec — the adapter accepts the two Sygnal actions and nothing else, and downloads nothing at start. onix logs
+#     a WARN that it is not the Beckn core spec. The two bags (CceClinicalEvent, CceCareAlert) are local copies in
+#     config/schema (ConfigMap onix-schema).
+#   - responseHeaderTimeout per module: every answer comes back in the same HTTP call, so every hop must wait longer than
+#     the hop behind it (the default 5 s breaks that). The values come from beckn-deploy.sh (the timeout chain).
+#   - http.timeout write 60: longer than the longest of those waits.
+#   - no payloadStore: the stored copy of a message would hold patient data.
+#   - cache: the participant's own Redis (Service onix-redis).
+#   - allowedNetworkIDs: a subscriber found in the registry is accepted only if it is a member of one of these networks
+#     (its record's network_memberships). The installer sets it to BECKN_SYGNAL_NETWORK_ID and leaves the line out when empty.
+appName: "${ONIX_APP_NAME}"
+log:
+  level: ${ONIX_LOG_LEVEL}
+  destinations:
+    - type: stdout
+  contextKeys:
+    - transactionId
+    - messageId
+    - subscriber_id
+    - module_id
+http:
+  port: 8082
+  timeout:
+    read: 30
+    write: 60
+    idle: 30
+pluginManager:
+  root: ./plugins
+modules:
+  - name: sygnalReceiver
+    path: /sygnal/receiver/
+    handler:
+      type: std
+      role: bpp
+      subscriberId: ${ONIX_SUBSCRIBER_ID}
+      httpClientConfig:
+        maxIdleConns: 1000
+        maxIdleConnsPerHost: 200
+        idleConnTimeout: 300s
+        responseHeaderTimeout: ${ONIX_RECEIVER_TIMEOUT}
+      plugins:
+        registry:
+          id: dediregistry
+          config:
+            url: ${BECKN_REGISTRY_URL}
+            allowedNetworkIDs: "${BECKN_SYGNAL_ALLOWED_NETWORK_IDS}"
+            timeout: 10
+            retry_max: 3
+            retry_wait_min: 100ms
+            retry_wait_max: 500ms
+        keyManager:
+          id: simplekeymanager
+          config:
+            subscriberId: ${ONIX_SUBSCRIBER_ID}
+            keyId: ${ONIX_KEY_ID}
+            signingPrivateKey: ${ONIX_SIGNING_PRIVATE_KEY}
+            signingPublicKey: ${ONIX_SIGNING_PUBLIC_KEY}
+            encrPrivateKey: ${ONIX_ENCR_PRIVATE_KEY}
+            encrPublicKey: ${ONIX_ENCR_PUBLIC_KEY}
+        cache:
+          id: cache
+          config:
+            addr: ${ONIX_REDIS_ADDR}
+        schemaValidator:
+          id: schemav2validator
+          config:
+            type: "file"
+            location: "./config/sygnal/cce-sygnal-apis.yaml"
+            cacheTTL: "3600"
+            extendedSchema_enabled: "true"
+            extendedSchema_cacheTTL: "86400"
+            extendedSchema_maxCacheSize: "100"
+            extendedSchema_downloadTimeout: "30"
+            extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
+            extendedSchema_localSchemaPath: "./config/schema"
+        signValidator:
+          id: signvalidator
+        signer:
+          id: signer
+        router:
+          id: router
+          config:
+            routingConfig: ./config/routing-receiver.yaml
+        middleware:
+          - id: reqpreprocessor
+            config:
+              contextKeys: transactionId,messageId
+              role: bpp
+      steps:
+        - validateSign
+        - validateSchema
+        - addRoute
+        - signAck
+
+  - name: sygnalCaller
+    path: /sygnal/caller/
+    handler:
+      type: std
+      role: bap
+      subscriberId: ${ONIX_SUBSCRIBER_ID}
+      httpClientConfig:
+        maxIdleConns: 1000
+        maxIdleConnsPerHost: 200
+        idleConnTimeout: 300s
+        responseHeaderTimeout: ${ONIX_CALLER_TIMEOUT}
+      plugins:
+        registry:
+          id: dediregistry
+          config:
+            url: ${BECKN_REGISTRY_URL}
+            allowedNetworkIDs: "${BECKN_SYGNAL_ALLOWED_NETWORK_IDS}"
+            timeout: 10
+            retry_max: 3
+            retry_wait_min: 100ms
+            retry_wait_max: 500ms
+        keyManager:
+          id: simplekeymanager
+          config:
+            subscriberId: ${ONIX_SUBSCRIBER_ID}
+            keyId: ${ONIX_KEY_ID}
+            signingPrivateKey: ${ONIX_SIGNING_PRIVATE_KEY}
+            signingPublicKey: ${ONIX_SIGNING_PUBLIC_KEY}
+            encrPrivateKey: ${ONIX_ENCR_PRIVATE_KEY}
+            encrPublicKey: ${ONIX_ENCR_PUBLIC_KEY}
+        cache:
+          id: cache
+          config:
+            addr: ${ONIX_REDIS_ADDR}
+        schemaValidator:
+          id: schemav2validator
+          config:
+            type: "file"
+            location: "./config/sygnal/cce-sygnal-apis.yaml"
+            cacheTTL: "3600"
+            extendedSchema_enabled: "true"
+            extendedSchema_cacheTTL: "86400"
+            extendedSchema_maxCacheSize: "100"
+            extendedSchema_downloadTimeout: "30"
+            extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
+            extendedSchema_localSchemaPath: "./config/schema"
+        signValidator:
+          id: signvalidator
+        signer:
+          id: signer
+        router:
+          id: router
+          config:
+            routingConfig: ./config/routing-caller.yaml
+        middleware:
+          - id: reqpreprocessor
+            config:
+              contextKeys: transactionId,messageId
+              role: bap
+      steps:
+        - validateSchema
+        - addRoute
+        - sign
+        - validateAckSign

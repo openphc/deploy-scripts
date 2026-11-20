@@ -4,8 +4,9 @@ This branch holds only what the **one-click installer** needs to stand up a comp
 machine: native PostgreSQL, Kafka, Kafka Connect/Debezium and ClickHouse, the CCE services on k3s, Keycloak, Infisical,
 Prometheus/Grafana and Portainer.
 
-This is `release-2.0.0` plus the **Beckn add-on**: `install-beckn.sh` puts CCE, OpenHIM and OpenMRS on a Beckn network,
-each behind its own ONIX adapter, so that clinical events travel OpenMRS → HIE → CCE as signed Beckn messages. Start with
+This is `release-2.0.0` plus the **Beckn add-on**: `install-beckn.sh` puts CCE, OpenHIM and OpenMRS on a network, each
+behind its own ONIX adapter, so that clinical events travel OpenMRS → HIE → CCE and care alerts CCE → OpenMRS as signed
+Sygnal messages (the CCE profile). The Spice ↔ OpenMRS health referrals stay on standard Beckn. Start with
 [beckn-demo-setup.md](one-click-installer/docs/beckn-demo-setup.md) (architecture and demo) and
 [beckn.md](one-click-installer/docs/beckn.md) (reference).
 
@@ -21,7 +22,7 @@ the history of `main`.
 | `k8s/overlays/prod/` | The template the installer copies into `k8s/overlays/<env>/` for a new environment |
 | `k8s/emitters/` | The emitter adaptors (`openhim`, `tiberbu`): each environment deploys exactly one, chosen with `EMITTER_ADAPTOR` |
 | `k8s/seeds/` | Keycloak `cce` realm and gateway `api_permissions` |
-| `k8s/beckn/` | The Beckn add-on: `onix/` (the ONIX adapter and its config templates, shared), `cce/` (cce-beckn-service), `openhim/` (OpenHIM + the Beckn build of its adaptor), `openmrs/` (OpenMRS O3 + its two adaptors), `netpol/` |
+| `k8s/beckn/` | The Beckn add-on: `onix/` (the Sygnal ONIX adapter and its config templates, shared), `onix-beckn/` (OpenMRS's Beckn adapter pair for the Spice referrals, with the Health* schemas), `cce/` (cce-beckn-service), `openhim/` (OpenHIM + the Beckn build of its adaptor), `openmrs/` (OpenMRS O3 + its two adaptors), `netpol/` |
 | (`data-pipeline/`) | Not in git: the installer fetches ClickHouse schema, CDC SQL and the Debezium connector from `cce-data-pipeline` at `DATA_PIPELINE_REF` (default `demo-v2`: step groups, 200-day retention) on every run |
 | `grafana/dashboards/` | Grafana dashboards the installer loads |
 | `keycloak-themes/cce-insights-theme/` | The unbranded Insights login theme (default). Point `KEYCLOAK_THEME_DIR` at a branded copy to brand it |
@@ -53,7 +54,7 @@ with their own `IMAGE_*` keys:
 | `ghcr.io/openphc/openhim-cce-emitter-adaptor` | [openhim-cce-emitter-adaptor](https://github.com/openphc/openhim-cce-emitter-adaptor) | `demo-beckn` | `demo-beckn-latest` |
 | `ghcr.io/openphc/openmrs-cce-emitter-adaptor` | [openmrs-cce-emitter-adaptor](https://github.com/openphc/openmrs-cce-emitter-adaptor) | `demo-beckn` | `demo-beckn-latest` |
 | `ghcr.io/openphc/openmrs-cce-receiver-adaptor` | [openmrs-cce-receiver-adaptor](https://github.com/openphc/openmrs-cce-receiver-adaptor) | `demo-beckn` | `demo-beckn-latest` |
-| `fidedocker/onix-adapter` | beckn-onix | — | `1.6.1` |
+| `fidedocker/onix-adapter` | beckn-onix | — | `1.9.4` (Sygnal adapters); `1.6.1` (OpenMRS's Beckn referral pair) |
 | `jembi/openhim-core`, `jembi/openhim-console`, `mongo` | OpenHIM | — | `v8.5.1`, `v1.18.2`, `7.0` |
 | `openmrs/openmrs-reference-application-3-{backend,frontend,gateway}`, `mariadb` | OpenMRS O3 | — | `3.6.0`, `10.11.7` |
 

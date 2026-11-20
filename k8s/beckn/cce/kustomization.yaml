@@ -1,4 +1,4 @@
-# CCE as a Beckn participant: cce-beckn-service + CCE's ONIX adapter, added to an EXISTING cce-<envcode> namespace
+# CCE as a Sygnal participant: cce-beckn-service + CCE's ONIX adapter, added to an EXISTING cce-<envcode> namespace
 # (the one install.sh created — its NetworkPolicy and Traefik setup are reused). Applied by
 # one-click-installer/install-beckn.sh; the namespace is given on the command line (kubectl apply -n), not here.
 apiVersion: kustomize.config.k8s.io/v1beta1

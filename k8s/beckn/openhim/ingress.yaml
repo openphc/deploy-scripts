@@ -1,7 +1,7 @@
 # https://<OpenHIM host>/            -> the admin console
 # https://<OpenHIM host>/openhim-api -> the Core API the console calls (prefix stripped; HTTPS to Core's self-signed certificate)
-# /bap/receiver and /bpp/receiver on the same host are in k8s/beckn/onix/ingress.yaml.
-# The channel ports (5000/5001) are NOT published: with Beckn, events reach the channel through the emitter adaptor, in-cluster.
+# /sygnal/receiver on the same host is in k8s/beckn/onix/ingress.yaml.
+# The channel ports (5000/5001) are NOT published: with Sygnal, events reach the channel through the emitter adaptor, in-cluster.
 apiVersion: traefik.io/v1alpha1
 kind: ServersTransport
 metadata:

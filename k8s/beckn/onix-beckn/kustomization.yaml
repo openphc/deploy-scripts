@@ -1,0 +1,8 @@
+# OpenMRS's Beckn adapter pair (onix-bap, onix-bpp) and its public Beckn ingress, for the Spice <-> OpenMRS health
+# referrals only. Used by k8s/beckn/openmrs next to ../onix (the Sygnal adapter and the Redis both use).
+# config/ holds the adapter config templates, health-schema/ the Health* referral pack.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - onix-beckn.yaml
+  - ingress.yaml

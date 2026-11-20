@@ -1,11 +1,13 @@
-# OpenMRS as a Beckn participant, in its own namespace (BECKN_OPENMRS_NAMESPACE, default "openmrs"): the O3 reference
-# application, the two adaptors (demo-beckn builds) and OpenMRS's ONIX adapter. Applied by
+# OpenMRS as a network participant, in its own namespace (BECKN_OPENMRS_NAMESPACE, default "openmrs"): the O3 reference
+# application, the two adaptors (demo-beckn builds), OpenMRS's Sygnal adapter for the CCE flows (../onix) and its Beckn
+# adapter pair for the Spice referrals (../onix-beckn). Applied by
 # one-click-installer/install-beckn.sh, which creates the namespace and passes it with kubectl apply -n.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../netpol
   - ../onix
+  - ../onix-beckn
   - openmrs.yaml
   - adaptors.yaml
 configMapGenerator:

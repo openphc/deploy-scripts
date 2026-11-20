@@ -3,13 +3,19 @@
 # Run under infisical-run.sh, with the installer config loaded (install-beckn.sh does both). Safe to re-run.
 #
 # What it does, in the component's namespace:
-#   1. Secret onix-config     the adapter's two configs + four routing files, rendered from k8s/beckn/onix/config/ with this
-#                             participant's ids, keys, timeouts and webhook addresses
-#   2. ConfigMap onix-schema  the extra schema folders, one key per file, "/" written "__": the CCE schemas (BECKN_SCHEMA_DIR)
-#                             and the Health* referral pack in k8s/beckn/onix/health-schema (schema.beckn.io no longer serves it)
-#   3. kubectl apply          k8s/beckn/<component> rendered with kustomize, ${VARS} filled with envsubst
-#   4. host aliases           on the two onix pods: the public Beckn hosts that live on THIS machine -> Traefik's ClusterIP
+#   1. Secret onix-config     the Sygnal adapter's config + its two routing files, rendered from k8s/beckn/onix/config/ with
+#                             this participant's id, keys, timeouts and the address of its own service. openmrs: also its
+#                             Beckn referral pair's two configs + four routing files (k8s/beckn/onix-beckn/config/)
+#   2. ConfigMap onix-sygnal-profile  the CCE profile of Sygnal (BECKN_SYGNAL_PROFILE): the Sygnal adapter's only spec
+#      ConfigMap onix-schema          the bag schema folders, one key per file, "/" written "__": CceClinicalEvent,
+#                                     CceCareAlert (BECKN_SCHEMA_DIR)
+#                                     openmrs: also the Health* referral pack (k8s/beckn/onix-beckn/health-schema)
+#   3. kubectl apply          k8s/beckn/<component> rendered with kustomize, ${VARS} filled with envsubst. cce / openhim: the
+#                             Beckn adapter pair of the former setup (onix-bap, onix-bpp) is removed — only OpenMRS keeps
+#                             one, for the Spice referrals.
+#   4. host aliases           on the adapter pods: the public hosts that live on THIS machine -> Traefik's ClusterIP
 #                             (a pod cannot reach the machine's own public address)
+#   5. (cce only)             the intelligence service's alert routes to cce-beckn-service
 # Nothing rendered is written into the repository: the files hold private keys, so they exist in a temp dir only.
 #
 # DRY_RUN=1 renders and checks everything, prints the resource list, and applies nothing.
@@ -26,72 +32,102 @@ P="$(printf '%s' "$COMPONENT" | tr '[:lower:]' '[:upper:]')"
 SRC="$REPO/k8s/beckn/$COMPONENT"
 [ -r "$SRC/kustomization.yaml" ] || { echo "ERROR: no $SRC/kustomization.yaml"; exit 1; }
 : "${BECKN_SCHEMA_DIR:?BECKN_SCHEMA_DIR not set — install-beckn.sh resolves it (the folder holding CceClinicalEvent/ and CceCareAlert/)}"
+: "${BECKN_SYGNAL_PROFILE:=$BECKN_SCHEMA_DIR/sygnal-profile/v1.0/cce-sygnal-apis.yaml}"
+[ -r "$BECKN_SYGNAL_PROFILE" ] || { echo "ERROR: no CCE Sygnal profile at $BECKN_SYGNAL_PROFILE (set BECKN_SYGNAL_PROFILE, or a BECKN_SCHEMA_DIR / BECKN_SCHEMA_REF whose schema/ has sygnal-profile/v1.0/cce-sygnal-apis.yaml)"; exit 1; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 umask 077
 say() { echo "  [$COMPONENT] $*"; }
 
 # ── this participant's adapter settings ──────────────────────────────────────────────────────────────────────────────────
-# Keys: the most specific one that is set wins — per role, per participant, then the pair shared by every participant here.
+# One identity: BECKN_<P>_ID / BECKN_<P>_KEY_ID (beckn_defaults falls back to the participant's former BAP or BPP record).
+# Keys: the most specific one that is set wins — that former role's, the participant's, then the pair shared by every
+# participant here.
 pick() { local v; for v in "$@"; do if [ -n "${!v:-}" ]; then printf '%s' "${!v}"; return 0; fi; done; return 0; }
-for role in BAP BPP; do
-  export "ONIX_${role}_SUBSCRIBER_ID=$(pick "BECKN_${P}_${role}_ID")" "ONIX_${role}_KEY_ID=$(pick "BECKN_${P}_${role}_KEY_ID")"
-  for k in SIGNING_PRIVATE_KEY SIGNING_PUBLIC_KEY ENCR_PRIVATE_KEY ENCR_PUBLIC_KEY; do
-    export "ONIX_${role}_${k}=$(pick "BECKN_${P}_${role}_${k}" "BECKN_${P}_${k}" "BECKN_${k}")"
-  done
+ROLE="$(beckn_role "$P")"
+export "ONIX_SUBSCRIBER_ID=$(pick "BECKN_${P}_ID")" "ONIX_KEY_ID=$(pick "BECKN_${P}_KEY_ID")"
+for k in SIGNING_PRIVATE_KEY SIGNING_PUBLIC_KEY ENCR_PRIVATE_KEY ENCR_PUBLIC_KEY; do
+  export "ONIX_${k}=$(pick "BECKN_${P}_${ROLE}_${k}" "BECKN_${P}_${k}" "BECKN_${k}")"
 done
-export ONIX_LOG_LEVEL="$BECKN_ONIX_LOG_LEVEL"
-# Every answer on the event route comes back in the same HTTP call, so each hop must wait longer than the hop behind it:
-#   CCE: beckn-service waits 15 s for the collector -> CCE's onix-bpp 18 s -> HIE's onix-bap 20 s -> HIE adaptor 25 s ->
-#   OpenHIM channel 30 s -> adaptor's Beckn endpoint 35 s -> HIE's onix-bpp 40 s -> OpenMRS's onix-bap 45 s -> emitter 50 s.
-# Callbacks (on_update, on_status) are logged on arrival and answered at once: 5 s into the local service.
-export ONIX_BAP_RECEIVER_TIMEOUT=5s ONIX_BPP_CALLER_TIMEOUT=10s ONIX_HTTP_TIMEOUT=60
+export ONIX_APP_NAME="onix-$COMPONENT" ONIX_LOG_LEVEL="$BECKN_ONIX_LOG_LEVEL" ONIX_REDIS_ADDR="onix-redis:6379"
+# Every answer comes back in the same HTTP call (there are no callbacks), so each hop must wait longer than the hop
+# behind it:
+#   sygnal/event/report, OpenMRS -> HIE -> CCE
+#     cce-beckn-service -> collector                       15 s  (CCE_COLLECTOR_TIMEOUT)
+#     CCE onix receiver -> cce-beckn-service               18 s
+#     HIE onix caller -> CCE                               20 s  (the HIE adaptor gives its onix 20 s too and gets the
+#                                                                 CCE onix's own error first)
+#     OpenHIM channel "CCE Beckn feed" -> /inbound         22.5 s (openhim-metadata.json)
+#     HIE adaptor -> OpenHIM channel                       25 s  (OPENHIM_EMITTER_BECKN_OPENHIM_CHANNEL_TIMEOUT_MS)
+#     HIE onix receiver -> HIE adaptor                     30 s
+#     OpenMRS onix caller -> HIE                           40 s
+#     OpenMRS emitter -> its adapters                      50 s  (OPENMRS_EMITTER_BECKN_ONIX_TIMEOUT, one setting for every
+#                                                                 leg; the referral pair's onix-bap waits 45 s for Spice)
+#   sygnal/signal/emit, CCE -> OpenMRS
+#     OpenMRS onix receiver -> receiver adaptor             5 s
+#     CCE onix caller -> OpenMRS                            6 s
+#     cce-beckn-service -> its onix                         7 s  (CCE_BECKN_ONIX_READ_TIMEOUT_MS; the intelligence
+#                                                                 service waits 10 s for cce-beckn-service)
+# The adapters' own HTTP server timeout (write) is 60 s, above all of them.
+# Receiver: the action it accepts and the base URL of the service it passes it to (onix appends the action).
+# Caller: the action this participant sends.
 case "$COMPONENT" in
-  cce)     # cce-beckn-service gives its own callbacks 7 s (CCE_BECKN_ONIX_READ_TIMEOUT_MS): the adapter must give up first
-           export ONIX_BPP_RECEIVER_TIMEOUT=18s ONIX_BAP_CALLER_TIMEOUT=10s ONIX_BPP_CALLER_TIMEOUT=6s
-           export ONIX_BPP_RECEIVER_TARGET="http://cce-beckn-service:8075/api/bpp-webhook" ONIX_BAP_RECEIVER_TARGET="http://cce-beckn-service:8075/api/bap-webhook";;
-  openhim) export ONIX_BPP_RECEIVER_TIMEOUT=40s ONIX_BAP_CALLER_TIMEOUT=20s
-           export ONIX_BPP_RECEIVER_TARGET="http://openhim-cce-emitter-adaptor:8082/beckn/bpp-webhook" ONIX_BAP_RECEIVER_TARGET="http://openhim-cce-emitter-adaptor:8082/beckn/bap-webhook";;
-  openmrs) # a referral from Spice makes several OpenMRS calls (30 s each at most) before the receiver answers
-           export ONIX_BPP_RECEIVER_TIMEOUT=45s ONIX_BAP_CALLER_TIMEOUT=45s
-           export ONIX_BPP_RECEIVER_TARGET="http://openmrs-cce-receiver-adaptor:8080/beckn/bpp-webhook" ONIX_BAP_RECEIVER_TARGET="http://openmrs-cce-receiver-adaptor:8080/beckn/bap-webhook";;
+  cce)     export ONIX_RECEIVER_TIMEOUT=18s ONIX_CALLER_TIMEOUT=6s
+           export ONIX_RECEIVER_ACTION=sygnal/event/report ONIX_RECEIVER_TARGET="http://cce-beckn-service:8075" ONIX_CALLER_ACTION=sygnal/signal/emit;;
+  openhim) export ONIX_RECEIVER_TIMEOUT=30s ONIX_CALLER_TIMEOUT=20s
+           export ONIX_RECEIVER_ACTION=sygnal/event/report ONIX_RECEIVER_TARGET="http://openhim-cce-emitter-adaptor:8082" ONIX_CALLER_ACTION=sygnal/event/report;;
+  openmrs) export ONIX_RECEIVER_TIMEOUT=5s ONIX_CALLER_TIMEOUT=40s
+           export ONIX_RECEIVER_ACTION=sygnal/signal/emit ONIX_RECEIVER_TARGET="http://openmrs-cce-receiver-adaptor:8080" ONIX_CALLER_ACTION=sygnal/event/report;;
 esac
 HOSTVAR="BECKN_${P}_HOST"; export BECKN_HOST="${!HOSTVAR:?$HOSTVAR not set}"
 
-# The HIE's subscriber list (beckn.subscribers of the adaptor): every HMIS that may send it events. OpenMRS always; Spice once
-# its real id is configured. No contract ids: the adaptor accepts any non-blank contract id from a listed subscriber and
-# echoes it in its on_update (openhim-cce-emitter-adaptor PR 43).
+# OpenMRS's Beckn adapter pair for the Spice referrals (standard Beckn, unchanged): its BAP and BPP identities and waits.
+# A referral from Spice makes several OpenMRS calls (30 s each at most) before the receiver answers: onix-bpp waits 45 s,
+# onix-bap 45 s for Spice (the emitter 50 s). Callbacks are logged and answered at once: 5 s into the receiver, 10 s out.
+CONFIG_DIRS=("$REPO/k8s/beckn/onix/config")
+if [ "$COMPONENT" = openmrs ]; then
+  CONFIG_DIRS+=("$REPO/k8s/beckn/onix-beckn/config")
+  for role in BAP BPP; do
+    export "ONIX_${role}_SUBSCRIBER_ID=$(pick "BECKN_${P}_${role}_ID")" "ONIX_${role}_KEY_ID=$(pick "BECKN_${P}_${role}_KEY_ID")"
+    for k in SIGNING_PRIVATE_KEY SIGNING_PUBLIC_KEY ENCR_PRIVATE_KEY ENCR_PUBLIC_KEY; do
+      export "ONIX_${role}_${k}=$(pick "BECKN_${P}_${role}_${k}" "BECKN_${P}_${k}" "BECKN_${k}")"
+    done
+  done
+  export ONIX_HTTP_TIMEOUT=60 ONIX_BAP_RECEIVER_TIMEOUT=5s ONIX_BPP_CALLER_TIMEOUT=10s ONIX_BPP_RECEIVER_TIMEOUT=45s ONIX_BAP_CALLER_TIMEOUT=45s
+  export ONIX_BPP_RECEIVER_TARGET="http://openmrs-cce-receiver-adaptor:8080/beckn/bpp-webhook" ONIX_BAP_RECEIVER_TARGET="http://openmrs-cce-receiver-adaptor:8080/beckn/bap-webhook"
+fi
+
+# The HIE's subscriber list (beckn.subscribers of the adaptor): every HMIS that may send it sygnal/event/report (checked
+# against context.senderId), and the source its events are filed under. OpenMRS always; Spice once configured.
 if [ "$COMPONENT" = openhim ]; then
   OPENHIM_ADAPTOR_SPRING_JSON="$(python3 - <<'PY'
 import json, os
 E = os.environ.get
-subs = [{"subscriber-id": E("BECKN_OPENMRS_BAP_ID"), "subscriber-uri": E("BECKN_OPENMRS_BAP_URI"), "source-system": "openmrs"}]
+subs = [{"subscriber-id": E("BECKN_OPENMRS_ID"), "source-system": "openmrs"}]
 if E("BECKN_SPICE_CONFIGURED") == "true":
-    subs.append({"subscriber-id": E("BECKN_SPICE_BAP_ID"), "subscriber-uri": E("BECKN_SPICE_BAP_URI"), "source-system": "spice"})
+    subs.append({"subscriber-id": E("BECKN_SPICE_ID"), "source-system": "spice"})
 print(json.dumps({"beckn": {"subscribers": subs}}, separators=(",", ":")))
 PY
 )"; export OPENHIM_ADAPTOR_SPRING_JSON
 fi
-# CCE's alert recipients (hmis.yml of cce-beckn-service): the HIE, OpenMRS when its id is known, Spice once configured. An
-# alert goes to an HMIS as on_status, a transaction of its own; contract-id is optional (the HIE keeps its own).
+# CCE's alert recipients (hmis.yml of cce-beckn-service): OpenMRS when its id and address are known, Spice once
+# configured with its Sygnal address (BECKN_SPICE_URI). An alert goes to an HMIS as sygnal/signal/emit, to its
+# subscriber-uri (its https://<host>/sygnal/receiver).
+# The HIE is not one: alerts go to an HMIS directly, and the HIE adaptor has no sygnal/signal/emit endpoint.
 if [ "$COMPONENT" = cce ]; then
   CCE_BECKN_HMIS_ENTRIES="$(python3 - <<'PY'
 import os
 E = lambda k: (os.environ.get(k) or "").strip()
-entries = [(E("BECKN_OPENHIM_BAP_ID"), E("BECKN_OPENHIM_BAP_URI"), E("BECKN_HIE_CCE_CONTRACT_ID"))]
-if E("BECKN_OPENMRS_BAP_ID") and E("BECKN_OPENMRS_BAP_URI"):
-    entries.append((E("BECKN_OPENMRS_BAP_ID"), E("BECKN_OPENMRS_BAP_URI"), ""))
-if E("BECKN_SPICE_CONFIGURED") == "true":
-    entries.append((E("BECKN_SPICE_BAP_ID"), E("BECKN_SPICE_BAP_URI"), ""))
+entries = []
+if E("BECKN_OPENMRS_ID") and E("BECKN_OPENMRS_URI"):
+    entries.append((E("BECKN_OPENMRS_ID"), E("BECKN_OPENMRS_URI")))
+if E("BECKN_SPICE_CONFIGURED") == "true" and E("BECKN_SPICE_URI"):
+    entries.append((E("BECKN_SPICE_ID"), E("BECKN_SPICE_URI")))
 pad = " " * 10
 lines = []
-for sid, uri, contract in entries:
-    if not sid:
-        continue
+for sid, uri in entries:
     lines.append(f"{pad}- subscriber-id: {sid}")
     lines.append(f"{pad}  subscriber-uri: {uri}")
-    if contract:
-        lines.append(f"{pad}  contract-id: {contract}")
-print("\n".join(lines))
+print("\n".join(lines) if lines else pad + "[]")
 PY
 )"; export CCE_BECKN_HMIS_ENTRIES
 fi
@@ -99,7 +135,7 @@ export BECKN_REFERRALS_OUT_CONTRACT_ID="${BECKN_REFERRALS_OUT_CONTRACT_ID:-}" BE
 
 # Every ${VAR} a file references must have a value, or it would render as "" and fail later, far from the cause. The
 # few that may be empty are listed.
-OPTIONAL=" BECKN_NETWORK_ID BECKN_ALLOWED_NETWORK_IDS BECKN_OPENHIM_FACILITY_FILTER_IDS BECKN_SPICE_BPP_ID BECKN_SPICE_BPP_URI BECKN_SPICE_FACILITY_CODES BECKN_REFERRALS_OUT_CONTRACT_ID BECKN_REFERRALS_OUT_TRANSACTION_ID BECKN_HEALTH_ID_TYPES BECKN_CONFIG_HASH ONIX_CONFIG_HASH "
+OPTIONAL=" BECKN_NETWORK_ID BECKN_ALLOWED_NETWORK_IDS BECKN_SYGNAL_ALLOWED_NETWORK_IDS BECKN_OPENHIM_FACILITY_FILTER_IDS BECKN_SPICE_BPP_ID BECKN_SPICE_BPP_URI BECKN_SPICE_FACILITY_CODES BECKN_REFERRALS_OUT_CONTRACT_ID BECKN_REFERRALS_OUT_TRANSACTION_ID BECKN_HEALTH_ID_TYPES BECKN_CONFIG_HASH ONIX_CONFIG_HASH "
 check_vars() {   # <file...> -> prints the envsubst variable list; exits if a non-optional one is empty
   local v missing=() list=""
   for v in $(grep -ho '\${[A-Z_0-9]*}' "$@" | tr -d '${}' | sort -u); do
@@ -108,7 +144,7 @@ check_vars() {   # <file...> -> prints the envsubst variable list; exits if a no
   done
   if [ "${#missing[@]}" -gt 0 ]; then
     echo "ERROR [$COMPONENT]: no value for: ${missing[*]}" >&2
-    echo "       BECKN_* identity keys come from the installer config, keys/passwords/contract ids from Infisical /beckn (beckn-seed.sh)." >&2
+    echo "       BECKN_* identity keys come from the installer config, private keys and passwords from Infisical /beckn (beckn-seed.sh)." >&2
     exit 1
   fi
   printf '%s' "$list"
@@ -116,25 +152,36 @@ check_vars() {   # <file...> -> prints the envsubst variable list; exits if a no
 
 # ── 1. adapter config -> Secret onix-config ──────────────────────────────────────────────────────────────────────────────
 mkdir -p "$TMP/onix"
-VARS="$(check_vars "$REPO"/k8s/beckn/onix/config/*.yaml)"
-for f in "$REPO"/k8s/beckn/onix/config/*.yaml; do envsubst "$VARS" < "$f" > "$TMP/onix/$(basename "$f")"; done
+CONFIG_FILES=(); for d in "${CONFIG_DIRS[@]}"; do CONFIG_FILES+=("$d"/*.yaml); done
+VARS="$(check_vars "${CONFIG_FILES[@]}")"
+for f in "${CONFIG_FILES[@]}"; do envsubst "$VARS" < "$f" > "$TMP/onix/$(basename "$f")"; done
 # No network id configured: no membership check — leave the setting out rather than give the adapter an empty list.
-[ -n "${BECKN_ALLOWED_NETWORK_IDS:-}" ] || sed -i '/^ *allowedNetworkIDs:/d' "$TMP"/onix/onix-*.yaml
+[ -n "${BECKN_SYGNAL_ALLOWED_NETWORK_IDS:-}" ] || sed -i '/^ *allowedNetworkIDs:/d' "$TMP"/onix/onix.yaml
+if [ "$COMPONENT" = openmrs ] && [ -z "${BECKN_ALLOWED_NETWORK_IDS:-}" ]; then sed -i '/^ *allowedNetworkIDs:/d' "$TMP"/onix/onix-b?p.yaml; fi
 export ONIX_CONFIG_HASH; ONIX_CONFIG_HASH="$(cat "$TMP"/onix/*.yaml | sha256sum | cut -c1-16)"
 
-# ── 2. schema folders -> ConfigMap onix-schema ───────────────────────────────────────────────────────────────────────────
-# The adapters load these at start (extendedSchema_localSchemaPath) and look a schema up as <Schema>/attributes.yaml, so a
-# folder name must appear once across both sources.
-HEALTH_SCHEMA_DIR="$REPO/k8s/beckn/onix/health-schema"
-SCHEMA_ARGS=(); n=0; SCHEMA_FILES=()
-for dir in "$BECKN_SCHEMA_DIR" "$HEALTH_SCHEMA_DIR"; do
-  while IFS= read -r f; do
-    rel="${f#"$dir"/}"; SCHEMA_ARGS+=("--from-file=${rel//\//__}=$f"); SCHEMA_FILES+=("$f"); n=$((n + 1))
-  done < <(find "$dir" -mindepth 3 -maxdepth 3 -type f \( -name '*.yaml' -o -name '*.jsonld' -o -name '*.json' \) | sort)
-done
+# ── 2. the CCE profile -> ConfigMap onix-sygnal-profile; schema folders -> ConfigMap onix-schema ─────────────────────────────
+# The profile is the adapter's only spec (schemaValidator type "file"). The bags are loaded at start
+# (extendedSchema_localSchemaPath) and looked up as <Schema>/<version>/attributes.yaml. The profile's own folder in
+# cce-beckn-service's schema/ (sygnal-profile/) is not a bag and is left out.
+SCHEMA_ARGS=(); n=0; SCHEMA_FILES=("$BECKN_SYGNAL_PROFILE")
+while IFS= read -r f; do
+  rel="${f#"$BECKN_SCHEMA_DIR"/}"; SCHEMA_ARGS+=("--from-file=${rel//\//__}=$f"); SCHEMA_FILES+=("$f"); n=$((n + 1))
+done < <(find "$BECKN_SCHEMA_DIR" -mindepth 3 -maxdepth 3 -type f \( -name '*.yaml' -o -name '*.jsonld' -o -name '*.json' \) \
+           -not -path "$BECKN_SCHEMA_DIR/sygnal-profile/*" | sort)
 [ "$n" -gt 0 ] || { echo "ERROR: no schema files under $BECKN_SCHEMA_DIR (expected <Schema>/<version>/attributes.yaml and context.jsonld)"; exit 1; }
-DUP="$(printf '%s\n' "${SCHEMA_ARGS[@]}" | sed 's/^--from-file=//; s/=.*//' | sort | uniq -d | head -1)"
-[ -z "$DUP" ] || { echo "ERROR: schema file $DUP is in both $BECKN_SCHEMA_DIR and $HEALTH_SCHEMA_DIR"; exit 1; }
+# openmrs: also the Health* referral pack its Beckn pair (onix-bap / onix-bpp) needs, as before (schema.beckn.io no longer
+# serves it). onix-sygnal mounts the same ConfigMap and loads them too (harmless; it never uses them).
+HEALTH_SCHEMA_DIR="$REPO/k8s/beckn/onix-beckn/health-schema"
+h=0
+if [ "$COMPONENT" = openmrs ]; then
+  while IFS= read -r f; do
+    rel="${f#"$HEALTH_SCHEMA_DIR"/}"; SCHEMA_ARGS+=("--from-file=${rel//\//__}=$f"); SCHEMA_FILES+=("$f"); h=$((h + 1))
+  done < <(find "$HEALTH_SCHEMA_DIR" -mindepth 3 -maxdepth 3 -type f \( -name '*.yaml' -o -name '*.jsonld' -o -name '*.json' \) | sort)
+  # An adapter looks a schema up by its folder name: a file must appear once across both sources.
+  DUP="$(printf '%s\n' "${SCHEMA_ARGS[@]}" | sed 's/^--from-file=//; s/=.*//' | sort | uniq -d | head -1)"
+  [ -z "$DUP" ] || { echo "ERROR: schema file $DUP is in both $BECKN_SCHEMA_DIR and $HEALTH_SCHEMA_DIR"; exit 1; }
+fi
 SCHEMA_HASH="$(cat "${SCHEMA_FILES[@]}" | sha256sum | cut -c1-8)"
 ONIX_CONFIG_HASH="${ONIX_CONFIG_HASH}-${SCHEMA_HASH}"
 
@@ -143,7 +190,8 @@ ONIX_CONFIG_HASH="${ONIX_CONFIG_HASH}-${SCHEMA_HASH}"
 # quotes it finds unnecessary, so a value substituted afterwards could change type ("false" -> false, a JSON string -> a map).
 # Substituting first keeps every value exactly as the manifest quotes it.
 cp -r "$REPO/k8s/beckn" "$TMP/beckn"
-mapfile -t MANIFESTS < <(cd "$REPO/k8s/beckn" && find "$COMPONENT" onix netpol -maxdepth 1 -name '*.yaml' | sort)
+BASES=(onix netpol); [ "$COMPONENT" = openmrs ] && BASES+=(onix-beckn)
+mapfile -t MANIFESTS < <(cd "$REPO/k8s/beckn" && find "$COMPONENT" "${BASES[@]}" -maxdepth 1 -name '*.yaml' | sort)
 VARS="$(cd "$REPO/k8s/beckn" && check_vars "${MANIFESTS[@]}")"
 render() { local f; for f in "${MANIFESTS[@]}"; do envsubst "$VARS" < "$REPO/k8s/beckn/$f" > "$TMP/beckn/$f"; done; $KUBECTL kustomize "$TMP/beckn/$COMPONENT"; }
 # BECKN_CONFIG_HASH rolls the pods that read their settings once, at start, whenever a value they consume changes:
@@ -164,7 +212,7 @@ if [ "$COMPONENT" = openmrs ]; then
 fi
 
 if [ -n "${DRY_RUN:-}" ]; then
-  say "DRY_RUN — namespace $NS, $(grep -c '^kind:' "$TMP/render.yaml") resources, adapter config $ONIX_CONFIG_HASH, $n schema files; nothing applied"
+  say "DRY_RUN — namespace $NS, $(grep -c '^kind:' "$TMP/render.yaml") resources, adapter $ONIX_SUBSCRIBER_ID config $ONIX_CONFIG_HASH, profile + $n CCE schema files$( [ "$h" -gt 0 ] && echo " + $h Health* referral schema files; referral pair onix-bap $ONIX_BAP_SUBSCRIBER_ID, onix-bpp $ONIX_BPP_SUBSCRIBER_ID"); nothing applied"
   grep -E '^kind:|^  name:' "$TMP/render.yaml" | paste - - | sed 's/kind: //; s/ *name: / /' | sort | sed 's/^/      /'
   exit 0
 fi
@@ -175,12 +223,20 @@ else
   $KUBECTL create namespace "$NS" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null
 fi
 $KUBECTL -n "$NS" create secret generic onix-config --from-file="$TMP/onix" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null
+$KUBECTL -n "$NS" create configmap onix-sygnal-profile --from-file="cce-sygnal-apis.yaml=$BECKN_SYGNAL_PROFILE" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null
 $KUBECTL -n "$NS" create configmap onix-schema "${SCHEMA_ARGS[@]}" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null
-say "namespace $NS: adapter config ($ONIX_BAP_SUBSCRIBER_ID, $ONIX_BPP_SUBSCRIBER_ID; network ${BECKN_ALLOWED_NETWORK_IDS:-not checked}) + $n schema files"
+say "namespace $NS: Sygnal adapter config ($ONIX_SUBSCRIBER_ID; network ${BECKN_SYGNAL_ALLOWED_NETWORK_IDS:-not checked}) + CCE profile + $n CCE schema files"
+if [ "$COMPONENT" = openmrs ]; then
+  say "namespace $NS: Beckn referral pair config ($ONIX_BAP_SUBSCRIBER_ID, $ONIX_BPP_SUBSCRIBER_ID; network ${BECKN_ALLOWED_NETWORK_IDS:-not checked}) + $h Health* referral schema files"
+fi
 $KUBECTL -n "$NS" apply -f "$TMP/render.yaml" | sed "s/^/      /"
+# cce / openhim: the Sygnal adapter replaces the Beckn adapter pair of the former setup — remove it (a no-op once gone).
+if [ "$COMPONENT" != openmrs ]; then
+  $KUBECTL -n "$NS" delete deploy,svc onix-bap onix-bpp --ignore-not-found | sed "s/^/      /"
+fi
 
 # ── 4. host aliases + roll the adapter when its config changed ───────────────────────────────────────────────────────────
-# The adapter sends to the other participants' PUBLIC addresses (context.bppUri / bapUri). Those that live on this machine
+# The adapter sends to the other participants' PUBLIC addresses (context.receiverUri). Those that live on this machine
 # resolve to its own public IP, which a pod cannot reach — so they are pointed at Traefik's ClusterIP instead. The
 # certificate still matches: Traefik serves each host's own certificate.
 TIP="$($KUBECTL get svc traefik -n kube-system -o jsonpath='{.spec.clusterIP}')"
@@ -188,16 +244,18 @@ ALIASES=""
 for c in $BECKN_COMPONENTS; do
   hv="BECKN_$(printf '%s' "$c" | tr '[:lower:]' '[:upper:]')_HOST"; [ -n "${!hv:-}" ] && ALIASES="$ALIASES\"${!hv}\","
 done
-for d in onix-bap onix-bpp; do
+ADAPTERS=(onix-sygnal); [ "$COMPONENT" = openmrs ] && ADAPTERS+=(onix-bap onix-bpp)
+for d in "${ADAPTERS[@]}"; do
   $KUBECTL -n "$NS" patch deploy "$d" --type=strategic -p \
     "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"cce.openphc.org/onix-config-hash\":\"${ONIX_CONFIG_HASH}\"}},\"spec\":{\"hostAliases\":[{\"ip\":\"${TIP}\",\"hostnames\":[${ALIASES%,}]}]}}}}" >/dev/null
 done
-say "onix-bap / onix-bpp: local Beckn hosts -> Traefik $TIP"
+say "${ADAPTERS[*]}: local hosts -> Traefik $TIP"
 
 # ── 5. CCE: where the intelligence service sends alerts ─────────────────────────────────────────────────────────────────
-# One receiver-adaptor record and one destination mapping per alert destination: OPENMRS when OpenMRS's id is known, SPICE
-# once Spice is configured. Each points at cce-beckn-service's POST /v1/alerts, signed with the shared webhook secret, with
-# the destination's BAP id in X-CCE-Beckn-Subscriber-Id: cce-beckn-service sends the alert to that HMIS as on_status.
+# One receiver-adaptor record and one destination mapping per alert destination: OPENMRS when OpenMRS's id and address are
+# known, SPICE once Spice is configured. Each points at cce-beckn-service's POST /v1/alerts, signed with the shared webhook
+# secret, with the destination's subscriber id in X-CCE-Beckn-Subscriber-Id: cce-beckn-service sends the alert to that HMIS
+# (its hmis.yml entry) as sygnal/signal/emit.
 # A protocol action reaches a destination by its intelligence-destination code (e.g. OPENMRS). Safe to re-run: an existing
 # record is updated, not duplicated.
 if [ "$COMPONENT" = cce ]; then
@@ -211,10 +269,10 @@ E = lambda k: (os.environ.get(k) or "").strip()
 base = E("INTEL_URL")
 secret = E("CCE_BECKN_ALERTS_WEBHOOK_SECRET")
 dests = []
-if E("BECKN_OPENMRS_BAP_ID"):
-    dests.append(("OPENMRS", E("BECKN_OPENMRS_BAP_ID")))
-if E("BECKN_SPICE_CONFIGURED") == "true" and E("BECKN_SPICE_BAP_ID"):
-    dests.append(("SPICE", E("BECKN_SPICE_BAP_ID")))
+if E("BECKN_OPENMRS_ID") and E("BECKN_OPENMRS_URI"):
+    dests.append(("OPENMRS", E("BECKN_OPENMRS_ID")))
+if E("BECKN_SPICE_CONFIGURED") == "true" and E("BECKN_SPICE_URI"):
+    dests.append(("SPICE", E("BECKN_SPICE_ID")))
 
 def call(method, path, body=None):
     data = None if body is None else json.dumps(body).encode()
@@ -241,17 +299,17 @@ try:
 except Exception:
     mappings = None
 
-def route(dest, bap_id):
+def route(dest, subscriber_id):
     name = "beckn-alerts-" + dest.lower()
     record = {
         "name": name,
         "definition": {
-            "resourceType": "Endpoint", "id": name, "status": "active", "name": "CCE alerts to " + bap_id + " over Beckn",
+            "resourceType": "Endpoint", "id": name, "status": "active", "name": "CCE alerts to " + subscriber_id + " over Sygnal",
             "connectionType": {"system": "http://terminology.hl7.org/CodeSystem/endpoint-connection-type", "code": "hl7-fhir-rest"},
             "payloadType": [{"coding": [{"system": "http://hl7.org/fhir/resource-types", "code": "CommunicationRequest"}]}],
             "payloadMimeType": ["application/fhir+json"],
             "address": "http://cce-beckn-service:8075/v1/alerts"},
-        "config": {"webhookSecret": secret, "customHeaders": {"X-CCE-Beckn-Subscriber-Id": bap_id}},
+        "config": {"webhookSecret": secret, "customHeaders": {"X-CCE-Beckn-Subscriber-Id": subscriber_id}},
         "status": "ACTIVE"}
     if name in adaptors:
         adaptor = call("PUT", "/v1/receiver-adaptors/" + adaptors[name]["id"], record)["data"]
@@ -267,16 +325,16 @@ def route(dest, bap_id):
             call("POST", "/v1/destination-adaptor-mappings", {"destination": dest, "receiverAdaptorId": adaptor["id"]})
         except urllib.error.HTTPError:
             pass                              # the mapping exists already (destination is unique)
-    print(f"intelligence alert route: {dest} -> cce-beckn-service /v1/alerts -> {bap_id}")
+    print(f"intelligence alert route: {dest} -> cce-beckn-service /v1/alerts -> {subscriber_id}")
 
 # A failure here is reported, never fatal: the alert routes can be fixed and the deploy re-run.
-for dest, bap_id in dests:
+for dest, subscriber_id in dests:
     try:
-        route(dest, bap_id)
+        route(dest, subscriber_id)
     except Exception as e:
         print(f"WARNING intelligence alert route {dest}: {e}")
 if not dests:
-    print("intelligence alert routes: no destination (OpenMRS id unknown, Spice not configured)")
+    print("intelligence alert routes: no destination (OpenMRS id or address unknown, Spice not configured)")
 PY
   fi
 fi

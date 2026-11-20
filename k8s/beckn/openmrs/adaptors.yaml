@@ -1,10 +1,15 @@
-# The two OpenMRS adaptors, demo-beckn builds:
-#   openmrs-cce-emitter-adaptor   polls OpenMRS FHIR and sends every changed resource as a Beckn `update` to the HIE,
-#                                 through onix-bap (https://github.com/openphc/openmrs-cce-emitter-adaptor/tree/demo-beckn)
-#   openmrs-cce-receiver-adaptor  takes what onix passes in: referrals from Spice (/beckn/bpp-webhook) and callbacks
-#                                 (/beckn/bap-webhook), and writes into OpenMRS
+# The two OpenMRS adaptors, demo-beckn builds. Two protocols, two adapters:
+#   CCE flows, Sygnal (onix-sygnal):  events to the HIE as sygnal/event/report; CCE's care alerts as sygnal/signal/emit
+#   Spice referrals, standard Beckn, unchanged (onix-bap / onix-bpp): select / init / confirm / status / update, callbacks
+#   openmrs-cce-emitter-adaptor   polls OpenMRS FHIR and sends every changed resource as sygnal/event/report to the HIE,
+#                                 through onix-sygnal; with the referral legs on, also referrals and their outcomes to
+#                                 Spice through onix-bap / onix-bpp
+#                                 (https://github.com/openphc/openmrs-cce-emitter-adaptor/tree/demo-beckn)
+#   openmrs-cce-receiver-adaptor  takes what the adapters pass in: CCE's care alerts (POST /sygnal/signal/emit, from
+#                                 onix-sygnal), raised as OpenMRS notifications; referrals from Spice (/beckn/bpp-webhook)
+#                                 and callbacks (/beckn/bap-webhook), written into OpenMRS
 #                                 (https://github.com/openphc/openmrs-cce-receiver-adaptor/tree/demo-beckn)
-# Neither is published: /beckn/** carries no token and must be reachable from this namespace's onix pods only.
+# Neither is published: /sygnal/** and /beckn/** carry no token and must be reachable from this namespace's adapter pods only.
 # ${...} values are filled by one-click-installer/lib/beckn/beckn-deploy.sh (installer config + Infisical /beckn).
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -65,14 +70,31 @@ spec:
             # 0: the checkpoint store already steps past the last second it saw (OpenMRS fhir2's `gt` is inclusive).
             - name: POLLING_FHIR_OVERLAP_SECONDS
               value: "0"
-            # ── Beckn ──
+            # ── CCE events, Sygnal (onix-sygnal) ──
             - name: OPENMRS_EMITTER_TARGET
               value: "beckn"
+            # Events are posted to <caller-url>/sygnal/event/report.
+            - name: OPENMRS_EMITTER_BECKN_SYGNAL_CALLER_URL
+              value: "http://onix-sygnal:8082/sygnal/caller"
+            # OpenMRS's Sygnal id (context.senderId, from.id): the subscriber id of onix-sygnal's keys (BECKN_OPENMRS_ID).
+            - name: OPENMRS_EMITTER_BECKN_SYGNAL_ID
+              value: "${BECKN_OPENMRS_ID}"
+            # context.networkId: the Sygnal network (the registry refuses a sender that is not a member of it).
+            - name: OPENMRS_EMITTER_BECKN_SYGNAL_NETWORK_ID
+              value: "${BECKN_SYGNAL_NETWORK_ID}"
+            # The HIE: context.receiverId and context.receiverUri (its https://<host>/sygnal/receiver). No
+            # OPENMRS_EMITTER_BECKN_SYGNAL_HIE_TRANSACTION_ID: every event gets a transactionId of its own.
+            - name: OPENMRS_EMITTER_BECKN_SYGNAL_HIE_ID
+              value: "${BECKN_OPENHIM_ID}"
+            - name: OPENMRS_EMITTER_BECKN_SYGNAL_HIE_URI
+              value: "${BECKN_OPENHIM_URI}"
+            # ── Spice referrals, standard Beckn (onix-bap / onix-bpp) ──
             - name: OPENMRS_EMITTER_BECKN_ONIX_BAP_CALLER_URL
               value: "http://onix-bap:8081/bap/caller"
             - name: OPENMRS_EMITTER_BECKN_ONIX_BPP_CALLER_URL
               value: "http://onix-bpp:8082/bpp/caller"
-            # The outermost wait of the whole route: longer than onix-bap's 45 s (docs/beckn-integration.md §10.4).
+            # The outermost wait of every leg: longer than onix-bap's 45 s (referrals) and onix-sygnal's 40 s (events to the
+            # HIE) — one-click-installer/lib/beckn/beckn-deploy.sh, the timeout chain.
             - name: OPENMRS_EMITTER_BECKN_ONIX_TIMEOUT
               value: "50s"
             - name: OPENMRS_EMITTER_BECKN_SCHEMA_BASE_URL
@@ -87,18 +109,7 @@ spec:
               value: "${BECKN_OPENMRS_BPP_ID}"
             - name: OPENMRS_EMITTER_BECKN_SELF_BPP_URI
               value: "${BECKN_OPENMRS_BPP_URI}"
-            # The HIE, and the contract id and transactionId this OpenMRS puts in every update to it. The sender chooses
-            # them: the HIE accepts any non-blank contract id from a listed subscriber and echoes it. They only have to stay
-            # the same.
-            - name: OPENMRS_EMITTER_BECKN_OPENHIM_BPP_ID
-              value: "${BECKN_OPENHIM_BPP_ID}"
-            - name: OPENMRS_EMITTER_BECKN_OPENHIM_BPP_URI
-              value: "${BECKN_OPENHIM_BPP_URI}"
-            - name: OPENMRS_EMITTER_BECKN_OPENHIM_CONTRACT_ID
-              value: "${BECKN_HIE_FEED_OPENMRS_CONTRACT_ID}"
-            - name: OPENMRS_EMITTER_BECKN_OPENHIM_TRANSACTION_ID
-              value: "${BECKN_HIE_FEED_OPENMRS_TRANSACTION_ID}"
-            # Legs. Events to CCE (through the HIE) are always on; the two referral legs to Spice follow
+            # Legs. Events to CCE (through the HIE, Sygnal) are always on; the two referral legs to Spice follow
             # BECKN_REFERRALS_ENABLED, and only then are the Spice ids below required.
             - name: OPENMRS_EMITTER_BECKN_LEG_CCE_EVENTS
               value: "true"
@@ -219,6 +230,13 @@ spec:
             # ── Beckn ──
             - name: OPENMRS_RECEIVER_BECKN_ENABLED
               value: "true"
+            # CCE care alerts, Sygnal: POST /sygnal/signal/emit from onix-sygnal, accepted when context.receiverId is
+            # OpenMRS's Sygnal id and context.senderId is CCE's. Answered in the same call; onix-sygnal waits 5 s for it.
+            - name: OPENMRS_RECEIVER_BECKN_SELF_ID
+              value: "${BECKN_OPENMRS_ID}"
+            - name: OPENMRS_RECEIVER_BECKN_CCE_ID
+              value: "${BECKN_CCE_ID}"
+            # Spice referrals, standard Beckn (onix-bpp):
             - name: OPENMRS_RECEIVER_BECKN_ONIX_BPP_CALLER_URL
               value: "http://onix-bpp:8082/bpp/caller"
             - name: OPENMRS_RECEIVER_BECKN_SELF_BPP_ID
