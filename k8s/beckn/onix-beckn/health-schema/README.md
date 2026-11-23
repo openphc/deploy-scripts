@@ -6,8 +6,7 @@ Spice sends it) carries `@context` addresses on `schema.beckn.io`. That host now
 ("failed to load schema from https://schema.beckn.io/HealthParticipant/v2.1/attributes.yaml").
 
 These copies are loaded at start (`extendedSchema_localSchemaPath`) by OpenMRS's Beckn adapter pair, `onix-bap` /
-`onix-bpp` — the referral flow stays on standard Beckn. (OpenMRS's Sygnal adapter, `onix-sygnal`, mounts the same
-ConfigMap and loads them too; it never uses them.)
+`onix-bpp` — the referral flow stays on standard Beckn. (OpenMRS's Sygnal adapter, `onix-sygnal`, does not load these schemas: it holds the Sygnal profile only.)
 `beckn-deploy.sh openmrs` puts them in the ConfigMap `onix-schema` next to the CCE schemas. An adapter looks a schema up by its folder name
 (`<Schema>/attributes.yaml`; the version folder is dropped), so the `@context` address of a message only has
 to end in the same `<Schema>/<version>/...`.
