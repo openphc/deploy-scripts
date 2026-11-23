@@ -57,6 +57,9 @@ for c in $BECKN_COMPONENTS; do
   pv="$($KUBECTL -n "$NS" get configmap onix-sygnal-profile -o 'jsonpath={.data.cce-sygnal-apis\.yaml}' 2>/dev/null | sed -n 's/^  version: *//p' | head -1)"
   if [ -n "$pv" ]; then echo "   onix-sygnal profile: CCE profile of Sygnal, version $pv (this add-on deploys $BECKN_SYGNAL_PROFILE_REL)"
   else echo "   onix-sygnal profile: NOT FOUND (ConfigMap onix-sygnal-profile) — the adapter cannot start without it"; BAD=1; fi
+  if [ -n "$pv" ] && [ -z "$($KUBECTL -n "$NS" get configmap onix-sygnal-profile -o "jsonpath={.data.${BECKN_SYGNAL_EXTENSION_FILE//./\\.}}" 2>/dev/null | head -c 1)" ]; then
+    echo "   onix-sygnal profile: $BECKN_SYGNAL_EXTENSION_FILE MISSING from ConfigMap onix-sygnal-profile — the profile refers to it; re-run install-beckn.sh"; BAD=1
+  fi
   ADAPTERS=""; [ "$c" = openmrs ] && ADAPTERS="onix-bap onix-bpp"
   for d in $ADAPTERS; do
     line="$($KUBECTL -n "$NS" logs "deploy/$d" --tail=400 2>/dev/null | grep -i -E 'preloaded|no schemas loaded' | tail -1 | sed -E 's/.*"(message|msg)":"([^"]*)".*/\2/' | cut -c1-110)"

@@ -34,7 +34,10 @@ it — without OpenMRS, the HIE or CCE calling each other's private APIs. When a
 find each other's keys in the network registry.
 
 The **health referrals between Spice and OpenMRS** are a separate flow on standard **Beckn** (`select` / `init` /
-`confirm` / `status` / `update`), through OpenMRS's Beckn adapter pair. The messages did not change. The pair runs
+`confirm` / `status` / `update`), through OpenMRS's Beckn adapter pair. The actions did not change. The clinical event
+in `update`, `on_update` and `on_status` is a `sygnal:CoordinationEvent`, the same object as in `sygnal/event/report`
+(it was a `cce:CceClinicalEvent` box; Spice changes at the same time:
+[beckn.md → Change 2026-11-23: the profile in two files, and the referral box](beckn.md#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)). The pair runs
 onix 1.9.4 (1.6.1 before), and Spice's referral adapter must too
 ([beckn.md → Change 2026-11-23: the referral adapters on onix 1.9.4](beckn.md#change-2026-11-23-the-referral-adapters-on-onix-194)).
 
@@ -76,16 +79,20 @@ also keeps its BAP and BPP records and its Beckn adapter pair for the Spice refe
 | all three | — | Sygnal adapter `onix-sygnal` + Redis; OpenMRS also `onix-bap`, `onix-bpp` | [DHP-Specs](https://github.com/openphc/DHP-Specs) · `openmrs-onix`, `openhim-onix`, `cce-onix` (the reference configs, registered ids and keys) | `fidedocker/onix-adapter:1.9.4` (the Sygnal adapters and OpenMRS's referral pair) |
 
 The message content is defined in [cce-beckn-service/schema](https://github.com/openphc/cce-beckn-service/tree/demo/schema):
-the CCE profile of Sygnal, `sygnal-profile/v3.0/cce-sygnal-apis.yaml`. It is CCE's copy of the Sygnal schema: the two
-actions, their context and answers, and Sygnal's two payload types opened and extended for CCE (Sygnal's published
-schema is not changed). The one entry of `message.events` in `sygnal/event/report` is a `sygnal:CoordinationEvent` with
-the fields of a clinical event added to it: the patient id, the FHIR version and one FHIR resource, next to Sygnal's
-own event id and time. The `message` of `sygnal/signal/emit` is a `sygnal:Signal` with the fields of a care alert added
+the CCE profile of Sygnal, `sygnal-profile/v3.0/`. It is CCE's copy of the Sygnal schema: the two actions, their
+context and answers, and Sygnal's two payload types opened and extended for CCE (Sygnal's published schema is not
+changed). It is two files: `cce-sygnal-apis.yaml` (Sygnal's own fields) and `cce-fhir-extension.yaml` (the fields CCE
+adds for FHIR), which the first refers to; a message must match both. The one entry of `message.events` in
+`sygnal/event/report` is a `sygnal:CoordinationEvent` with the fields of a clinical event added to it: the patient
+id, the FHIR version and one FHIR resource, next to Sygnal's own event id and time. The `message` of `sygnal/signal/emit` is a `sygnal:Signal` with the fields of a care alert added
 to it: the patient id, the care step and SLA status, and the FHIR `CommunicationRequest` or `Task`. There is no bag and
-no `cce:` type in these messages. `CceClinicalEvent` v1.0 and `CceCareAlert` v1.0 stay in that folder for the Spice ↔
-OpenMRS referral legs (standard Beckn), which carry the `CceClinicalEvent` box as before. Until that repository's pull
-request #7 is merged, `demo` shows only profile v1.0 and the v3.0 file is on its branch `cce-payload-types`
-([beckn.md → Change 2026-11-23: the Sygnal payloads](beckn.md#change-2026-11-23-the-sygnal-payloads)).
+no `cce:` type in these messages. The Spice ↔ OpenMRS referral legs (standard Beckn) carry the same
+`sygnal:CoordinationEvent` in `performanceAttributes`, with an `@context` first; its schema is `CoordinationEvent/v3.0`
+in that folder. `CceClinicalEvent` and `CceCareAlert` are deleted from it. Until that repository's pull
+request #7 is merged, `demo` shows only profile v1.0, and the v3.0 files and `CoordinationEvent/v3.0` are on its branch
+`cce-payload-types`
+([beckn.md → Change 2026-11-23: the Sygnal payloads](beckn.md#change-2026-11-23-the-sygnal-payloads),
+[beckn.md → Change 2026-11-23: the profile in two files, and the referral box](beckn.md#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
 
 ## Deployment architecture
 
@@ -279,7 +286,7 @@ emitter (alerts: 5 s → 7 s). The values are in [beckn.md → The timeout chain
 | Referral network | The network of the Spice ↔ OpenMRS referrals, as before | `BECKN_NETWORK_ID` |
 | Subscriber ids, key ids | One Sygnal identity per participant: CCE's former BPP record, the HIE's and OpenMRS's former BAP records. OpenMRS keeps its BAP and BPP records for the referrals | `BECKN_<P>_ID`, `BECKN_<P>_KEY_ID` (default: those records); `BECKN_OPENMRS_BAP_*`, `BECKN_OPENMRS_BPP_*` |
 | Keys | Each adapter signs with a private key. The matching public key is in the registry record | public: `BECKN_SIGNING_PUBLIC_KEY`, `BECKN_ENCR_PUBLIC_KEY`. private: Infisical `/beckn`, never in git |
-| Schemas | The CCE profile of Sygnal v3.0: CCE's copy of the Sygnal schema, the Sygnal adapters' only spec. Every Sygnal adapter holds a local copy (ConfigMap `onix-sygnal-profile`) and no other schema: the profile describes the whole message. A validator with Sygnal's published schema would refuse these messages, so every participant loads CCE's copy. OpenMRS's referral pair holds a schema set of its own (ConfigMap `onix-schema`): `CceClinicalEvent` v1.0, `CceCareAlert` v1.0 and the Health* pack. The `@context` address in a referral message only has to be the same for everyone | `BECKN_SCHEMA_DIR` or `BECKN_SCHEMA_REPO` / `BECKN_SCHEMA_REF`; `BECKN_SYGNAL_PROFILE`; `BECKN_REFERRAL_SCHEMAS`; `BECKN_SCHEMA_BASE_URL` |
+| Schemas | The CCE profile of Sygnal v3.0: CCE's copy of the Sygnal schema, two files. `cce-sygnal-apis.yaml` is the Sygnal adapters' only spec; `cce-fhir-extension.yaml`, the fields CCE adds for FHIR, is the file it refers to. Every Sygnal adapter holds a local copy of both (ConfigMap `onix-sygnal-profile`) and no other schema: the two describe the whole message. A validator with Sygnal's published schema would refuse these messages, so every participant loads CCE's copy. OpenMRS's referral pair holds a schema set of its own (ConfigMap `onix-schema`): `CoordinationEvent` v3.0 (the box of a clinical event in a referral message) and the Health* pack. The `@context` address in a referral message only has to be the same for everyone | `BECKN_SCHEMA_DIR` or `BECKN_SCHEMA_REPO` / `BECKN_SCHEMA_REF`; `BECKN_SYGNAL_PROFILE`; `BECKN_REFERRAL_SCHEMAS`; `BECKN_SCHEMA_BASE_URL` |
 | Health referral schemas | The Health* pack (`HealthReferral`, `HealthParticipant`, ...) that Spice's health-referral flow uses. `schema.beckn.io` no longer serves it, so OpenMRS's adapters hold the copy in `k8s/beckn/onix-beckn/health-schema/` | Shipped with deploy-scripts; nothing to set |
 | Health id types | The OpenMRS identifier type for each patient health id system in a health referral, as `SYSTEM=type` pairs separated by `;`. Default `NID=national-id` | `BECKN_HEALTH_ID_TYPES` |
 
@@ -293,7 +300,7 @@ must stay unreachable from outside their namespace.
 ## Contracts (referrals only)
 
 The CCE flows (Sygnal) have no contracts: every message gets a new `transactionId` and `messageId`, and a receiver checks
-who sent it. Only the Spice ↔ OpenMRS referrals (standard Beckn, unchanged) use contract ids: each sender puts a contract
+who sent it. Only the Spice ↔ OpenMRS referrals (standard Beckn) use contract ids: each sender puts a contract
 id and a `transactionId` of its own in every message; the installer generates OpenMRS's once and keeps them in Infisical.
 
 ```mermaid
@@ -321,7 +328,7 @@ flowchart LR
     INF[("Infisical, folder /beckn<br/>private keys, passwords,<br/>referral contract ids")]
     INST["install-beckn.sh"]
     K1["Secret onix-config<br/>adapter config + routing, per namespace"]
-    K2["ConfigMap onix-sygnal-profile<br/>the CCE profile, per namespace<br/>(openmrs: also onix-schema, the referral pair's schemas)"]
+    K2["ConfigMap onix-sygnal-profile<br/>the CCE profile (two files), per namespace<br/>(openmrs: also onix-schema, the referral pair's schemas)"]
     K3["Deployments, Services, Ingresses<br/>k8s/beckn/&lt;component&gt;"]
     OH["OpenHIM Core API<br/>root password, clients, channels"]
 
@@ -428,7 +435,7 @@ the same event id, CCE answers `Ack`, and nothing is counted twice.
 | Care alerts CCE → OpenMRS (`sygnal/signal/emit`) | wired: `hmis.yml` and the intelligence service's `OPENMRS` destination are set by `beckn-deploy.sh cce` |
 | Network membership check (`allowedNetworkIDs`) and `context.networkId` | on, Sygnal network `sygnal.nextsteps.mdtlabs.org/sygnal_demo_network_registry` |
 | Registry record URLs | still `/bap/receiver` / `/bpp/receiver`; not used for delivery. Optional update to `/sygnal/receiver` for CCE and the HIE only |
-| Spice | not connected. Sygnal (events to the HIE, alerts from CCE): set `BECKN_SPICE_ID` and `BECKN_SPICE_URI`. Referrals with OpenMRS (Beckn, the messages unchanged; Spice's referral adapter must be on onix 1.9.4, as OpenMRS's is): its referral legs are off and its receiver runs with placeholder Spice ids. See [beckn.md → Connecting Spice](beckn.md#connecting-spice) |
+| Spice | not connected. Sygnal (events to the HIE, alerts from CCE): set `BECKN_SPICE_ID` and `BECKN_SPICE_URI`. Referrals with OpenMRS (Beckn, the same actions; Spice's referral adapter must be on onix 1.9.4, as OpenMRS's is, hold `CoordinationEvent/v3.0` and send the `sygnal:CoordinationEvent` box, at the same time as OpenMRS): its referral legs are off and its receiver runs with placeholder Spice ids. See [beckn.md → Connecting Spice](beckn.md#connecting-spice) |
 | Clinical protocol in CCE | must be loaded for events to be matched and to appear in Insights |
 | `cce-beckn-service` image | its GHCR package needs a login, so the image is built from source and imported into k3s by hand |
 | Prometheus | does not scrape the Beckn services |

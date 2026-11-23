@@ -12,8 +12,9 @@
 #   - schemaValidator type "file": the CCE profile of Sygnal (config/sygnal/cce-sygnal-apis.yaml, ConfigMap onix-sygnal) is
 #     the only spec — the adapter accepts the two Sygnal actions and nothing else, and downloads nothing at start. onix logs
 #     a WARN that it is not the Beckn core spec. The payloads are Sygnal's own types, sygnal:CoordinationEvent (the entry
-#     of message.events in sygnal/event/report) and sygnal:Signal (the message of sygnal/signal/emit), opened and extended
-#     in that profile (v3.0), so the profile checks all of a message.
+#     of message.events in sygnal/event/report) and sygnal:Signal (the message of sygnal/signal/emit), opened in that
+#     profile (v3.0) and extended by the file it refers to, config/sygnal/cce-fhir-extension.yaml (the FHIR fields; same
+#     ConfigMap), so the two files check all of a message.
 #   - extendedSchema_enabled "false": the extended check validates objects that carry "@context" against their own
 #     schema. No object in these messages carries one, so the adapter holds no payload schemas (no config/schema folder,
 #     no schema ConfigMap) and never fetches one.

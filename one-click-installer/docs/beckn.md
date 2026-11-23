@@ -8,7 +8,7 @@ Two protocols are in use, side by side:
 | Flows | Protocol | Adapters |
 |---|---|---|
 | **CCE flows**: clinical events OpenMRS → HIE → CCE, care alerts CCE → OpenMRS (and Spice once configured), events Spice → HIE | **Sygnal**, the CCE profile (v3.0): two actions, `sygnal/event/report` (carries one `sygnal:CoordinationEvent` with the fields of a clinical event on it) and `sygnal/signal/emit` (its message is a `sygnal:Signal` with the fields of a care alert on it), no callbacks. See [Change 2026-11-23: the Sygnal payloads](#change-2026-11-23-the-sygnal-payloads) | one Sygnal adapter per participant, `onix-sygnal` (`fidedocker/onix-adapter:1.9.4`), one identity, public address `https://<host>/sygnal/receiver` |
-| **Spice ↔ OpenMRS health referrals** | standard **Beckn**, the messages unchanged: `select` / `init` / `confirm` / `status` / `update` and their callbacks | OpenMRS's Beckn adapter pair, `onix-bap` / `onix-bpp` (`fidedocker/onix-adapter:1.9.4`; on `1.6.1` before, see [Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194)), its BAP and BPP records, `https://<host>/bap/receiver` and `/bpp/receiver`, the Health* referral schemas |
+| **Spice ↔ OpenMRS health referrals** | standard **Beckn**: `select` / `init` / `confirm` / `status` / `update` and their callbacks. The clinical event in `update`, `on_update` and `on_status` is a `sygnal:CoordinationEvent` (it was a `cce:CceClinicalEvent` box), see [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box) | OpenMRS's Beckn adapter pair, `onix-bap` / `onix-bpp` (`fidedocker/onix-adapter:1.9.4`; on `1.6.1` before, see [Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194)), its BAP and BPP records, `https://<host>/bap/receiver` and `/bpp/receiver`, the Health* referral schemas |
 
 CCE and the HIE carry no referrals and run the Sygnal adapter only.
 
@@ -78,6 +78,8 @@ alert, a `Nack` otherwise. There are no callbacks. Each participant is described
 - [The timeout chain](#the-timeout-chain)
 - [Upgrading from the Beckn-only setup](#upgrading-from-the-beckn-only-setup)
 - [Change 2026-11-23: the Sygnal payloads](#change-2026-11-23-the-sygnal-payloads)
+- [Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194)
+- [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)
 - [Copying an OpenMRS](#copying-an-openmrs)
 - [Day 2](#day-2)
 - [Connecting Spice](#connecting-spice)
@@ -102,8 +104,10 @@ templates are in [`k8s/beckn/onix/config`](../../k8s/beckn/onix/config): `onix.y
 the participant receives → its own service), `routing-caller.yaml` (the action it sends → `context.receiverUri`). It checks
 messages against the CCE profile of Sygnal only (`schemaValidator` type `file`, ConfigMap `onix-sygnal-profile`). The
 profile is CCE's copy of the Sygnal schema, with `sygnal:CoordinationEvent` (the entry of `message.events` in
-`sygnal/event/report`) and `sygnal:Signal` (the `message` of `sygnal/signal/emit`) opened and extended, so it describes
-the whole message: the adapter holds no payload schemas, and its extended schema check is off. It keeps no copy of the
+`sygnal/event/report`) and `sygnal:Signal` (the `message` of `sygnal/signal/emit`) opened and extended. It is two files,
+mounted side by side in `/app/config/sygnal`: `cce-sygnal-apis.yaml` (Sygnal's own fields; the adapter's spec) and
+`cce-fhir-extension.yaml` (the fields CCE adds for FHIR), which the first refers to. Together they describe the whole
+message: the adapter holds no payload schemas, and its extended schema check is off. It keeps no copy of the
 messages (no payload store: they hold patient data).
 
 | Participant | Receives (→ its service) | Sends |
@@ -115,13 +119,16 @@ messages (no payload store: they hold patient data).
 OpenMRS's Beckn referral pair — [`k8s/beckn/onix-beckn`](../../k8s/beckn/onix-beckn) — is the adapter pair of the setup
 before Sygnal: `onix-bap` (port 8081), `onix-bpp` (port 8082), their config templates in
 [`k8s/beckn/onix-beckn/config`](../../k8s/beckn/onix-beckn/config) and the Health* referral schemas in
-[`k8s/beckn/onix-beckn/health-schema`](../../k8s/beckn/onix-beckn/health-schema). The messages, the routing, the
-addresses and the schemas are what they were. The adapters themselves are on onix 1.9.4, like the Sygnal adapter (they
+[`k8s/beckn/onix-beckn/health-schema`](../../k8s/beckn/onix-beckn/health-schema). The actions, the routing and the
+addresses are what they were. The adapters themselves are on onix 1.9.4, like the Sygnal adapter (they
 were on 1.6.1), with the config form and the steps of that version
 ([Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194)).
+The clinical event the referral legs carry in `performanceAttributes` is a `sygnal:CoordinationEvent`, the same object
+as in `sygnal/event/report`, with an `@context` first
+([Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
 The pair uses the same Redis, also as its payload store: the signature of each referral message is kept there for 24
-hours, the body never. Its schemas are in the ConfigMap `onix-schema`, as before: `CceClinicalEvent` v1.0 (the box the
-referral legs carry), `CceCareAlert` v1.0 and the Health* pack. Only the referral pair mounts that ConfigMap.
+hours, the body never. Its schemas are in the ConfigMap `onix-schema`: `CoordinationEvent` v3.0 (the box the
+referral legs carry) and the Health* pack. Only the referral pair mounts that ConfigMap.
 
 Public addresses (Traefik, Let's Encrypt), one host per component:
 
@@ -156,13 +163,15 @@ and reaches CCE only through the adapters.
    it was registered with. OpenMRS also needs its BAP and BPP records for the referrals, as before. See
    [Identities, keys and the registry](#identities-keys-and-the-registry).
 4. The schemas are available: either the machine can clone `BECKN_SCHEMA_REPO` at a `BECKN_SCHEMA_REF` whose `schema/`
-   has `sygnal-profile/v3.0/cce-sygnal-apis.yaml` (and, with `openmrs`, `CceClinicalEvent/v1.0` and `CceCareAlert/v1.0`
-   for the referral pair), or you copied that `schema/` folder to it (`BECKN_SCHEMA_DIR`).
-   Without the profile (with `openmrs`: or one of these folders) the install stops: the Sygnal adapters cannot start
-   without the profile.
-   **Until cce-beckn-service pull request #7 is merged into `demo`, `demo` (the default ref) has only profile v1.0: set
-   `BECKN_SCHEMA_REF=cce-payload-types`, or `BECKN_SCHEMA_DIR` to a checkout of that
-   branch** ([Change 2026-11-23](#change-2026-11-23-the-sygnal-payloads)).
+   has `sygnal-profile/v3.0/cce-sygnal-apis.yaml` and `cce-fhir-extension.yaml` next to it (and, with `openmrs`,
+   `CoordinationEvent/v3.0` for the referral pair), or you copied that `schema/` folder to it (`BECKN_SCHEMA_DIR`).
+   Without the profile or its extension (with `openmrs`: or that folder) the install stops: the Sygnal adapters cannot
+   start without the profile, and refuse every message without the extension.
+   **Until cce-beckn-service pull request #7 is merged into `demo`, `demo` (the default ref) has only profile v1.0, no
+   `cce-fhir-extension.yaml` and no `CoordinationEvent/v3.0`: set `BECKN_SCHEMA_REF` to a ref that has them
+   (`cce-payload-types`, the branch of that pull request), or `BECKN_SCHEMA_DIR` to a checkout of
+   it** ([Change 2026-11-23: the Sygnal payloads](#change-2026-11-23-the-sygnal-payloads),
+   [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
 5. Every image can be pulled, and they are Sygnal builds for profile v3.0 (`cce-beckn-service` with
    `POST /sygnal/event/report`, the adaptors with `sygnal/event/report` / `sygnal/signal/emit`; all four send and
    expect `sygnal:CoordinationEvent` / `sygnal:Signal` with the CCE fields on them). Today the `cce-beckn-service` package on GHCR needs a
@@ -188,8 +197,8 @@ sudo bash one-click-installer/install-beckn.sh --config one-click-installer/conf
 | Phase | Script | What it does |
 |---|---|---|
 | 1 Secrets | [`beckn-seed.sh`](../lib/beckn/beckn-seed.sh) | fills Infisical `/beckn`: seed-file values, generated passwords, the referral contract ids. Stops if a private key is missing |
-| 2 Schemas | (in `install-beckn.sh`) | `BECKN_SCHEMA_DIR`, or a clone of `BECKN_SCHEMA_REPO` at `BECKN_SCHEMA_REF`; the CCE profile (`BECKN_SYGNAL_PROFILE`, by default `sygnal-profile/v3.0/cce-sygnal-apis.yaml` in it) must be there, and with `openmrs` the version folders of `BECKN_REFERRAL_SCHEMAS` |
-| 3 Deploy | [`beckn-deploy.sh`](../lib/beckn/beckn-deploy.sh) per component | Secret `onix-config`, ConfigMap `onix-sygnal-profile` (the Sygnal adapter's only spec), openmrs: also `onix-schema` (the referral pair's schemas), `kubectl apply` of the rendered component, host aliases on the adapter pods; removes the ConfigMap `onix-sygnal-schema` of an earlier version; cce / openhim: removes the old `onix-bap` / `onix-bpp` and the ConfigMap `onix-schema`; cce: the intelligence service's alert routes |
+| 2 Schemas | (in `install-beckn.sh`) | `BECKN_SCHEMA_DIR`, or a clone of `BECKN_SCHEMA_REPO` at `BECKN_SCHEMA_REF`; the CCE profile (`BECKN_SYGNAL_PROFILE`, by default `sygnal-profile/v3.0/cce-sygnal-apis.yaml` in it) must be there with `cce-fhir-extension.yaml` next to it, and with `openmrs` the version folders of `BECKN_REFERRAL_SCHEMAS` |
+| 3 Deploy | [`beckn-deploy.sh`](../lib/beckn/beckn-deploy.sh) per component | Secret `onix-config`, ConfigMap `onix-sygnal-profile` (the two profile files: `cce-sygnal-apis.yaml`, the Sygnal adapter's spec, and `cce-fhir-extension.yaml`, which it refers to), openmrs: also `onix-schema` (the referral pair's schemas), `kubectl apply` of the rendered component, host aliases on the adapter pods; removes the ConfigMap `onix-sygnal-schema` of an earlier version; cce / openhim: removes the old `onix-bap` / `onix-bpp` and the ConfigMap `onix-schema`; cce: the intelligence service's alert routes |
 | 4 Configure and wait | [`openhim-setup.sh`](../lib/beckn/openhim-setup.sh) | OpenHIM root password, clients, channels; then waits for every deployment (reports, never aborts) |
 
 Safe to re-run. A pod restarts only when a value it reads changed. A first OpenMRS start on an empty database installs
@@ -202,7 +211,8 @@ sudo bash one-click-installer/lib/beckn/run.sh --config one-click-installer/conf
 ```
 
 Per component it shows: pods ready; the version of the CCE profile its Sygnal adapter holds (for OpenMRS's referral
-pair: its `Preloaded N schemas`); the Sygnal subscriber in the registry (live,
+pair: its `Preloaded N schemas`), and an error when `cce-fhir-extension.yaml` is missing from the ConfigMap
+`onix-sygnal-profile`; the Sygnal subscriber in the registry (live,
 same signing key as configured, member of `BECKN_SYGNAL_NETWORK_ID`; the record's url is shown when it differs, for
 information); and the public address `https://<host>/sygnal/receiver/<action>` (an empty, unsigned request must be refused
 by the adapter with 400 or 401). For OpenMRS the same for its referral pair (`/bap/receiver`, `/bpp/receiver`). It ends
@@ -241,11 +251,11 @@ All in the environment's config file. `lib/load-config.sh` accepts any key that 
 | `BECKN_OPENMRS_BAP_URI`, `_BPP_URI` | `https://<host>/bap/receiver`, `…/bpp/receiver` | their addresses |
 | `BECKN_SIGNING_PUBLIC_KEY`, `BECKN_ENCR_PUBLIC_KEY` | required | the adapters' public keys. Per participant: `BECKN_<P>_…`; per record: `BECKN_<P>_BAP_…` / `BECKN_<P>_BPP_…`. The most specific one wins |
 | `BECKN_SEED_ENV_FILE` | empty | seed file for Infisical `/beckn` (below) |
-| `BECKN_SCHEMA_DIR` | empty | folder holding `sygnal-profile/`, `CceClinicalEvent/` and `CceCareAlert/` (cce-beckn-service's `schema/`). Empty: clone `BECKN_SCHEMA_REPO` (`https://github.com/openphc/cce-beckn-service.git`) at `BECKN_SCHEMA_REF` and use its `schema/` |
-| `BECKN_SCHEMA_REF` | `demo` | the branch or tag of `BECKN_SCHEMA_REPO` to take the schemas from. It must have `sygnal-profile/v3.0`. Until cce-beckn-service pull request #7 is merged into `demo`: `cce-payload-types` ([Change 2026-11-23](#change-2026-11-23-the-sygnal-payloads)) |
-| `BECKN_SYGNAL_PROFILE` | `<schema>/sygnal-profile/v3.0/cce-sygnal-apis.yaml` | the CCE profile of Sygnal, the Sygnal adapters' only spec. They hold no other schema |
-| `BECKN_REFERRAL_SCHEMAS` | `CceClinicalEvent/v1.0 CceCareAlert/v1.0` | the `<Type>/<version>` folders of the schema folder OpenMRS's referral pair holds (ConfigMap `onix-schema`, with the Health* pack): what it held before, unchanged. One version per type |
-| `BECKN_SCHEMA_BASE_URL` | `https://raw.githubusercontent.com/openphc/cce-beckn-service/main/schema` | the start of the `@context` address of CCE's schemas, a setting of the three services. Must be the same for all participants; it need not be downloadable, because an adapter that checks such an object has a local copy. The Sygnal messages carry no `@context` |
+| `BECKN_SCHEMA_DIR` | empty | folder holding `sygnal-profile/` and `CoordinationEvent/` (cce-beckn-service's `schema/`). Empty: clone `BECKN_SCHEMA_REPO` (`https://github.com/openphc/cce-beckn-service.git`) at `BECKN_SCHEMA_REF` and use its `schema/` |
+| `BECKN_SCHEMA_REF` | `demo` | the branch or tag of `BECKN_SCHEMA_REPO` to take the schemas from. It must have `sygnal-profile/v3.0` with both profile files, and `CoordinationEvent/v3.0`. Until cce-beckn-service pull request #7 is merged into `demo`: a ref that has them, `cce-payload-types` ([Change 2026-11-23](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)) |
+| `BECKN_SYGNAL_PROFILE` | `<schema>/sygnal-profile/v3.0/cce-sygnal-apis.yaml` | the CCE profile of Sygnal, the Sygnal adapters' spec. Its FHIR extension is always the file `cce-fhir-extension.yaml` next to it (the name the profile refers to; `BECKN_SYGNAL_EXTENSION_FILE` in `beckn-lib.sh`). The adapters hold these two files and no other schema |
+| `BECKN_REFERRAL_SCHEMAS` | `CoordinationEvent/v3.0` | the `<Type>/<version>` folders of the schema folder OpenMRS's referral pair holds (ConfigMap `onix-schema`, with the Health* pack). It was `CceClinicalEvent/v1.0 CceCareAlert/v1.0` before 2026-11-23. One version per type |
+| `BECKN_SCHEMA_BASE_URL` | `https://raw.githubusercontent.com/openphc/cce-beckn-service/main/schema` | the start of the `@context` address of CCE's schema of the referral box (`<BECKN_SCHEMA_BASE_URL>/CoordinationEvent/v3.0/context.jsonld`), a setting of the services. Must be the same for all participants; it need not be downloadable, because an adapter that checks such an object finds its local copy by `@type`. The Sygnal messages need no `@context` |
 | `BECKN_SCHEMA_ALLOWED_DOMAINS` | `beckn.org,raw.githubusercontent.com,schema.beckn.io` | the domains OpenMRS's referral pair may fetch an unknown schema from (the Sygnal adapters fetch none) |
 | `BECKN_CORE_SCHEMA_URL` | the Beckn core v2.0.0 spec | what OpenMRS's referral pair checks messages against (the Sygnal adapters use the CCE profile) |
 | `IMAGE_CCE_BECKN_SERVICE` | `latest` | tag or `sha256:` digest of `cce-beckn-service` |
@@ -473,17 +483,19 @@ Unchanged: the two action names and paths, the Sygnal context (`senderId`, `rece
 identities and the [timeout chain](#the-timeout-chain). **No application setting changed.** This change does not
 touch the Spice ↔ OpenMRS referrals: `onix-bap` / `onix-bpp` keep their routing and the schemas they hold, and the
 referral legs carry the `CceClinicalEvent` **v1.0** box in `performanceAttributes`, as before. (The version and the
-config of the pair changed separately: [Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194).)
+config of the pair changed separately: [Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194).
+Later the same day the box became a `sygnal:CoordinationEvent`: [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box).)
 
-**The Sygnal adapter needs the profile only.** The profile describes the whole message, and no object in it carries
-`@context`, so `onix-sygnal` holds no payload schemas: its extended schema check is off
-(`extendedSchema_enabled: "false"`), and it has no schema folder, no init container and no schema ConfigMap. Schemas
-are held by OpenMRS's referral pair alone:
+**The Sygnal adapter needs the profile only.** The profile is two files since [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box):
+`cce-sygnal-apis.yaml` and the FHIR extension it refers to, `cce-fhir-extension.yaml`. Together they describe the
+whole message, and no object in it carries `@context`, so `onix-sygnal` holds no payload schemas: its extended schema
+check is off (`extendedSchema_enabled: "false"`), and it has no schema folder, no init container and no schema
+ConfigMap. Schemas are held by OpenMRS's referral pair alone:
 
 | Adapters | Checks messages against | Setting (default) |
 |---|---|---|
-| `onix-sygnal`, every participant | the CCE profile, ConfigMap `onix-sygnal-profile` — nothing else | `BECKN_SYGNAL_PROFILE` (`<schema>/sygnal-profile/v3.0/cce-sygnal-apis.yaml`) |
-| `onix-bap` / `onix-bpp`, OpenMRS only | the Beckn core spec, and the ConfigMap `onix-schema` (as before): `CceClinicalEvent/v1.0`, `CceCareAlert/v1.0`, and the Health* pack of this repository | `BECKN_REFERRAL_SCHEMAS` (`CceClinicalEvent/v1.0 CceCareAlert/v1.0`) |
+| `onix-sygnal`, every participant | the two files of the CCE profile, ConfigMap `onix-sygnal-profile`: `cce-sygnal-apis.yaml` (the spec) and `cce-fhir-extension.yaml` (which the spec refers to) — nothing else | `BECKN_SYGNAL_PROFILE` (`<schema>/sygnal-profile/v3.0/cce-sygnal-apis.yaml`); the extension is the file next to it |
+| `onix-bap` / `onix-bpp`, OpenMRS only | the Beckn core spec, and the ConfigMap `onix-schema`: `CoordinationEvent/v3.0` (since [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box); it was `CceClinicalEvent/v1.0`, `CceCareAlert/v1.0`) and the Health* pack of this repository | `BECKN_REFERRAL_SCHEMAS` (`CoordinationEvent/v3.0`) |
 
 The referral set is named explicitly because an adapter finds a local schema by its **type name** and ignores the
 version folder: it can hold one version of a type only, so nothing is shipped because it happens to be in the schema
@@ -495,14 +507,15 @@ What it means for an install:
   [`beckn-lib.sh`](../lib/beckn/beckn-lib.sh): `BECKN_SYGNAL_PROFILE_REL`) and stops when the schema folder does not
   have it, naming the versions it found instead. With `openmrs` it also stops when a version folder of
   `BECKN_REFERRAL_SCHEMAS` is missing, or when the referral set would hold a type twice.
-- `onix-sygnal` mounts the profile and nothing else. `install-beckn.sh` removes what an earlier version left behind:
-  the ConfigMap `onix-sygnal-schema` (an install made for profile v2.0) in every namespace, and the ConfigMap
+- `onix-sygnal` mounts the two profile files and nothing else. `install-beckn.sh` removes what an earlier version left
+  behind: the ConfigMap `onix-sygnal-schema` (an install made for profile v2.0) in every namespace, and the ConfigMap
   `onix-schema` in the CCE and HIE namespaces, which have no referral pair. The setting `BECKN_SYGNAL_SCHEMAS` of
   profile v2.0 is gone; a line left in a config file is ignored.
 - **The schema source must have profile v3.0.** The default `BECKN_SCHEMA_REF` is `demo`, and `demo` of
   cce-beckn-service has only profile v1.0 until its pull request #7 is merged. Until then set
   `BECKN_SCHEMA_REF=cce-payload-types` (the branch of that pull request), or `BECKN_SCHEMA_DIR` to the `schema/` folder
-  of a checkout of it. Once it is merged, remove the setting.
+  of a checkout of it. Once it is merged, remove the setting. The ref must also have `cce-fhir-extension.yaml` next to
+  the profile and, with `openmrs`, `CoordinationEvent/v3.0` ([Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
 - All four images (`cce-beckn-service`, the HIE adaptor, the two OpenMRS adaptors) must be builds for profile v3.0, on
   every participant at the same time: a Sygnal adapter refuses a message in an earlier shape (schema check, a `Nack`).
 - Then re-run `install-beckn.sh`. It replaces the ConfigMap `onix-sygnal-profile` and restarts, once, the adapters and
@@ -518,7 +531,8 @@ adapters, instead of `1.6.1`. The decision: the handoff between Spice and OpenMR
 1.6.1.
 
 **The referral messages do not change**: standard Beckn `select` / `init` / `confirm` / `status` / `update` and their
-callbacks, with the `CceClinicalEvent` v1.0 box and the Health* packs. No application setting changed. The routing
+callbacks, with the `CceClinicalEvent` v1.0 box (a `sygnal:CoordinationEvent` since [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)) and
+the Health* packs. No application setting changed. The routing
 files, the ConfigMap `onix-schema`, the Services, the Ingress and the two OpenMRS adaptors are what they were. What
 changed is the image of the two Deployments and their two config files
 ([`onix-bap.yaml`](../../k8s/beckn/onix-beckn/config/onix-bap.yaml),
@@ -557,6 +571,88 @@ What it means for an install: re-run `install-beckn.sh --only openmrs`. It resta
 (new image, new config), OpenMRS's `onix-sygnal` (it reads the same Secret `onix-config`; its own config did not
 change) and the pods that read their settings at start (the two OpenMRS adaptors, the OpenMRS frontend). CCE and the
 HIE are not affected. `BECKN_REGISTRY_NAME` can be removed from the config file.
+
+## Change 2026-11-23: the profile in two files, and the referral box
+
+Two changes, decided on 2026-11-23 after the two above. The Sygnal messages on the wire do not change. The referral
+messages get a new box for the clinical event.
+
+**1. The CCE profile of Sygnal v3.0 is two files**, in one folder of cce-beckn-service, `schema/sygnal-profile/v3.0/`:
+
+| File | Holds |
+|---|---|
+| `cce-sygnal-apis.yaml` | Sygnal's own fields. `sygnal:CoordinationEvent` and `sygnal:Signal` are open (`additionalProperties: true`); `Signal.severity` also accepts `LOW` / `MEDIUM` / `HIGH`. The Sygnal adapter's only spec (`schemaValidator` type `file`) |
+| `cce-fhir-extension.yaml` | the fields CCE adds for FHIR: `CoordinationEventFhirExtension`, `SignalFhirExtension` |
+
+The first file refers to the second by that name (`allOf` + `$ref`), and onix follows the reference: a message must
+match both. The messages are the same as before the split.
+
+What the installer does:
+
+- The ConfigMap `onix-sygnal-profile` holds both files, mounted together at `/app/config/sygnal`.
+  `cce-sygnal-apis.yaml` stays the adapter's only spec.
+- The extension is always the file `cce-fhir-extension.yaml` next to `BECKN_SYGNAL_PROFILE` (the constant
+  `BECKN_SYGNAL_EXTENSION_FILE` in [`beckn-lib.sh`](../lib/beckn/beckn-lib.sh)): that is the name the profile refers
+  to. There is no setting for it.
+- `install-beckn.sh` and `beckn-deploy.sh` stop with an error when it is missing. `beckn-status.sh` reports it when it
+  is missing from the ConfigMap `onix-sygnal-profile`.
+
+**2. The referral box is a `sygnal:CoordinationEvent`.** The referral (handoff) messages between OpenMRS and Spice are
+standard Beckn `update`, `on_update` and `on_status`, through OpenMRS's `onix-bap` / `onix-bpp` (onix 1.9.4). Each
+carries a clinical event in `performanceAttributes`. That box was a `cce:CceClinicalEvent` v1.0. It is now a
+`sygnal:CoordinationEvent`, the same object as in `sygnal/event/report`, with an `@context` first (Beckn core requires
+it there):
+
+```json
+"performanceAttributes": {
+  "@context": "<BECKN_SCHEMA_BASE_URL>/CoordinationEvent/v3.0/context.jsonld",
+  "@type": "sygnal:CoordinationEvent",
+  "id": "<uuid>",
+  "revision": 1,
+  "eventType": "DELIVERY_RECORDED",
+  "granularity": "INDIVIDUAL",
+  "from": { "id": "…", "role": "PROVIDER" },
+  "occurredAt": "…",
+  "patientId": "…",
+  "fhirVersion": "4.0.1",
+  "facilityId": "…", "facilityName": "…", "sourceEventId": "…",
+  "resource": { "resourceType": "ServiceRequest", "…": "the FHIR R4 resource" } }
+```
+
+Sygnal's fields are `id`, `revision`, `eventType`, `granularity`, `from` and `occurredAt`; the FHIR extension's are
+`patientId`, `fhirVersion` and `resource`, and the optional `facilityId`, `facilityName` and `sourceEventId`. The
+`hrf:HealthReferral` flow (`select` / `init` / `confirm` / `status`, the Health* pack) does not change.
+
+The schema of the box is cce-beckn-service's `schema/CoordinationEvent/v3.0/` (`attributes.yaml`, `context.jsonld`).
+onix finds it by `@type`, in its schema folder (`CoordinationEvent/attributes.yaml`), so the `@context` address need
+not be reachable. `schema/CceClinicalEvent/` and `schema/CceCareAlert/` are deleted from cce-beckn-service.
+
+What the installer does:
+
+- `BECKN_REFERRAL_SCHEMAS` defaults to `CoordinationEvent/v3.0` (it was `CceClinicalEvent/v1.0 CceCareAlert/v1.0`).
+  The ConfigMap `onix-schema` holds `CoordinationEvent/v3.0` and the Health* pack. A config file that still names the
+  old folders stops the install at `openmrs`: the schema source no longer has them. Remove the line.
+- `BECKN_SCHEMA_DIR` is the folder holding `sygnal-profile/` and `CoordinationEvent/`.
+
+**Spice must change at the same time**: the boxes of its referral messages, and the schema set of its referral
+adapters (`CoordinationEvent/v3.0` in place of `CceClinicalEvent/v1.0`). An adapter without the old schema refuses the
+old box with `SCH_SCHEMA_ADAPTATION_FAILED`. See [Connecting Spice](#connecting-spice).
+
+**The schema source.** Until cce-beckn-service pull request #7 is merged into `demo`, `BECKN_SCHEMA_REF` must name a ref
+that has `cce-fhir-extension.yaml` and `CoordinationEvent/v3.0` as well as the profile (`cce-payload-types`, the branch
+of that pull request), or `BECKN_SCHEMA_DIR` a checkout of it. Once it is merged, remove the setting.
+
+Tested:
+
+| What | Result |
+|---|---|
+| `beckn-deploy.sh` against a kubectl stand-in | both profile files in each namespace's `onix-sygnal-profile`; `CoordinationEvent/v3.0` in OpenMRS's `onix-schema`. A schema folder without the extension stops the install |
+| The Sygnal messages, real onix 1.9.4 adapters, the split profile | **31 of 31 cases** as expected |
+| The referral messages, real onix 1.9.4 adapters, the new box | **19 of 19 cases** as expected: the 6 flow messages pass, malformed boxes are refused |
+
+What it means for an install: re-run `install-beckn.sh` with a schema source that has the new files, at the same
+time as Spice changes its referral side. It replaces the ConfigMap `onix-sygnal-profile` in every namespace and, for
+`openmrs`, `onix-schema`. The adapters restart once: the hash that rolls them covers these files.
 
 ## Copying an OpenMRS
 
@@ -609,15 +705,16 @@ Spice has two roles, on two protocols.
 `sygnal/signal/emit`.
 
 1. Give the Spice team: the HIE's id and address (`BECKN_OPENHIM_ID`, `https://<HIE host>/sygnal/receiver`), CCE's id,
-   `BECKN_SYGNAL_NETWORK_ID`, and the CCE profile (v3.0), which Spice's adapter must load instead of Sygnal's published
-   schema: Spice sends one `sygnal:CoordinationEvent` with the fields of a clinical event on it and receives a
+   `BECKN_SYGNAL_NETWORK_ID`, and the CCE profile (v3.0, its two files `cce-sygnal-apis.yaml` and
+   `cce-fhir-extension.yaml`), which Spice's adapter must load instead of Sygnal's published schema: Spice sends one `sygnal:CoordinationEvent` with the fields of a clinical event on it and receives a
    `sygnal:Signal` with the fields of a care alert on it ([Change 2026-11-23](#change-2026-11-23-the-sygnal-payloads)).
 2. Get from them: Spice's Sygnal subscriber id and its Sygnal address. Spice's id must be a member of the Sygnal network.
 3. Set `BECKN_SPICE_ID` (default: `BECKN_SPICE_BAP_ID`) and `BECKN_SPICE_URI`, and run `install-beckn.sh --only cce,openhim`.
    The HIE then accepts Spice's events (source `spice`), and CCE lists Spice in its `hmis.yml` and gets an intelligence
    destination `SPICE`. Without `BECKN_SPICE_URI` CCE sends Spice no alerts (a warning says so).
 
-**Beckn referrals with OpenMRS (the messages are unchanged; the adapters are on onix 1.9.4).** Until Spice's BAP id is
+**Beckn referrals with OpenMRS (the same actions; the clinical event is a `sygnal:CoordinationEvent`; the adapters
+are on onix 1.9.4).** Until Spice's BAP id is
 known, the OpenMRS receiver runs with placeholder ids (`bap.spice.invalid`) because it does not start without any.
 
 Spice's referral adapter must be set up like OpenMRS's
@@ -632,15 +729,19 @@ Spice's referral adapter must be set up like OpenMRS's
 - **A payload store that keeps signatures**: the `payloadStore` plugin with `storeSignature: "true"` in both modules,
   on a cache (Redis) both reach. `storeBody: "false"` keeps the patient data of the messages out of it. onix 1.9.4
   signs and checks a callback that answers a request with the signature of that request.
-- **`CceClinicalEvent/v1.0` in its schema folder** (`extendedSchema_localSchemaPath`), from cce-beckn-service's
-  `schema/`. Without it the box of a referral message is refused (`SCH_SCHEMA_ADAPTATION_FAILED`).
+- **`CoordinationEvent/v3.0` in its schema folder** (`extendedSchema_localSchemaPath`), from cce-beckn-service's
+  `schema/`, in place of `CceClinicalEvent/v1.0`. Without it the box of a referral message is refused
+  (`SCH_SCHEMA_ADAPTATION_FAILED`).
+- **The new box in its referral messages**: a `sygnal:CoordinationEvent` with an `@context` first, in place of the
+  `cce:CceClinicalEvent` v1.0 box, changed at the same time as OpenMRS
+  ([Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
 
 With Spice's adapter still on onix 1.6.1, 5 of the 6 tested referral messages pass and one does not: OpenMRS's
 `on_update` that answers a referral from Spice is refused by Spice's adapter with `401`, because 1.6.1 cannot verify
 the signature onix 1.9.4 puts on such a callback. With both sides on 1.9.4 and these steps, 6 of 6 pass.
 
 1. Give the Spice team: OpenMRS's BAP and BPP ids and addresses, `BECKN_NETWORK_ID`, the "Referrals in" ids from
-   `beckn-status.sh` (OpenMRS sends referral outcomes with them), and the four requirements above.
+   `beckn-status.sh` (OpenMRS sends referral outcomes with them), and the five requirements above.
 2. Get from them: Spice's BAP and BPP subscriber ids and addresses, the facility codes Spice serves, and the "Referrals
    out" contract id and `transactionId`.
 3. Set `BECKN_SPICE_BAP_ID`, `BECKN_SPICE_BAP_URI`, `BECKN_SPICE_BPP_ID`, `BECKN_SPICE_BPP_URI`,
@@ -655,13 +756,15 @@ the signature onix 1.9.4 puts on such a callback. With both sides on 1.9.4 and t
 |---|---|---|
 | An adapter in `CrashLoopBackOff` with exit code 0; the log ends `Loading keys from configuration`, `Application finished` | a key is not valid base64 — typically the private key lost its trailing `=` | check the length of the value in Infisical `/beckn` (an Ed25519 key is 44 characters); re-seed from the file |
 | `install-beckn.sh` stops: `no CCE Sygnal profile at …/sygnal-profile/v3.0/cce-sygnal-apis.yaml`, and it names `sygnal-profile/v1.0/…` or `…/v2.0/…` as what it found | the schema source is from before profile v3.0 (`demo` of cce-beckn-service until its pull request #7 is merged) | `BECKN_SCHEMA_REF=cce-payload-types`, or `BECKN_SCHEMA_DIR` to a checkout of that branch |
+| `install-beckn.sh` or `beckn-deploy.sh` stops: `no cce-fhir-extension.yaml next to the CCE Sygnal profile (…)` | the schema source has the profile but not its FHIR extension (a ref from before the split) | use a cce-beckn-service ref that has it (`BECKN_SCHEMA_REF`), or put it next to the profile |
 | `onix-sygnal` does not start: cannot read `./config/sygnal/cce-sygnal-apis.yaml` | the ConfigMap `onix-sygnal-profile` is missing | re-run `install-beckn.sh` with a schema folder that has `sygnal-profile/v3.0/` |
-| `install-beckn.sh` stops at `openmrs`: `BECKN_REFERRAL_SCHEMAS: no CceClinicalEvent/v1.0/attributes.yaml in …` | the schema source lacks a version folder the referral pair's schema set names | use a cce-beckn-service ref that has `CceClinicalEvent/v1.0` and `CceCareAlert/v1.0` (the referral pair's set; the referral legs carry the `CceClinicalEvent` v1.0 box) |
+| `beckn-status.sh`: `cce-fhir-extension.yaml MISSING from ConfigMap onix-sygnal-profile` | the ConfigMap was made by an earlier version of the installer, with the profile only | re-run `install-beckn.sh` |
+| `install-beckn.sh` stops at `openmrs`: `BECKN_REFERRAL_SCHEMAS: no CoordinationEvent/v3.0/attributes.yaml in …` | the schema source lacks a version folder the referral pair's schema set names | use a cce-beckn-service ref that has `CoordinationEvent/v3.0` (the referral pair's set; the referral legs carry a `sygnal:CoordinationEvent` box). A config file that still names `CceClinicalEvent/v1.0` / `CceCareAlert/v1.0` stops the same way: those folders are gone; set `BECKN_REFERRAL_SCHEMAS=CoordinationEvent/v3.0` or remove the line |
 | A Sygnal adapter answers a `Nack` about the schema for every event or alert (`patientId` … is missing, or `@type` must be `sygnal:CoordinationEvent` / `sygnal:Signal`), right after this change | one side still runs an image built for an earlier profile (v1.0: the CCE data in a bag; v2.0: `cce:CceClinicalEvent` / `cce:CceCareAlert`), or an adapter still holds an earlier profile | deploy the profile v3.0 builds of all four images, and re-run `install-beckn.sh` on every participant |
 | `onix-sygnal` logs a WARN `running non-canonical value (canonical="url" actual="file")` | expected: the CCE profile, not the Beckn core spec, is its spec | nothing |
 | A sender gets a Nack from the registry / the receiving adapter refuses a signed message | the sender's id is not a member of `BECKN_SYGNAL_NETWORK_ID` (or `context.networkId` is another network), or the record's key differs | `beckn-status.sh` shows each record; fix the registry membership or the config |
 | Spice's adapter answers `401` to OpenMRS's `on_update` (the answer to a referral from Spice); the other referral messages pass | Spice's referral adapter is on onix 1.6.1: it cannot verify the signature onix 1.9.4 puts on a callback that answers a request | Spice moves its referral adapter to onix 1.9.4, with the steps and the payload store listed in [Connecting Spice](#connecting-spice) |
-| A referral message is refused with `SCH_SCHEMA_ADAPTATION_FAILED` | the adapter that refuses it has no `CceClinicalEvent/v1.0` in its schema folder | Spice: add the folder to its adapter's schema folder. OpenMRS: `BECKN_REFERRAL_SCHEMAS` must name `CceClinicalEvent/v1.0` (the default) |
+| A referral message is refused with `SCH_SCHEMA_ADAPTATION_FAILED` | the adapter that refuses it has no schema for the box: no `CoordinationEvent/v3.0` in its schema folder, or the message still carries the old `cce:CceClinicalEvent` box | Spice: add `CoordinationEvent/v3.0` to its adapter's schema folder, and send the new box. OpenMRS: `BECKN_REFERRAL_SCHEMAS` must name `CoordinationEvent/v3.0` (the default) |
 | `cce-beckn-service` in `ImagePullBackOff` / `ErrImageNeverPull` | the GHCR package needs a login | build it and import it: `docker build -t ghcr.io/openphc/cce-beckn-service:<tag> .` in the `cce-beckn-service` repository (`demo`), `docker save … \| gzip \| ssh <host> 'gunzip \| sudo k3s ctr images import -'`, then `IMAGE_CCE_BECKN_SERVICE=<tag>` and `BECKN_CCE_IMAGE_PULL_POLICY=IfNotPresent` |
 | HIE adaptor: `OpenHIM channel answered …: no answer (SocketTimeoutException)`; OpenHIM Core logs `Parse Error: Invalid method encountered` | an `https://` URL on OpenHIM's plain-HTTP channel port. 5001 is HTTP, 5000 is HTTPS | `OPENHIM_EMITTER_BECKN_OPENHIM_CHANNEL_URL=http://openhim-core:5001/cce-beckn` (the manifest's value) |
 | `openhim-mongo` or `openmrs-db` never ready; `gosu` at 100 % CPU in the pod | started as root, the image's entrypoint switches user with `gosu`, which hangs on k3s/containerd with Ubuntu 26.04 | the manifests run both as their own user (`runAsUser: 999`); keep that |

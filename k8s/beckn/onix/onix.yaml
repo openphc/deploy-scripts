@@ -7,7 +7,8 @@
 # Not in this file, created per namespace by one-click-installer/lib/beckn/beckn-deploy.sh before this is applied:
 #   Secret    onix-config  — onix.yaml (it holds the signing keys), routing-receiver.yaml, routing-caller.yaml,
 #                            rendered from k8s/beckn/onix/config/*.yaml                         -> /app/config
-#   ConfigMap onix-sygnal-profile — cce-sygnal-apis.yaml, the CCE profile of Sygnal: the only spec  -> /app/config/sygnal
+#   ConfigMap onix-sygnal-profile — the CCE profile of Sygnal: cce-sygnal-apis.yaml (the only spec) and the FHIR
+#                                   extension it refers to, cce-fhir-extension.yaml, side by side  -> /app/config/sygnal
 # The profile is all this adapter checks a message against: it mounts no payload schemas (profile v3.0 — the payloads are
 # sygnal:CoordinationEvent / sygnal:Signal, extended in the profile, and carry no "@context"). OpenMRS's referral pair
 # keeps its own schemas in ConfigMap onix-schema (k8s/beckn/onix-beckn).

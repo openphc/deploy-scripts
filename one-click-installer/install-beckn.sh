@@ -79,7 +79,7 @@ INF bash "$BLIB/beckn-seed.sh" "$ENVCODE" "${BECKN_SEED_ENV_FILE:-}"
 phase "2/4 Schemas for the adapters (the CCE Sygnal profile; openmrs: the referral pair's schemas)"
 # The adapters check every message against these. A local folder wins; otherwise they are fetched, like the data pipeline.
 # The profile is <schema>/$BECKN_SYGNAL_PROFILE_REL (beckn-lib.sh names the version) unless BECKN_SYGNAL_PROFILE names
-# another file. It is all a Sygnal adapter needs. OpenMRS's Beckn referral pair also holds schemas: the version folders
+# another file; its FHIR extension (cce-fhir-extension.yaml) must be next to it. The two are all a Sygnal adapter needs. OpenMRS's Beckn referral pair also holds schemas: the version folders
 # BECKN_REFERRAL_SCHEMAS names, explicitly (and the Health* pack of this repository).
 if [ -n "${BECKN_SCHEMA_DIR:-}" ]; then
   [ -d "$BECKN_SCHEMA_DIR" ] || { echo "ERROR: BECKN_SCHEMA_DIR=$BECKN_SCHEMA_DIR is not a directory"; exit 1; }
@@ -95,7 +95,9 @@ export BECKN_SCHEMA_DIR
 export BECKN_SYGNAL_PROFILE="${BECKN_SYGNAL_PROFILE:-$BECKN_SCHEMA_DIR/$BECKN_SYGNAL_PROFILE_REL}"
 [ -r "$BECKN_SYGNAL_PROFILE" ] || { echo "ERROR: no CCE Sygnal profile at $BECKN_SYGNAL_PROFILE — the adapters cannot start without it."
   beckn_profile_hint "$BECKN_SCHEMA_DIR"; exit 1; }
-echo "  CCE Sygnal profile: $BECKN_SYGNAL_PROFILE"
+[ -r "$(beckn_sygnal_extension "$BECKN_SYGNAL_PROFILE")" ] || { echo "ERROR: no $BECKN_SYGNAL_EXTENSION_FILE next to the CCE Sygnal profile ($(beckn_sygnal_extension "$BECKN_SYGNAL_PROFILE")) — the profile refers to it."
+  echo "       Use a cce-beckn-service ref that has it (BECKN_SCHEMA_REF), or put it next to the profile."; exit 1; }
+echo "  CCE Sygnal profile: $BECKN_SYGNAL_PROFILE (+ $BECKN_SYGNAL_EXTENSION_FILE)"
 case " $RUN " in *" openmrs "*)
   beckn_schema_set "$BECKN_SCHEMA_DIR" BECKN_REFERRAL_SCHEMAS "$BECKN_REFERRAL_SCHEMAS" >/dev/null || exit 1
   echo "  OpenMRS referral pair's schemas: $BECKN_REFERRAL_SCHEMAS (+ the Health* pack)";;
