@@ -33,8 +33,52 @@
 #   beckn_hosted <c>               true if this machine hosts the component
 #   beckn_role <P>                 BAP or BPP: the registry record a participant used before the Sygnal switch
 #   beckn_kubectl                  sets KUBECTL
+#   beckn_profile_hint <schema>    what to do when the CCE profile is not in a schema folder (for an error message)
+#   beckn_schema_set <schema> <setting> <list>   the files of the listed <Type>/<version> schema folders; fails if one is missing
 
 BECKN_ALL_COMPONENTS="cce openhim openmrs"
+
+# The CCE profile of Sygnal this add-on deploys, as a path inside cce-beckn-service's schema/ folder. The version folder is
+# part of the contract (a version in use never changes; a change gets a new folder) and must be the one the four images
+# were built for:
+#   v2.0  the payloads are CCE's own types: sygnal/event/report carries cce:CceClinicalEvent (v2.0) objects,
+#         sygnal/signal/emit carries a cce:CceCareAlert (v1.0) as its message. (v1.0 kept sygnal:CoordinationEvent /
+#         sygnal:Signal with the CCE data in their eventAttributes / signalAttributes.)
+# This is the one place that names it; BECKN_SYGNAL_PROFILE (a full file path) names another profile file.
+# The schema version folders each kind of adapter gets are settings with defaults: BECKN_SYGNAL_SCHEMAS and
+# BECKN_REFERRAL_SCHEMAS (beckn_defaults).
+BECKN_SYGNAL_PROFILE_REL="sygnal-profile/v2.0/cce-sygnal-apis.yaml"
+
+# What to do when $1 (a schema folder) has no profile at BECKN_SYGNAL_PROFILE_REL: says which versions it does have.
+beckn_profile_hint() {
+  local found
+  found="$(find "$1/sygnal-profile" -mindepth 2 -maxdepth 2 -name cce-sygnal-apis.yaml 2>/dev/null | sed "s#^$1/##" | sort | tr '\n' ' ')"
+  echo "       This add-on deploys $BECKN_SYGNAL_PROFILE_REL (payload types cce:CceClinicalEvent / cce:CceCareAlert)."
+  if [ -n "$found" ]; then
+    echo "       $1 has: ${found% } — another version of the contract. Use a cce-beckn-service ref"
+    echo "       or checkout that has the version above: BECKN_SCHEMA_REF=<branch or tag>, or BECKN_SCHEMA_DIR=<its schema/ folder>."
+  else
+    echo "       Use a cce-beckn-service ref that has schema/sygnal-profile/ (BECKN_SCHEMA_REF), a copy of its schema/"
+    echo "       folder (BECKN_SCHEMA_DIR), or name the profile file with BECKN_SYGNAL_PROFILE."
+  fi
+}
+
+# beckn_schema_set <schema dir> <setting name> <"Type/version …">: print the files of the listed version folders, one per
+# line. An adapter finds a local schema by its TYPE name and ignores the version folder, so a set holds one version of a
+# type, named explicitly — never "whatever the folder has". Fails (message on stderr) when an entry is not <Type>/<version>,
+# a type is listed twice, or a folder has no attributes.yaml.
+beckn_schema_set() {
+  local dir="$1" name="$2" e t seen=" "
+  [ -n "${3// /}" ] || { echo "ERROR: $name is empty (expected <Type>/<version> folders of $dir, e.g. CceClinicalEvent/v2.0)" >&2; return 1; }
+  for e in $3; do
+    case "$e" in */*/*|/*|*/|*..*) echo "ERROR: $name: '$e' is not <Type>/<version>" >&2; return 1;; */*) ;; *) echo "ERROR: $name: '$e' is not <Type>/<version>" >&2; return 1;; esac
+    t="${e%%/*}"
+    case "$seen" in *" $t "*) echo "ERROR: $name lists schema type $t twice — an adapter holds one version of a type" >&2; return 1;; esac
+    seen="$seen$t "
+    [ -r "$dir/$e/attributes.yaml" ] || { echo "ERROR: $name: no $e/attributes.yaml in $dir (BECKN_SCHEMA_DIR, or BECKN_SCHEMA_REPO at BECKN_SCHEMA_REF)" >&2; return 1; }
+    find "$dir/$e" -mindepth 1 -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.jsonld' -o -name '*.json' \) | sort
+  done
+}
 
 beckn_kubectl() {
   [ -n "${KUBECTL:-}" ] && return 0
@@ -84,10 +128,18 @@ beckn_defaults() {
   # (onix 1.9.4) search every registry and do not use it.
   _beckn_default BECKN_REGISTRY_URL "https://fabric.nfh.global/registry/dedi"
   # The start of the @context address inside every message. It only has to be the SAME for all participants: each adapter
-  # finds its local copy of the schema by name (ConfigMap onix-schema), so the address itself need not be reachable.
+  # finds its local copy of the schema by name (ConfigMaps onix-sygnal-schema / onix-schema), so the address itself need not be reachable.
   _beckn_default BECKN_SCHEMA_BASE_URL "https://raw.githubusercontent.com/openphc/cce-beckn-service/main/schema"
   _beckn_default BECKN_SCHEMA_REPO "https://github.com/openphc/cce-beckn-service.git"
   _beckn_default BECKN_SCHEMA_REF demo
+  # The schema version folders (under the schema folder) each kind of adapter holds a copy of. Two sets, kept apart,
+  # because an adapter finds a schema by its type name and so can hold only one version of CceClinicalEvent:
+  #   Sygnal adapters (onix-sygnal, every participant; ConfigMap onix-sygnal-schema): CceClinicalEvent v2.0 is the object
+  #     in sygnal/event/report, CceCareAlert v1.0 the message of sygnal/signal/emit.
+  #   OpenMRS's Beckn referral pair (onix-bap / onix-bpp; ConfigMap onix-schema, with the Health* pack): unchanged — the
+  #     referral legs still carry the CceClinicalEvent v1.0 box in performanceAttributes.
+  _beckn_default BECKN_SYGNAL_SCHEMAS "CceClinicalEvent/v2.0 CceCareAlert/v1.0"
+  _beckn_default BECKN_REFERRAL_SCHEMAS "CceClinicalEvent/v1.0 CceCareAlert/v1.0"
   _beckn_default BECKN_SCHEMA_ALLOWED_DOMAINS "beckn.org,raw.githubusercontent.com,schema.beckn.io"
   # The Beckn core spec OpenMRS's referral pair checks messages against (the Sygnal adapters use the CCE profile instead).
   _beckn_default BECKN_CORE_SCHEMA_URL "https://raw.githubusercontent.com/beckn/protocol-specifications-v2/refs/tags/core-v2.0.0-lts/api/v2.0.0/beckn.yaml"

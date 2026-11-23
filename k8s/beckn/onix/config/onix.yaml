@@ -11,8 +11,9 @@
 # Based on the verified devkit config of DHP-Specs (cce-onix / openhim-onix / openmrs-onix branches). What is set, and why:
 #   - schemaValidator type "file": the CCE profile of Sygnal (config/sygnal/cce-sygnal-apis.yaml, ConfigMap onix-sygnal) is
 #     the only spec — the adapter accepts the two Sygnal actions and nothing else, and downloads nothing at start. onix logs
-#     a WARN that it is not the Beckn core spec. The two bags (CceClinicalEvent, CceCareAlert) are local copies in
-#     config/schema (ConfigMap onix-schema).
+#     a WARN that it is not the Beckn core spec. The schemas of the two payload types (cce:CceClinicalEvent, the object
+#     in sygnal/event/report; cce:CceCareAlert, the message of sygnal/signal/emit) are local copies in
+#     config/schema (ConfigMap onix-sygnal-schema).
 #   - responseHeaderTimeout per module: every answer comes back in the same HTTP call, so every hop must wait longer than
 #     the hop behind it (the default 5 s breaks that). The values come from beckn-deploy.sh (the timeout chain).
 #   - http.timeout write 60: longer than the longest of those waits.

@@ -77,7 +77,9 @@ INF bash "$BLIB/beckn-seed.sh" "$ENVCODE" "${BECKN_SEED_ENV_FILE:-}"
 
 phase "2/4 Schemas for the adapters (the CCE Sygnal profile, CceClinicalEvent, CceCareAlert)"
 # The adapters check every message against these. A local folder wins; otherwise they are fetched, like the data pipeline.
-# The profile is <schema>/sygnal-profile/v1.0/cce-sygnal-apis.yaml unless BECKN_SYGNAL_PROFILE names another file.
+# The profile is <schema>/$BECKN_SYGNAL_PROFILE_REL (beckn-lib.sh names the version) unless BECKN_SYGNAL_PROFILE names
+# another file. The schema version folders are named explicitly, per kind of adapter: BECKN_SYGNAL_SCHEMAS for every
+# onix-sygnal, BECKN_REFERRAL_SCHEMAS for OpenMRS's Beckn referral pair (beckn-deploy.sh keeps the two sets apart).
 if [ -n "${BECKN_SCHEMA_DIR:-}" ]; then
   [ -d "$BECKN_SCHEMA_DIR" ] || { echo "ERROR: BECKN_SCHEMA_DIR=$BECKN_SCHEMA_DIR is not a directory"; exit 1; }
   echo "  using $BECKN_SCHEMA_DIR"
@@ -89,11 +91,16 @@ else
   BECKN_SCHEMA_DIR="$FETCH/src/schema"; echo "  fetched $BECKN_SCHEMA_REPO @ $BECKN_SCHEMA_REF ($(git -C "$FETCH/src" rev-parse --short HEAD))"
 fi
 export BECKN_SCHEMA_DIR
-for s in CceClinicalEvent CceCareAlert; do [ -d "$BECKN_SCHEMA_DIR/$s" ] || echo "  WARNING: no $s/ in $BECKN_SCHEMA_DIR — the adapters will refuse messages that use it"; done
-export BECKN_SYGNAL_PROFILE="${BECKN_SYGNAL_PROFILE:-$BECKN_SCHEMA_DIR/sygnal-profile/v1.0/cce-sygnal-apis.yaml}"
+export BECKN_SYGNAL_PROFILE="${BECKN_SYGNAL_PROFILE:-$BECKN_SCHEMA_DIR/$BECKN_SYGNAL_PROFILE_REL}"
 [ -r "$BECKN_SYGNAL_PROFILE" ] || { echo "ERROR: no CCE Sygnal profile at $BECKN_SYGNAL_PROFILE — the adapters cannot start without it."
-  echo "       Use a cce-beckn-service ref that has schema/sygnal-profile/ (BECKN_SCHEMA_REF), or set BECKN_SYGNAL_PROFILE."; exit 1; }
+  beckn_profile_hint "$BECKN_SCHEMA_DIR"; exit 1; }
 echo "  CCE Sygnal profile: $BECKN_SYGNAL_PROFILE"
+beckn_schema_set "$BECKN_SCHEMA_DIR" BECKN_SYGNAL_SCHEMAS "$BECKN_SYGNAL_SCHEMAS" >/dev/null || exit 1
+echo "  Sygnal adapters' schemas: $BECKN_SYGNAL_SCHEMAS"
+case " $RUN " in *" openmrs "*)
+  beckn_schema_set "$BECKN_SCHEMA_DIR" BECKN_REFERRAL_SCHEMAS "$BECKN_REFERRAL_SCHEMAS" >/dev/null || exit 1
+  echo "  OpenMRS referral pair's schemas: $BECKN_REFERRAL_SCHEMAS (+ the Health* pack)";;
+esac
 
 phase "3/4 Deploy: $RUN"
 for c in $RUN; do INF bash "$BLIB/beckn-deploy.sh" "$ENVCODE" "$c"; done
