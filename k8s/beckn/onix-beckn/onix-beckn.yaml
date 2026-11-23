@@ -7,9 +7,9 @@
 # Not in this file, created by one-click-installer/lib/beckn/beckn-deploy.sh openmrs before this is applied:
 #   Secret    onix-config         — onix-bap.yaml, onix-bpp.yaml (they hold the signing keys) and the four routing files,
 #                                   rendered from k8s/beckn/onix-beckn/config/*.yaml, next to the Sygnal adapter's files
-#   ConfigMap onix-schema         — the extra schema folders: the CCE schemas (CceClinicalEvent, CceCareAlert) and, in the
-#                                   openmrs namespace, the Health* referral pack (k8s/beckn/onix-beckn/health-schema);
-#                                   one key per file with "/" written "__". onix-sygnal loads the same folders.
+#   ConfigMap onix-schema         — the extra schema folders of the referral adapters: the CCE schemas (CceClinicalEvent
+#                                   v1.0, CceCareAlert) and the Health* referral pack (k8s/beckn/onix-beckn/health-schema);
+#                                   one key per file with "/" written "__". onix-sygnal has its own set, onix-sygnal-schema.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
