@@ -6,16 +6,16 @@
 #   1. Secret onix-config     the Sygnal adapter's config + its two routing files, rendered from k8s/beckn/onix/config/ with
 #                             this participant's id, keys, timeouts and the address of its own service. openmrs: also its
 #                             Beckn referral pair's two configs + four routing files (k8s/beckn/onix-beckn/config/)
-#   2. ConfigMap onix-sygnal-profile  the CCE profile of Sygnal (BECKN_SYGNAL_PROFILE): the Sygnal adapter's only spec
-#      ConfigMap onix-sygnal-schema   the Sygnal adapter's schema folders, one key per file, "/" written "__": the version
-#                                     folders BECKN_SYGNAL_SCHEMAS names in BECKN_SCHEMA_DIR (CceClinicalEvent v2.0,
-#                                     CceCareAlert v1.0)
-#      ConfigMap onix-schema          openmrs only, for its Beckn referral pair, unchanged: BECKN_REFERRAL_SCHEMAS
-#                                     (CceClinicalEvent v1.0, CceCareAlert v1.0) + the Health* referral pack
-#                                     (k8s/beckn/onix-beckn/health-schema). cce / openhim: removed (no referral pair)
-#   3. kubectl apply          k8s/beckn/<component> rendered with kustomize, ${VARS} filled with envsubst. cce / openhim: the
-#                             Beckn adapter pair of the former setup (onix-bap, onix-bpp) is removed — only OpenMRS keeps
-#                             one, for the Spice referrals.
+#   2. ConfigMap onix-sygnal-profile  the CCE profile of Sygnal (BECKN_SYGNAL_PROFILE): the Sygnal adapter's only spec, and
+#                                     all it needs — it holds no payload schemas
+#      ConfigMap onix-schema          openmrs only, for its Beckn referral pair, unchanged: the schema folders, one key per
+#                                     file, "/" written "__": BECKN_REFERRAL_SCHEMAS in BECKN_SCHEMA_DIR (CceClinicalEvent
+#                                     v1.0, CceCareAlert v1.0) + the Health* referral pack
+#                                     (k8s/beckn/onix-beckn/health-schema)
+#   3. kubectl apply          k8s/beckn/<component> rendered with kustomize, ${VARS} filled with envsubst. Then what an
+#                             earlier version left behind is removed: the ConfigMap onix-sygnal-schema (profile v2.0);
+#                             cce / openhim: the Beckn adapter pair of the former setup (onix-bap, onix-bpp) — only OpenMRS
+#                             keeps one, for the Spice referrals — and its ConfigMap onix-schema.
 #   4. host aliases           on the adapter pods: the public hosts that live on THIS machine -> Traefik's ClusterIP
 #                             (a pod cannot reach the machine's own public address)
 #   5. (cce only)             the intelligence service's alert routes to cce-beckn-service
@@ -34,7 +34,7 @@ NS="$(beckn_component_ns "$COMPONENT")"
 P="$(printf '%s' "$COMPONENT" | tr '[:lower:]' '[:upper:]')"
 SRC="$REPO/k8s/beckn/$COMPONENT"
 [ -r "$SRC/kustomization.yaml" ] || { echo "ERROR: no $SRC/kustomization.yaml"; exit 1; }
-: "${BECKN_SCHEMA_DIR:?BECKN_SCHEMA_DIR not set — install-beckn.sh resolves it (the folder holding CceClinicalEvent/ and CceCareAlert/)}"
+: "${BECKN_SCHEMA_DIR:?BECKN_SCHEMA_DIR not set — install-beckn.sh resolves it (the folder holding sygnal-profile/, CceClinicalEvent/ and CceCareAlert/)}"
 : "${BECKN_SYGNAL_PROFILE:=$BECKN_SCHEMA_DIR/$BECKN_SYGNAL_PROFILE_REL}"
 [ -r "$BECKN_SYGNAL_PROFILE" ] || { echo "ERROR: no CCE Sygnal profile at $BECKN_SYGNAL_PROFILE"; beckn_profile_hint "$BECKN_SCHEMA_DIR"; exit 1; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -163,16 +163,15 @@ for f in "${CONFIG_FILES[@]}"; do envsubst "$VARS" < "$f" > "$TMP/onix/$(basenam
 if [ "$COMPONENT" = openmrs ] && [ -z "${BECKN_ALLOWED_NETWORK_IDS:-}" ]; then sed -i '/^ *allowedNetworkIDs:/d' "$TMP"/onix/onix-b?p.yaml; fi
 export ONIX_CONFIG_HASH; ONIX_CONFIG_HASH="$(cat "$TMP"/onix/*.yaml | sha256sum | cut -c1-16)"
 
-# ── 2. the CCE profile -> ConfigMap onix-sygnal-profile; schema folders -> ConfigMaps onix-sygnal-schema, onix-schema ──────
-# The profile is the Sygnal adapter's only spec (schemaValidator type "file"). Schemas are loaded at start
-# (extendedSchema_localSchemaPath) from <Type>/<version>/attributes.yaml. onix finds a local schema by its TYPE name and
-# ignores the version folder (its key is <Type>/attributes.yaml), so an adapter must hold exactly ONE version of a type —
-# and two versions of CceClinicalEvent are in use:
-#   onix-sygnal (every participant)   v2.0: the object in sygnal/event/report           -> ConfigMap onix-sygnal-schema
-#   onix-bap / onix-bpp (openmrs)     v1.0: the box in performanceAttributes of the      -> ConfigMap onix-schema
-#                                     referral legs, unchanged
-# So each kind of adapter has its own ConfigMap, and its version folders are named explicitly (BECKN_SYGNAL_SCHEMAS,
-# BECKN_REFERRAL_SCHEMAS) — nothing is taken because it happens to be in the schema folder.
+# ── 2. the CCE profile -> ConfigMap onix-sygnal-profile; openmrs: the referral pair's schema folders -> ConfigMap onix-schema
+# The profile is the Sygnal adapter's only spec (schemaValidator type "file"), and all it checks a message against: in
+# profile v3.0 the payloads are sygnal:CoordinationEvent and sygnal:Signal, extended in the profile itself, and no object
+# in a Sygnal message carries "@context". So onix-sygnal has no schema folder and no schema ConfigMap, and its extended
+# schema check is off (k8s/beckn/onix/config/onix.yaml).
+# OpenMRS's referral pair (onix-bap / onix-bpp) does load schemas at start (extendedSchema_localSchemaPath), from
+# <Type>/<version>/attributes.yaml. onix finds a local schema by its TYPE name and ignores the version folder (its key is
+# <Type>/attributes.yaml), so an adapter must hold exactly ONE version of a type. Its version folders are therefore
+# named explicitly (BECKN_REFERRAL_SCHEMAS) — nothing is taken because it happens to be in the schema folder.
 schema_args() {   # <root> <file…> -> --from-file arguments, one per file, key = path under <root> with "/" written "__"
   local root="$1" f rel; shift
   for f in "$@"; do rel="${f#"$root"/}"; printf '%s\n' "--from-file=${rel//\//__}=$f"; done
@@ -182,12 +181,7 @@ one_version_per_type() {   # <what> <--from-file argument…>: stop if a type wo
   dup="$(printf '%s\n' "$@" | sed 's/^--from-file=//; s/=.*//' | awk -F'__' '{print $1 "/" $NF}' | sort | uniq -d | head -1)"
   [ -z "$dup" ] || { echo "ERROR [$COMPONENT]: $what would hold more than one version of schema $dup — an adapter must hold one version per type" >&2; exit 1; }
 }
-SYGNAL_SCHEMA_LIST="$(beckn_schema_set "$BECKN_SCHEMA_DIR" BECKN_SYGNAL_SCHEMAS "$BECKN_SYGNAL_SCHEMAS")"
-mapfile -t SYGNAL_SCHEMA_FILES <<< "$SYGNAL_SCHEMA_LIST"
-mapfile -t SYGNAL_SCHEMA_ARGS < <(schema_args "$BECKN_SCHEMA_DIR" "${SYGNAL_SCHEMA_FILES[@]}")
-one_version_per_type "ConfigMap onix-sygnal-schema" "${SYGNAL_SCHEMA_ARGS[@]}"
-n="${#SYGNAL_SCHEMA_FILES[@]}"
-SCHEMA_FILES=("$BECKN_SYGNAL_PROFILE" "${SYGNAL_SCHEMA_FILES[@]}")
+SCHEMA_FILES=("$BECKN_SYGNAL_PROFILE")
 # openmrs: what its Beckn pair (onix-bap / onix-bpp) holds, as before — the CCE schemas of the referral legs and the
 # Health* referral pack (schema.beckn.io no longer serves it). onix-sygnal does not mount this ConfigMap.
 HEALTH_SCHEMA_DIR="$REPO/k8s/beckn/onix-beckn/health-schema"
@@ -231,8 +225,7 @@ if [ "$COMPONENT" = openmrs ]; then
 fi
 
 if [ -n "${DRY_RUN:-}" ]; then
-  say "DRY_RUN — namespace $NS, $(grep -c '^kind:' "$TMP/render.yaml") resources, adapter $ONIX_SUBSCRIBER_ID config $ONIX_CONFIG_HASH, profile ${BECKN_SYGNAL_PROFILE#"$BECKN_SCHEMA_DIR"/} + $n Sygnal schema files ($BECKN_SYGNAL_SCHEMAS)$( [ "$COMPONENT" = openmrs ] && echo "; referral pair onix-bap $ONIX_BAP_SUBSCRIBER_ID, onix-bpp $ONIX_BPP_SUBSCRIBER_ID: $r schema files ($BECKN_REFERRAL_SCHEMAS) + $h Health* referral schema files"); nothing applied"
-  say "  ConfigMap onix-sygnal-schema: $(printf '%s\n' "${SYGNAL_SCHEMA_ARGS[@]}" | sed 's/^--from-file=//; s/=.*//' | tr '\n' ' ')"
+  say "DRY_RUN — namespace $NS, $(grep -c '^kind:' "$TMP/render.yaml") resources, adapter $ONIX_SUBSCRIBER_ID config $ONIX_CONFIG_HASH, profile ${BECKN_SYGNAL_PROFILE#"$BECKN_SCHEMA_DIR"/} (no Sygnal schema set)$( [ "$COMPONENT" = openmrs ] && echo "; referral pair onix-bap $ONIX_BAP_SUBSCRIBER_ID, onix-bpp $ONIX_BPP_SUBSCRIBER_ID: $r schema files ($BECKN_REFERRAL_SCHEMAS) + $h Health* referral schema files"); nothing applied"
   [ "$COMPONENT" != openmrs ] || say "  ConfigMap onix-schema (referral pair): $(printf '%s\n' "${REFERRAL_SCHEMA_ARGS[@]}" | sed 's/^--from-file=//; s/=.*//' | grep '^Cce' | tr '\n' ' ')+ $h Health* keys"
   grep -E '^kind:|^  name:' "$TMP/render.yaml" | paste - - | sed 's/kind: //; s/ *name: / /' | sort | sed 's/^/      /'
   exit 0
@@ -245,16 +238,18 @@ else
 fi
 $KUBECTL -n "$NS" create secret generic onix-config --from-file="$TMP/onix" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null
 $KUBECTL -n "$NS" create configmap onix-sygnal-profile --from-file="cce-sygnal-apis.yaml=$BECKN_SYGNAL_PROFILE" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null
-$KUBECTL -n "$NS" create configmap onix-sygnal-schema "${SYGNAL_SCHEMA_ARGS[@]}" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null
-say "namespace $NS: Sygnal adapter config ($ONIX_SUBSCRIBER_ID; network ${BECKN_SYGNAL_ALLOWED_NETWORK_IDS:-not checked}) + CCE profile ${BECKN_SYGNAL_PROFILE#"$BECKN_SCHEMA_DIR"/} + $n Sygnal schema files ($BECKN_SYGNAL_SCHEMAS)"
+say "namespace $NS: Sygnal adapter config ($ONIX_SUBSCRIBER_ID; network ${BECKN_SYGNAL_ALLOWED_NETWORK_IDS:-not checked}) + CCE profile ${BECKN_SYGNAL_PROFILE#"$BECKN_SCHEMA_DIR"/}"
 if [ "$COMPONENT" = openmrs ]; then
   $KUBECTL -n "$NS" create configmap onix-schema "${REFERRAL_SCHEMA_ARGS[@]}" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null
   say "namespace $NS: Beckn referral pair config ($ONIX_BAP_SUBSCRIBER_ID, $ONIX_BPP_SUBSCRIBER_ID; network ${BECKN_ALLOWED_NETWORK_IDS:-not checked}) + $r schema files ($BECKN_REFERRAL_SCHEMAS) + $h Health* referral schema files"
 fi
 $KUBECTL -n "$NS" apply -f "$TMP/render.yaml" | sed "s/^/      /"
-# cce / openhim: the Sygnal adapter replaces the Beckn adapter pair of the former setup — remove it (a no-op once gone).
-# Their ConfigMap onix-schema goes too: onix-sygnal reads onix-sygnal-schema now, and only a referral pair reads
-# onix-schema. A pod that is still running keeps the copy it mounted.
+# What an earlier version left behind (each a no-op once gone; a pod that is still running keeps the copy it mounted):
+#   every namespace   ConfigMap onix-sygnal-schema, the Sygnal adapter's schema set of profile v2.0. With profile v3.0
+#                     onix-sygnal holds no schemas, and the Deployment just applied no longer mounts it.
+#   cce / openhim     the Beckn adapter pair of the former setup (the Sygnal adapter replaces it) and its ConfigMap
+#                     onix-schema: only a referral pair reads onix-schema, and only OpenMRS has one.
+$KUBECTL -n "$NS" delete configmap onix-sygnal-schema --ignore-not-found | sed "s/^/      /"
 if [ "$COMPONENT" != openmrs ]; then
   $KUBECTL -n "$NS" delete deploy,svc onix-bap onix-bpp --ignore-not-found | sed "s/^/      /"
   $KUBECTL -n "$NS" delete configmap onix-schema --ignore-not-found | sed "s/^/      /"

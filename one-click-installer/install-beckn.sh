@@ -75,11 +75,11 @@ confirm "Proceed?" || { echo "Aborted."; exit 0; }
 phase "1/4 Secrets: Infisical /beckn (keys, passwords, referral contract ids)"
 INF bash "$BLIB/beckn-seed.sh" "$ENVCODE" "${BECKN_SEED_ENV_FILE:-}"
 
-phase "2/4 Schemas for the adapters (the CCE Sygnal profile, CceClinicalEvent, CceCareAlert)"
+phase "2/4 Schemas for the adapters (the CCE Sygnal profile; openmrs: the referral pair's schemas)"
 # The adapters check every message against these. A local folder wins; otherwise they are fetched, like the data pipeline.
 # The profile is <schema>/$BECKN_SYGNAL_PROFILE_REL (beckn-lib.sh names the version) unless BECKN_SYGNAL_PROFILE names
-# another file. The schema version folders are named explicitly, per kind of adapter: BECKN_SYGNAL_SCHEMAS for every
-# onix-sygnal, BECKN_REFERRAL_SCHEMAS for OpenMRS's Beckn referral pair (beckn-deploy.sh keeps the two sets apart).
+# another file. It is all a Sygnal adapter needs. OpenMRS's Beckn referral pair also holds schemas: the version folders
+# BECKN_REFERRAL_SCHEMAS names, explicitly (and the Health* pack of this repository).
 if [ -n "${BECKN_SCHEMA_DIR:-}" ]; then
   [ -d "$BECKN_SCHEMA_DIR" ] || { echo "ERROR: BECKN_SCHEMA_DIR=$BECKN_SCHEMA_DIR is not a directory"; exit 1; }
   echo "  using $BECKN_SCHEMA_DIR"
@@ -95,8 +95,6 @@ export BECKN_SYGNAL_PROFILE="${BECKN_SYGNAL_PROFILE:-$BECKN_SCHEMA_DIR/$BECKN_SY
 [ -r "$BECKN_SYGNAL_PROFILE" ] || { echo "ERROR: no CCE Sygnal profile at $BECKN_SYGNAL_PROFILE — the adapters cannot start without it."
   beckn_profile_hint "$BECKN_SCHEMA_DIR"; exit 1; }
 echo "  CCE Sygnal profile: $BECKN_SYGNAL_PROFILE"
-beckn_schema_set "$BECKN_SCHEMA_DIR" BECKN_SYGNAL_SCHEMAS "$BECKN_SYGNAL_SCHEMAS" >/dev/null || exit 1
-echo "  Sygnal adapters' schemas: $BECKN_SYGNAL_SCHEMAS"
 case " $RUN " in *" openmrs "*)
   beckn_schema_set "$BECKN_SCHEMA_DIR" BECKN_REFERRAL_SCHEMAS "$BECKN_REFERRAL_SCHEMAS" >/dev/null || exit 1
   echo "  OpenMRS referral pair's schemas: $BECKN_REFERRAL_SCHEMAS (+ the Health* pack)";;

@@ -41,19 +41,23 @@ BECKN_ALL_COMPONENTS="cce openhim openmrs"
 # The CCE profile of Sygnal this add-on deploys, as a path inside cce-beckn-service's schema/ folder. The version folder is
 # part of the contract (a version in use never changes; a change gets a new folder) and must be the one the four images
 # were built for:
-#   v2.0  the payloads are CCE's own types: sygnal/event/report carries cce:CceClinicalEvent (v2.0) objects,
-#         sygnal/signal/emit carries a cce:CceCareAlert (v1.0) as its message. (v1.0 kept sygnal:CoordinationEvent /
-#         sygnal:Signal with the CCE data in their eventAttributes / signalAttributes.)
+#   v3.0  the payloads are Sygnal's own types, opened and extended in CCE's copy of the schema (this profile; Sygnal's
+#         published schema is not changed): sygnal/event/report carries one sygnal:CoordinationEvent with the fields of a
+#         clinical event on it (patientId, fhirVersion, resource, …), sygnal/signal/emit a sygnal:Signal with the fields
+#         of a care alert on it. No bag, no cce: type, and no "@context" on these objects — so the profile is ALL a
+#         Sygnal adapter needs: it holds no payload schemas.
+#         (v1.0 kept the CCE data in the eventAttributes / signalAttributes bags of the Sygnal types; v2.0 used
+#         cce:CceClinicalEvent / cce:CceCareAlert as the payloads. Neither is deployed any more.)
 # This is the one place that names it; BECKN_SYGNAL_PROFILE (a full file path) names another profile file.
-# The schema version folders each kind of adapter gets are settings with defaults: BECKN_SYGNAL_SCHEMAS and
+# OpenMRS's Beckn referral pair does hold schemas; its version folders are a setting with a default,
 # BECKN_REFERRAL_SCHEMAS (beckn_defaults).
-BECKN_SYGNAL_PROFILE_REL="sygnal-profile/v2.0/cce-sygnal-apis.yaml"
+BECKN_SYGNAL_PROFILE_REL="sygnal-profile/v3.0/cce-sygnal-apis.yaml"
 
 # What to do when $1 (a schema folder) has no profile at BECKN_SYGNAL_PROFILE_REL: says which versions it does have.
 beckn_profile_hint() {
   local found
   found="$(find "$1/sygnal-profile" -mindepth 2 -maxdepth 2 -name cce-sygnal-apis.yaml 2>/dev/null | sed "s#^$1/##" | sort | tr '\n' ' ')"
-  echo "       This add-on deploys $BECKN_SYGNAL_PROFILE_REL (payload types cce:CceClinicalEvent / cce:CceCareAlert)."
+  echo "       This add-on deploys $BECKN_SYGNAL_PROFILE_REL (payloads: sygnal:CoordinationEvent / sygnal:Signal, extended in CCE's copy)."
   if [ -n "$found" ]; then
     echo "       $1 has: ${found% } — another version of the contract. Use a cce-beckn-service ref"
     echo "       or checkout that has the version above: BECKN_SCHEMA_REF=<branch or tag>, or BECKN_SCHEMA_DIR=<its schema/ folder>."
@@ -64,12 +68,13 @@ beckn_profile_hint() {
 }
 
 # beckn_schema_set <schema dir> <setting name> <"Type/version …">: print the files of the listed version folders, one per
-# line. An adapter finds a local schema by its TYPE name and ignores the version folder, so a set holds one version of a
-# type, named explicitly — never "whatever the folder has". Fails (message on stderr) when an entry is not <Type>/<version>,
-# a type is listed twice, or a folder has no attributes.yaml.
+# line. Used for the schema set of OpenMRS's referral pair (BECKN_REFERRAL_SCHEMAS). An adapter finds a local schema by
+# its TYPE name and ignores the version folder, so a set holds one version of a type, named explicitly — never "whatever
+# the folder has". Fails (message on stderr) when an entry is not <Type>/<version>, a type is listed twice, or a folder
+# has no attributes.yaml.
 beckn_schema_set() {
   local dir="$1" name="$2" e t seen=" "
-  [ -n "${3// /}" ] || { echo "ERROR: $name is empty (expected <Type>/<version> folders of $dir, e.g. CceClinicalEvent/v2.0)" >&2; return 1; }
+  [ -n "${3// /}" ] || { echo "ERROR: $name is empty (expected <Type>/<version> folders of $dir, e.g. CceClinicalEvent/v1.0)" >&2; return 1; }
   for e in $3; do
     case "$e" in */*/*|/*|*/|*..*) echo "ERROR: $name: '$e' is not <Type>/<version>" >&2; return 1;; */*) ;; *) echo "ERROR: $name: '$e' is not <Type>/<version>" >&2; return 1;; esac
     t="${e%%/*}"
@@ -127,19 +132,19 @@ beckn_defaults() {
   # BECKN_REGISTRY_NAME: the registry name OpenMRS's referral pair (onix 1.6.1) puts in that lookup; the Sygnal adapters
   # (onix 1.9.4) search every registry and do not use it.
   _beckn_default BECKN_REGISTRY_URL "https://fabric.nfh.global/registry/dedi"
-  # The start of the @context address inside every message. It only has to be the SAME for all participants: each adapter
-  # finds its local copy of the schema by name (ConfigMaps onix-sygnal-schema / onix-schema), so the address itself need not be reachable.
+  # The start of the @context address of CCE's schemas (CceClinicalEvent, CceCareAlert), a setting of the three services.
+  # It only has to be the SAME for all participants: an adapter that checks such an object (OpenMRS's referral pair) finds
+  # its local copy of the schema by name (ConfigMap onix-schema), so the address itself need not be reachable. The Sygnal
+  # messages (profile v3.0) carry no @context.
   _beckn_default BECKN_SCHEMA_BASE_URL "https://raw.githubusercontent.com/openphc/cce-beckn-service/main/schema"
   _beckn_default BECKN_SCHEMA_REPO "https://github.com/openphc/cce-beckn-service.git"
   _beckn_default BECKN_SCHEMA_REF demo
-  # The schema version folders (under the schema folder) each kind of adapter holds a copy of. Two sets, kept apart,
-  # because an adapter finds a schema by its type name and so can hold only one version of CceClinicalEvent:
-  #   Sygnal adapters (onix-sygnal, every participant; ConfigMap onix-sygnal-schema): CceClinicalEvent v2.0 is the object
-  #     in sygnal/event/report, CceCareAlert v1.0 the message of sygnal/signal/emit.
-  #   OpenMRS's Beckn referral pair (onix-bap / onix-bpp; ConfigMap onix-schema, with the Health* pack): unchanged — the
-  #     referral legs still carry the CceClinicalEvent v1.0 box in performanceAttributes.
-  _beckn_default BECKN_SYGNAL_SCHEMAS "CceClinicalEvent/v2.0 CceCareAlert/v1.0"
+  # The schema version folders (under the schema folder) OpenMRS's Beckn referral pair holds a copy of (onix-bap /
+  # onix-bpp; ConfigMap onix-schema, with the Health* pack), unchanged: the referral legs carry the CceClinicalEvent v1.0
+  # box in performanceAttributes. Named explicitly, one version per type: an adapter finds a schema by its type name.
+  # The Sygnal adapters (onix-sygnal) hold no schema set: the CCE profile is all they check a message against.
   _beckn_default BECKN_REFERRAL_SCHEMAS "CceClinicalEvent/v1.0 CceCareAlert/v1.0"
+  # The domains the referral pair may fetch an unknown schema from (the Sygnal adapters fetch none).
   _beckn_default BECKN_SCHEMA_ALLOWED_DOMAINS "beckn.org,raw.githubusercontent.com,schema.beckn.io"
   # The Beckn core spec OpenMRS's referral pair checks messages against (the Sygnal adapters use the CCE profile instead).
   _beckn_default BECKN_CORE_SCHEMA_URL "https://raw.githubusercontent.com/beckn/protocol-specifications-v2/refs/tags/core-v2.0.0-lts/api/v2.0.0/beckn.yaml"

@@ -9,7 +9,7 @@
 #                                   rendered from k8s/beckn/onix-beckn/config/*.yaml, next to the Sygnal adapter's files
 #   ConfigMap onix-schema         — the extra schema folders of the referral adapters: the CCE schemas (CceClinicalEvent
 #                                   v1.0, CceCareAlert) and the Health* referral pack (k8s/beckn/onix-beckn/health-schema);
-#                                   one key per file with "/" written "__". onix-sygnal has its own set, onix-sygnal-schema.
+#                                   one key per file with "/" written "__". onix-sygnal holds no schemas (the CCE profile only).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
