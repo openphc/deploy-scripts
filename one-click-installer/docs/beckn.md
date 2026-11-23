@@ -8,7 +8,7 @@ Two protocols are in use, side by side:
 | Flows | Protocol | Adapters |
 |---|---|---|
 | **CCE flows**: clinical events OpenMRS → HIE → CCE, care alerts CCE → OpenMRS (and Spice once configured), events Spice → HIE | **Sygnal**, the CCE profile (v3.0): two actions, `sygnal/event/report` (carries one `sygnal:CoordinationEvent` with the fields of a clinical event on it) and `sygnal/signal/emit` (its message is a `sygnal:Signal` with the fields of a care alert on it), no callbacks. See [Change 2026-11-23: the Sygnal payloads](#change-2026-11-23-the-sygnal-payloads) | one Sygnal adapter per participant, `onix-sygnal` (`fidedocker/onix-adapter:1.9.4`), one identity, public address `https://<host>/sygnal/receiver` |
-| **Spice ↔ OpenMRS health referrals** | standard **Beckn**, unchanged: `select` / `init` / `confirm` / `status` / `update` and their callbacks | OpenMRS's Beckn adapter pair, `onix-bap` / `onix-bpp` (`fidedocker/onix-adapter:1.6.1`), its BAP and BPP records, `https://<host>/bap/receiver` and `/bpp/receiver`, the Health* referral schemas — exactly as before the Sygnal switch |
+| **Spice ↔ OpenMRS health referrals** | standard **Beckn**, the messages unchanged: `select` / `init` / `confirm` / `status` / `update` and their callbacks | OpenMRS's Beckn adapter pair, `onix-bap` / `onix-bpp` (`fidedocker/onix-adapter:1.9.4`; on `1.6.1` before, see [Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194)), its BAP and BPP records, `https://<host>/bap/receiver` and `/bpp/receiver`, the Health* referral schemas |
 
 CCE and the HIE carry no referrals and run the Sygnal adapter only.
 
@@ -113,11 +113,15 @@ messages (no payload store: they hold patient data).
 | OpenMRS | `sygnal/signal/emit` → `http://openmrs-cce-receiver-adaptor:8080/sygnal/signal/emit` | `sygnal/event/report` |
 
 OpenMRS's Beckn referral pair — [`k8s/beckn/onix-beckn`](../../k8s/beckn/onix-beckn) — is the adapter pair of the setup
-before Sygnal, unchanged: `onix-bap` (port 8081), `onix-bpp` (port 8082), their config templates in
+before Sygnal: `onix-bap` (port 8081), `onix-bpp` (port 8082), their config templates in
 [`k8s/beckn/onix-beckn/config`](../../k8s/beckn/onix-beckn/config) and the Health* referral schemas in
-[`k8s/beckn/onix-beckn/health-schema`](../../k8s/beckn/onix-beckn/health-schema). It uses the same Redis. Its schemas
-are in the ConfigMap `onix-schema`, as before: `CceClinicalEvent` v1.0 (the box the referral legs carry),
-`CceCareAlert` v1.0 and the Health* pack. Only the referral pair mounts that ConfigMap.
+[`k8s/beckn/onix-beckn/health-schema`](../../k8s/beckn/onix-beckn/health-schema). The messages, the routing, the
+addresses and the schemas are what they were. The adapters themselves are on onix 1.9.4, like the Sygnal adapter (they
+were on 1.6.1), with the config form and the steps of that version
+([Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194)).
+The pair uses the same Redis, also as its payload store: the signature of each referral message is kept there for 24
+hours, the body never. Its schemas are in the ConfigMap `onix-schema`, as before: `CceClinicalEvent` v1.0 (the box the
+referral legs carry), `CceCareAlert` v1.0 and the Health* pack. Only the referral pair mounts that ConfigMap.
 
 Public addresses (Traefik, Let's Encrypt), one host per component:
 
@@ -227,7 +231,6 @@ All in the environment's config file. `lib/load-config.sh` accepts any key that 
 |---|---|---|
 | `BECKN_COMPONENTS` | `cce openhim openmrs` | the participants this machine hosts (spaces or commas) |
 | `BECKN_REGISTRY_URL` | `https://fabric.nfh.global/registry/dedi` | the DeDi registry every adapter looks senders up in |
-| `BECKN_REGISTRY_NAME` | required with `openmrs` | the registry name OpenMRS's referral pair (onix 1.6.1) puts in its lookups. The Sygnal adapters search every registry and do not use it |
 | `BECKN_SYGNAL_NETWORK_ID` | `sygnal.nextsteps.mdtlabs.org/sygnal_demo_network_registry` | the Sygnal network: `context.networkId` of every Sygnal message (the registry refuses a sender that is not a member), and the only network the Sygnal adapters accept senders from |
 | `BECKN_SYGNAL_ALLOWED_NETWORK_IDS` | `BECKN_SYGNAL_NETWORK_ID` | comma-separated list for the Sygnal adapters, to accept more than one network |
 | `BECKN_NETWORK_ID`, `BECKN_ALLOWED_NETWORK_IDS` | empty | the network of the Spice ↔ OpenMRS **referrals** (unchanged meaning): their `context.networkId` and the `allowedNetworkIDs` of OpenMRS's `onix-bap` / `onix-bpp`. Empty: no `networkId`, no membership check |
@@ -259,11 +262,13 @@ All in the environment's config file. `lib/load-config.sh` accepts any key that 
 | `BECKN_OPENHIM_REDACTION_ENABLED` | `false` | the HIE adaptor's clinical-data redaction (`REDACTION_ENABLED`). Off by default: full payloads, patient data included, go to CCE, because protocol triggers read free text redaction removes, e.g. the RMNCH referral steps (`ServiceRequest.patientInstruction` / `orderDetail`, the Encounter `source-referral-order` extension). `true` redacts, where no trigger needs that content |
 
 No longer read: `BECKN_CCE_BAP_*`, `BECKN_OPENHIM_BPP_*`, `BECKN_CCE_BPP_URI` / `BECKN_OPENHIM_BAP_URI` (the Sygnal
-address replaces them), and the contract ids of the CCE flows (`BECKN_HIE_CCE_*`, `BECKN_HIE_FEED_OPENMRS_*`).
+address replaces them), the contract ids of the CCE flows (`BECKN_HIE_CCE_*`, `BECKN_HIE_FEED_OPENMRS_*`), and
+`BECKN_REGISTRY_NAME` (the registry name OpenMRS's referral pair needed on onix 1.6.1; every adapter is on onix 1.9.4,
+which searches every registry).
 
-`IMAGE_REGISTRY` applies to the four images above as it does to the CCE services. The ONIX images
-(`fidedocker/onix-adapter:1.9.4` for Sygnal, `:1.6.1` for OpenMRS's referral pair), OpenHIM, MongoDB, MariaDB and OpenMRS
-versions are fixed in the manifests.
+`IMAGE_REGISTRY` applies to the four images above as it does to the CCE services. The ONIX image
+(`fidedocker/onix-adapter:1.9.4`, for the Sygnal adapters and for OpenMRS's referral pair), OpenHIM, MongoDB, MariaDB
+and OpenMRS versions are fixed in the manifests.
 
 ## Identities, keys and the registry
 
@@ -377,7 +382,9 @@ counted twice.
 `install-beckn.sh` on a machine that ran the earlier (Beckn `update` / `on_update`) version:
 
 - removes `onix-bap` / `onix-bpp` from the CCE and HIE namespaces (the Sygnal adapter replaces them); OpenMRS keeps
-  them for the referrals. The Ingress `onix-ingress` now serves `/sygnal/receiver`; OpenMRS's `/bap/receiver` and
+  them for the referrals, on onix 1.9.4 instead of 1.6.1
+  ([Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194)).
+  The Ingress `onix-ingress` now serves `/sygnal/receiver`; OpenMRS's `/bap/receiver` and
   `/bpp/receiver` move to `onix-beckn-ingress`;
 - changes the OpenHIM channel `CCE Beckn feed` timeout from 30 s to 22.5 s (`openhim-setup.sh` updates it);
 - needs Sygnal builds of all four images and a `BECKN_SCHEMA_REF` / `BECKN_SCHEMA_DIR` with the CCE profile (v3.0, see
@@ -463,9 +470,10 @@ service (`SCH_TYPE_NOT_SUPPORTED`).
 
 Unchanged: the two action names and paths, the Sygnal context (`senderId`, `receiverId`, `receiverUri`, `networkId`), the
 `Ack` / `Nack` answers and their status codes, no callbacks, the retry rules, the Sygnal adapters' routing, the
-identities and the [timeout chain](#the-timeout-chain). **No application setting changed.** The Spice ↔ OpenMRS
-referrals are untouched: `onix-bap` / `onix-bpp`, their config, their routing and the schemas they hold are what they
-were, and the referral legs carry the `CceClinicalEvent` **v1.0** box in `performanceAttributes`, as before.
+identities and the [timeout chain](#the-timeout-chain). **No application setting changed.** This change does not
+touch the Spice ↔ OpenMRS referrals: `onix-bap` / `onix-bpp` keep their routing and the schemas they hold, and the
+referral legs carry the `CceClinicalEvent` **v1.0** box in `performanceAttributes`, as before. (The version and the
+config of the pair changed separately: [Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194).)
 
 **The Sygnal adapter needs the profile only.** The profile describes the whole message, and no object in it carries
 `@context`, so `onix-sygnal` holds no payload schemas: its extended schema check is off
@@ -501,7 +509,54 @@ What it means for an install:
   the pods that read their settings at start (`cce-beckn-service`; the HIE adaptor and the OpenHIM console; the two
   OpenMRS adaptors and the OpenMRS frontend): the Deployment `onix-sygnal` changed, and the hashes that roll those pods
   cover the rendered manifests, the adapter config and the profile. Databases, OpenHIM Core and the OpenMRS backend are
-  not restarted. The referral pair restarts with the config and schemas it had.
+  not restarted. The referral pair restarts with the schemas it had; this change gives it nothing new.
+
+## Change 2026-11-23: the referral adapters on onix 1.9.4
+
+OpenMRS's referral pair, `onix-bap` / `onix-bpp`, runs `fidedocker/onix-adapter:1.9.4`, the version of the Sygnal
+adapters, instead of `1.6.1`. The decision: the handoff between Spice and OpenMRS is supported on onix 1.9.4, not on
+1.6.1.
+
+**The referral messages do not change**: standard Beckn `select` / `init` / `confirm` / `status` / `update` and their
+callbacks, with the `CceClinicalEvent` v1.0 box and the Health* packs. No application setting changed. The routing
+files, the ConfigMap `onix-schema`, the Services, the Ingress and the two OpenMRS adaptors are what they were. What
+changed is the image of the two Deployments and their two config files
+([`onix-bap.yaml`](../../k8s/beckn/onix-beckn/config/onix-bap.yaml),
+[`onix-bpp.yaml`](../../k8s/beckn/onix-beckn/config/onix-bpp.yaml)), in both modules of each (receiver and caller):
+
+| What | On onix 1.6.1 | On onix 1.9.4 |
+|---|---|---|
+| Identity | `networkParticipant` in the key manager | `subscriberId` in the key manager, and `subscriberId` under `handler` |
+| Registry | `registryName` (`BECKN_REGISTRY_NAME`) | none: onix 1.9.4 does not read it and searches every registry. The setting `BECKN_REGISTRY_NAME` is gone; a line left in a config file is ignored |
+| Payload store | configured, used by no step | used: `storeSignature: "true"`, `storeBody: "false"`. The signature of each message is kept for 24 hours in `onix-redis`; the body, which holds patient data, is never stored |
+| Plugins of the caller module | no `signValidator` | `signValidator`, to check the signature of an `Ack` |
+| Steps of the receiver module | `validateSign`, `addRoute`, `validateSchema` | `validateSign`, `validateSchema`, `addRoute`, `storePayload`, `signAck` |
+| Steps of the caller module | `addRoute`, `sign`, `validateSchema` | `addRoute`, `sign`, `validateSchema`, `storePayload`, `validateAckSign` |
+
+Why these steps. onix 1.9.4 signs a callback that **answers a request** (same `messageId`, for example the `on_update`
+that answers an `update`) over the request's signature as well as the callback itself, and checks such a callback the
+same way. An adapter can do either only if it stored the signature of the request, so both modules have `storePayload`:
+the receiver stores the request it takes in, for the caller to sign the answer with; the caller stores the request it
+sends, for the receiver to check the answer with. A callback that answers nothing, such as a pushed `on_status`, is
+signed the standard way. `signAck` signs every `Ack`; `validateAckSign` checks the signature of an `Ack` (a missing
+one is only a warning in the log). The stored signatures live in `onix-redis` (memory only) for 24 hours: the adapter
+that sent a request refuses an answer that arrives after that, or after `onix-redis` restarted.
+
+Tested with real adapters, OpenMRS's pair against a stand-in peer pair, signatures checked against the live registry.
+The six referral messages: `update`, the `on_update` that answers it, and a pushed `on_status`, in both directions.
+
+| OpenMRS's pair | Peer's pair | Result |
+|---|---|---|
+| onix 1.9.4, this config | onix 1.9.4, the same steps | **6 of 6 pass.** The answering `on_update` were signed the new way (over the request's signature), the pushed `on_status` the standard way; no warning about an `Ack` signature. The payload store held the signatures and no message body |
+| onix 1.9.4, this config | onix 1.6.1 | **5 of 6 pass.** OpenMRS's `on_update` that answers a referral from the peer is refused by the 1.6.1 adapter with `401`: it cannot verify the new callback signature |
+
+So **Spice's referral adapter must be on onix 1.9.4 too**, with the same steps and a payload store:
+[Connecting Spice](#connecting-spice) lists what it needs.
+
+What it means for an install: re-run `install-beckn.sh --only openmrs`. It restarts, once, `onix-bap` and `onix-bpp`
+(new image, new config), OpenMRS's `onix-sygnal` (it reads the same Secret `onix-config`; its own config did not
+change) and the pods that read their settings at start (the two OpenMRS adaptors, the OpenMRS frontend). CCE and the
+HIE are not affected. `BECKN_REGISTRY_NAME` can be removed from the config file.
 
 ## Copying an OpenMRS
 
@@ -562,11 +617,30 @@ Spice has two roles, on two protocols.
    The HIE then accepts Spice's events (source `spice`), and CCE lists Spice in its `hmis.yml` and gets an intelligence
    destination `SPICE`. Without `BECKN_SPICE_URI` CCE sends Spice no alerts (a warning says so).
 
-**Beckn referrals with OpenMRS (unchanged).** Until Spice's BAP id is known, the OpenMRS receiver runs with placeholder
-ids (`bap.spice.invalid`) because it does not start without any.
+**Beckn referrals with OpenMRS (the messages are unchanged; the adapters are on onix 1.9.4).** Until Spice's BAP id is
+known, the OpenMRS receiver runs with placeholder ids (`bap.spice.invalid`) because it does not start without any.
 
-1. Give the Spice team: OpenMRS's BAP and BPP ids and addresses, `BECKN_NETWORK_ID`, and the "Referrals in" ids from
-   `beckn-status.sh` (OpenMRS sends referral outcomes with them).
+Spice's referral adapter must be set up like OpenMRS's
+([Change 2026-11-23: the referral adapters on onix 1.9.4](#change-2026-11-23-the-referral-adapters-on-onix-194);
+[`k8s/beckn/onix-beckn/config`](../../k8s/beckn/onix-beckn/config) is a tested reference):
+
+- **onix 1.9.4** (`fidedocker/onix-adapter:1.9.4`), not 1.6.1, with the config in the form of that version
+  (`subscriberId` under `handler` and in the key manager, no `registryName`).
+- **The steps.** Receiver module: `validateSign`, `validateSchema`, `addRoute`, `storePayload`, `signAck`. Caller
+  module: `addRoute`, `sign`, `validateSchema`, `storePayload`, `validateAckSign`, and the `signValidator` plugin in
+  the caller module too.
+- **A payload store that keeps signatures**: the `payloadStore` plugin with `storeSignature: "true"` in both modules,
+  on a cache (Redis) both reach. `storeBody: "false"` keeps the patient data of the messages out of it. onix 1.9.4
+  signs and checks a callback that answers a request with the signature of that request.
+- **`CceClinicalEvent/v1.0` in its schema folder** (`extendedSchema_localSchemaPath`), from cce-beckn-service's
+  `schema/`. Without it the box of a referral message is refused (`SCH_SCHEMA_ADAPTATION_FAILED`).
+
+With Spice's adapter still on onix 1.6.1, 5 of the 6 tested referral messages pass and one does not: OpenMRS's
+`on_update` that answers a referral from Spice is refused by Spice's adapter with `401`, because 1.6.1 cannot verify
+the signature onix 1.9.4 puts on such a callback. With both sides on 1.9.4 and these steps, 6 of 6 pass.
+
+1. Give the Spice team: OpenMRS's BAP and BPP ids and addresses, `BECKN_NETWORK_ID`, the "Referrals in" ids from
+   `beckn-status.sh` (OpenMRS sends referral outcomes with them), and the four requirements above.
 2. Get from them: Spice's BAP and BPP subscriber ids and addresses, the facility codes Spice serves, and the "Referrals
    out" contract id and `transactionId`.
 3. Set `BECKN_SPICE_BAP_ID`, `BECKN_SPICE_BAP_URI`, `BECKN_SPICE_BPP_ID`, `BECKN_SPICE_BPP_URI`,
@@ -586,6 +660,8 @@ ids (`bap.spice.invalid`) because it does not start without any.
 | A Sygnal adapter answers a `Nack` about the schema for every event or alert (`patientId` … is missing, or `@type` must be `sygnal:CoordinationEvent` / `sygnal:Signal`), right after this change | one side still runs an image built for an earlier profile (v1.0: the CCE data in a bag; v2.0: `cce:CceClinicalEvent` / `cce:CceCareAlert`), or an adapter still holds an earlier profile | deploy the profile v3.0 builds of all four images, and re-run `install-beckn.sh` on every participant |
 | `onix-sygnal` logs a WARN `running non-canonical value (canonical="url" actual="file")` | expected: the CCE profile, not the Beckn core spec, is its spec | nothing |
 | A sender gets a Nack from the registry / the receiving adapter refuses a signed message | the sender's id is not a member of `BECKN_SYGNAL_NETWORK_ID` (or `context.networkId` is another network), or the record's key differs | `beckn-status.sh` shows each record; fix the registry membership or the config |
+| Spice's adapter answers `401` to OpenMRS's `on_update` (the answer to a referral from Spice); the other referral messages pass | Spice's referral adapter is on onix 1.6.1: it cannot verify the signature onix 1.9.4 puts on a callback that answers a request | Spice moves its referral adapter to onix 1.9.4, with the steps and the payload store listed in [Connecting Spice](#connecting-spice) |
+| A referral message is refused with `SCH_SCHEMA_ADAPTATION_FAILED` | the adapter that refuses it has no `CceClinicalEvent/v1.0` in its schema folder | Spice: add the folder to its adapter's schema folder. OpenMRS: `BECKN_REFERRAL_SCHEMAS` must name `CceClinicalEvent/v1.0` (the default) |
 | `cce-beckn-service` in `ImagePullBackOff` / `ErrImageNeverPull` | the GHCR package needs a login | build it and import it: `docker build -t ghcr.io/openphc/cce-beckn-service:<tag> .` in the `cce-beckn-service` repository (`demo`), `docker save … \| gzip \| ssh <host> 'gunzip \| sudo k3s ctr images import -'`, then `IMAGE_CCE_BECKN_SERVICE=<tag>` and `BECKN_CCE_IMAGE_PULL_POLICY=IfNotPresent` |
 | HIE adaptor: `OpenHIM channel answered …: no answer (SocketTimeoutException)`; OpenHIM Core logs `Parse Error: Invalid method encountered` | an `https://` URL on OpenHIM's plain-HTTP channel port. 5001 is HTTP, 5000 is HTTPS | `OPENHIM_EMITTER_BECKN_OPENHIM_CHANNEL_URL=http://openhim-core:5001/cce-beckn` (the manifest's value) |
 | `openhim-mongo` or `openmrs-db` never ready; `gosu` at 100 % CPU in the pod | started as root, the image's entrypoint switches user with `gosu`, which hangs on k3s/containerd with Ubuntu 26.04 | the manifests run both as their own user (`runAsUser: 999`); keep that |

@@ -1,11 +1,22 @@
-# ONIX adapter config for the BAP side of one Beckn participant — a TEMPLATE.
+# ONIX adapter config for the BAP side of one Beckn participant, for onix 1.9.4 — a TEMPLATE.
 # one-click-installer/lib/beckn/beckn-deploy.sh fills the ${...} values per participant (from the installer config and
 # Infisical) and stores the result in the Secret onix-config; nothing rendered is written to the repository.
-# Based on the devkit config of beckn-onix (local-simple-bap.yaml). What differs, and why:
+# Based on the devkit config of beckn-onix (local-simple-bap.yaml), in the form onix 1.9.4 reads: the identity is
+# handler.subscriberId and keyManager.subscriberId (1.6.1: networkParticipant), and the registry plugin takes no
+# registryName. Steps:
+#   bapTxnReceiver  validateSign, validateSchema, addRoute, storePayload, signAck
+#   bapTxnCaller    addRoute, sign, validateSchema, storePayload, validateAckSign
+# onix 1.9.4 signs a callback that answers a request (same messageId, e.g. on_update for an update) over the request's
+# signature as well, and checks such a callback the same way. Both need the signature of the request, so each module
+# stores it (storePayload). signAck signs every Ack; validateAckSign checks the signature of an Ack it gets (a
+# missing one is only a warning), which is why the caller module has the signValidator plugin too. The peer's
+# adapter must be on onix 1.9.4 with the same steps: a 1.6.1 adapter refuses such a callback with 401.
+# What else differs from the devkit config, and why:
 #   - responseHeaderTimeout per module: one event crosses about nine hops in a single HTTP call, and every hop must wait
 #     longer than the hop behind it (the default 5 s breaks that). The values come from the installer.
 #   - http.timeout: must be longer than the longest of those waits.
-#   - storeBody "false": the stored copy of a message would hold patient data.
+#   - payloadStore storeBody "false", storeSignature "true": only the signature of a message is kept (in the cache
+#     Redis, 24 h), never its body — the referral messages hold patient data.
 #   - cache: the participant's own Redis (Service onix-redis).
 #   - allowedNetworkIDs: a subscriber found in the registry is accepted only if it is a member of one of these networks
 #     (its record's network_memberships). The installer sets it to BECKN_NETWORK_ID and leaves the line out when that is empty.
@@ -34,6 +45,7 @@ modules:
     handler:
       type: std
       role: bap
+      subscriberId: ${ONIX_BAP_SUBSCRIBER_ID}
       httpClientConfig:
         maxIdleConns: 1000
         maxIdleConnsPerHost: 200
@@ -44,13 +56,12 @@ modules:
           id: dediregistry
           config:
             url: ${BECKN_REGISTRY_URL}
-            registryName: ${BECKN_REGISTRY_NAME}
             allowedNetworkIDs: "${BECKN_ALLOWED_NETWORK_IDS}"
             timeout: 10
         keyManager:
           id: simplekeymanager
           config:
-            networkParticipant: ${ONIX_BAP_SUBSCRIBER_ID}
+            subscriberId: ${ONIX_BAP_SUBSCRIBER_ID}
             keyId: ${ONIX_BAP_KEY_ID}
             signingPrivateKey: ${ONIX_BAP_SIGNING_PRIVATE_KEY}
             signingPublicKey: ${ONIX_BAP_SIGNING_PUBLIC_KEY}
@@ -96,8 +107,10 @@ modules:
               role: bap
       steps:
         - validateSign
-        - addRoute
         - validateSchema
+        - addRoute
+        - storePayload
+        - signAck
 
   # Requests this participant sends as CONSUMER (update): signed, then sent to the provider's bppUri.
   - name: bapTxnCaller
@@ -105,6 +118,7 @@ modules:
     handler:
       type: std
       role: bap
+      subscriberId: ${ONIX_BAP_SUBSCRIBER_ID}
       httpClientConfig:
         maxIdleConns: 1000
         maxIdleConnsPerHost: 200
@@ -115,13 +129,12 @@ modules:
           id: dediregistry
           config:
             url: ${BECKN_REGISTRY_URL}
-            registryName: ${BECKN_REGISTRY_NAME}
             allowedNetworkIDs: "${BECKN_ALLOWED_NETWORK_IDS}"
             timeout: 10
         keyManager:
           id: simplekeymanager
           config:
-            networkParticipant: ${ONIX_BAP_SUBSCRIBER_ID}
+            subscriberId: ${ONIX_BAP_SUBSCRIBER_ID}
             keyId: ${ONIX_BAP_KEY_ID}
             signingPrivateKey: ${ONIX_BAP_SIGNING_PRIVATE_KEY}
             signingPublicKey: ${ONIX_BAP_SIGNING_PUBLIC_KEY}
@@ -152,6 +165,8 @@ modules:
             extendedSchema_downloadTimeout: "30"
             extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
             extendedSchema_localSchemaPath: "config/schema"
+        signValidator:
+          id: signvalidator
         router:
           id: router
           config:
@@ -167,3 +182,5 @@ modules:
         - addRoute
         - sign
         - validateSchema
+        - storePayload
+        - validateAckSign

@@ -20,7 +20,7 @@ beckn_kubectl || exit 1
 pick() { local v; for v in "$@"; do if [ -n "${!v:-}" ]; then printf '%s' "${!v}"; return 0; fi; done; return 0; }
 BAD=0
 # registry_check <subscriber id> <key id> <address(es) used here, space-separated> <signing public key> <network id>
-# subscribers.beckn.one: the "any registry" name the Sygnal adapter itself uses for this lookup (onix dediregistry).
+# subscribers.beckn.one: the "any registry" name the adapters themselves use for this lookup (onix 1.9.4 dediregistry).
 # The record's url is only shown: delivery never uses it (senders put the address in the message: receiverUri for
 # Sygnal, bapUri / bppUri for Beckn).
 registry_check() {

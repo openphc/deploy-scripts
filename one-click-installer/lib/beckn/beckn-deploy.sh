@@ -5,10 +5,11 @@
 # What it does, in the component's namespace:
 #   1. Secret onix-config     the Sygnal adapter's config + its two routing files, rendered from k8s/beckn/onix/config/ with
 #                             this participant's id, keys, timeouts and the address of its own service. openmrs: also its
-#                             Beckn referral pair's two configs + four routing files (k8s/beckn/onix-beckn/config/)
+#                             Beckn referral pair's two configs + four routing files (k8s/beckn/onix-beckn/config/;
+#                             onix 1.9.4, like the Sygnal adapter)
 #   2. ConfigMap onix-sygnal-profile  the CCE profile of Sygnal (BECKN_SYGNAL_PROFILE): the Sygnal adapter's only spec, and
 #                                     all it needs — it holds no payload schemas
-#      ConfigMap onix-schema          openmrs only, for its Beckn referral pair, unchanged: the schema folders, one key per
+#      ConfigMap onix-schema          openmrs only, for its Beckn referral pair: the schema folders, one key per
 #                                     file, "/" written "__": BECKN_REFERRAL_SCHEMAS in BECKN_SCHEMA_DIR (CceClinicalEvent
 #                                     v1.0, CceCareAlert v1.0) + the Health* referral pack
 #                                     (k8s/beckn/onix-beckn/health-schema)
@@ -83,7 +84,7 @@ case "$COMPONENT" in
 esac
 HOSTVAR="BECKN_${P}_HOST"; export BECKN_HOST="${!HOSTVAR:?$HOSTVAR not set}"
 
-# OpenMRS's Beckn adapter pair for the Spice referrals (standard Beckn, unchanged): its BAP and BPP identities and waits.
+# OpenMRS's Beckn adapter pair for the Spice referrals (standard Beckn; onix 1.9.4): its BAP and BPP identities and waits.
 # A referral from Spice makes several OpenMRS calls (30 s each at most) before the receiver answers: onix-bpp waits 45 s,
 # onix-bap 45 s for Spice (the emitter 50 s). Callbacks are logged and answered at once: 5 s into the receiver, 10 s out.
 CONFIG_DIRS=("$REPO/k8s/beckn/onix/config")

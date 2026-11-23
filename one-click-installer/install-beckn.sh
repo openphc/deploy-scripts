@@ -9,7 +9,8 @@
 #   cce      cce-beckn-service + CCE's adapter, into the existing cce-<envcode> namespace
 #   openhim  OpenHIM + the Beckn build of the emitter adaptor + the HIE's adapter, in its own namespace
 #   openmrs  OpenMRS O3 + the emitter and receiver adaptors (Beckn builds) + OpenMRS's Sygnal adapter and its Beckn adapter pair
-#            for the Spice referrals (standard Beckn, unchanged), in its own namespace
+#            for the Spice referrals (standard Beckn, the same messages; onix 1.9.4 like the Sygnal adapter), in its own
+#            namespace
 #
 # Needs: install.sh run for this env code with INGRESS_HOST + ACME_EMAIL set (k3s, Traefik with Let's Encrypt, Infisical), and a
 # DNS name per component that points at this machine. Safe to re-run; --only limits a run to some components.

@@ -1,8 +1,11 @@
 # OpenMRS's Beckn adapter pair, for the Spice <-> OpenMRS health referrals ONLY (standard Beckn: select / init / confirm /
-# status / update and their callbacks): onix-bap (consumer side, :8081), onix-bpp (provider side, :8082), unchanged from
-# the Beckn setup (fidedocker/onix-adapter:1.6.1, the Health* referral schemas). The CCE flows of OpenMRS (events to the
-# HIE, care alerts from CCE) go through the Sygnal adapter next to them (k8s/beckn/onix: onix-sygnal), which also
-# provides the Redis both use (onix-redis). Used by k8s/beckn/openmrs only.
+# status / update and their callbacks): onix-bap (consumer side, :8081), onix-bpp (provider side, :8082), with the
+# Health* referral schemas. The referral messages are those of the Beckn setup; the adapters are on onix 1.9.4
+# (fidedocker/onix-adapter:1.9.4, as onix-sygnal; before: 1.6.1), so Spice's referral adapter must be on 1.9.4 too (a
+# 1.6.1 adapter refuses the 1.9.4 signature of a callback that answers a request; config/onix-bap.yaml explains). The CCE
+# flows of OpenMRS (events to the HIE, care alerts from CCE) go through the Sygnal adapter next to them (k8s/beckn/onix:
+# onix-sygnal), which also provides the Redis both use (onix-redis: registry lookups, and the message signatures the
+# pair's payload store keeps). Used by k8s/beckn/openmrs only.
 #
 # Not in this file, created by one-click-installer/lib/beckn/beckn-deploy.sh openmrs before this is applied:
 #   Secret    onix-config         — onix-bap.yaml, onix-bpp.yaml (they hold the signing keys) and the four routing files,
@@ -56,7 +59,7 @@ spec:
               mountPath: /out
       containers:
         - name: onix-bap
-          image: fidedocker/onix-adapter:1.6.1
+          image: fidedocker/onix-adapter:1.9.4
           args: ["./server", "--config=/app/config/onix-bap.yaml"]
           ports:
             - containerPort: 8081
@@ -148,7 +151,7 @@ spec:
               mountPath: /out
       containers:
         - name: onix-bpp
-          image: fidedocker/onix-adapter:1.6.1
+          image: fidedocker/onix-adapter:1.9.4
           args: ["./server", "--config=/app/config/onix-bpp.yaml"]
           ports:
             - containerPort: 8082

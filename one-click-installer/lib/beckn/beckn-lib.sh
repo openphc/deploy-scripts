@@ -4,7 +4,8 @@
 # The Beckn add-on puts up to three network participants on a machine that install.sh has already set up. The CCE flows
 # use Sygnal (the CCE profile): sygnal/event/report OpenMRS -> HIE -> CCE, and sygnal/signal/emit CCE -> OpenMRS, each
 # participant through its Sygnal adapter (onix-sygnal). The Spice <-> OpenMRS health referrals stay on standard Beckn
-# (select / init / confirm / status / update), through OpenMRS's Beckn adapter pair (onix-bap / onix-bpp) as before.
+# (select / init / confirm / status / update), through OpenMRS's Beckn adapter pair (onix-bap / onix-bpp). Every adapter
+# is on onix 1.9.4; the referral pair was on 1.6.1, and the referral messages are what they were.
 #
 #   component   namespace                       what it deploys (k8s/beckn/<component>)
 #   cce         cce-<envcode> (exists)          cce-beckn-service + CCE's ONIX adapter
@@ -129,8 +130,8 @@ beckn_defaults() {
     _beckn_default BECKN_OPENMRS_BPP_URI "https://${BECKN_OPENMRS_HOST}/bpp/receiver"
   fi
   # The DeDi registry every adapter looks senders up in (onix's dediregistry plugin: <url>/lookup/<subscriber id>/…/<key id>).
-  # BECKN_REGISTRY_NAME: the registry name OpenMRS's referral pair (onix 1.6.1) puts in that lookup; the Sygnal adapters
-  # (onix 1.9.4) search every registry and do not use it.
+  # Every adapter is on onix 1.9.4, which searches every registry: there is no registry name to set. BECKN_REGISTRY_NAME,
+  # which OpenMRS's referral pair needed on onix 1.6.1, is no longer read (a line left in a config file is ignored).
   _beckn_default BECKN_REGISTRY_URL "https://fabric.nfh.global/registry/dedi"
   # The start of the @context address of CCE's schemas (CceClinicalEvent, CceCareAlert), a setting of the three services.
   # It only has to be the SAME for all participants: an adapter that checks such an object (OpenMRS's referral pair) finds
@@ -223,9 +224,9 @@ beckn_validate() {
       done
     fi
   done
-  # OpenMRS's Beckn referral pair: its two records, and the registry name the 1.6.1 adapter's lookup needs.
+  # OpenMRS's Beckn referral pair: its two records.
   if beckn_hosted openmrs; then
-    for k in BECKN_OPENMRS_BAP_ID BECKN_OPENMRS_BAP_KEY_ID BECKN_OPENMRS_BPP_ID BECKN_OPENMRS_BPP_KEY_ID BECKN_REGISTRY_NAME; do
+    for k in BECKN_OPENMRS_BAP_ID BECKN_OPENMRS_BAP_KEY_ID BECKN_OPENMRS_BPP_ID BECKN_OPENMRS_BPP_KEY_ID; do
       [ -n "${!k:-}" ] || { echo "CONFIG: $k is required (openmrs is in BECKN_COMPONENTS: its Beckn adapter pair for the Spice referrals)" >&2; bad=1; }
     done
   fi

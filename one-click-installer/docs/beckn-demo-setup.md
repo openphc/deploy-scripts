@@ -34,7 +34,9 @@ it — without OpenMRS, the HIE or CCE calling each other's private APIs. When a
 find each other's keys in the network registry.
 
 The **health referrals between Spice and OpenMRS** are a separate flow on standard **Beckn** (`select` / `init` /
-`confirm` / `status` / `update`), through OpenMRS's Beckn adapter pair. They did not change.
+`confirm` / `status` / `update`), through OpenMRS's Beckn adapter pair. The messages did not change. The pair runs
+onix 1.9.4 (1.6.1 before), and Spice's referral adapter must too
+([beckn.md → Change 2026-11-23: the referral adapters on onix 1.9.4](beckn.md#change-2026-11-23-the-referral-adapters-on-onix-194)).
 
 ```mermaid
 flowchart LR
@@ -71,7 +73,7 @@ also keeps its BAP and BPP records and its Beckn adapter pair for the Spice refe
 | **OpenMRS** | sends `sygnal/event/report` to the HIE; receives `sygnal/signal/emit` (alerts). Beckn referrals with Spice (BAP + BPP) | OpenMRS O3 3.6.0 (MariaDB, backend, frontend, gateway), `openmrs-cce-emitter-adaptor`, `openmrs-cce-receiver-adaptor` | [openmrs-cce-emitter-adaptor](https://github.com/openphc/openmrs-cce-emitter-adaptor/tree/demo-beckn) · `demo-beckn`, [openmrs-cce-receiver-adaptor](https://github.com/openphc/openmrs-cce-receiver-adaptor/tree/demo-beckn) · `demo-beckn` | `demo-beckn-latest` |
 | **HIE** (OpenHIM) | receives `sygnal/event/report` from each HMIS; sends it on to CCE | OpenHIM Core 8.5.1 + console + MongoDB, `openhim-cce-emitter-adaptor` (its Beckn build is also the OpenHIM mediator) | [openhim-cce-emitter-adaptor](https://github.com/openphc/openhim-cce-emitter-adaptor/tree/demo-beckn) · `demo-beckn` | `demo-beckn-latest` |
 | **CCE** | receives `sygnal/event/report`; sends `sygnal/signal/emit` | `cce-beckn-service`, in front of the CCE 2.0 services that `install.sh` deploys | [cce-beckn-service](https://github.com/openphc/cce-beckn-service/tree/demo) · `demo` | `latest` / `v<N>` |
-| all three | — | Sygnal adapter `onix-sygnal` + Redis; OpenMRS also `onix-bap`, `onix-bpp` | [DHP-Specs](https://github.com/openphc/DHP-Specs) · `openmrs-onix`, `openhim-onix`, `cce-onix` (the reference configs, registered ids and keys) | `fidedocker/onix-adapter:1.9.4` (Sygnal), `:1.6.1` (OpenMRS's referral pair) |
+| all three | — | Sygnal adapter `onix-sygnal` + Redis; OpenMRS also `onix-bap`, `onix-bpp` | [DHP-Specs](https://github.com/openphc/DHP-Specs) · `openmrs-onix`, `openhim-onix`, `cce-onix` (the reference configs, registered ids and keys) | `fidedocker/onix-adapter:1.9.4` (the Sygnal adapters and OpenMRS's referral pair) |
 
 The message content is defined in [cce-beckn-service/schema](https://github.com/openphc/cce-beckn-service/tree/demo/schema):
 the CCE profile of Sygnal, `sygnal-profile/v3.0/cce-sygnal-apis.yaml`. It is CCE's copy of the Sygnal schema: the two
@@ -272,7 +274,7 @@ emitter (alerts: 5 s → 7 s). The values are in [beckn.md → The timeout chain
 
 | Thing | What it is | Where it is configured |
 |---|---|---|
-| Network registry | The public directory of subscribers. An adapter looks a sender up by subscriber id and key id and gets its public key and network memberships. Delivery does not use the record's URL: the sender puts the receiver's address in the message | `BECKN_REGISTRY_URL` (and `BECKN_REGISTRY_NAME` for OpenMRS's referral pair) |
+| Network registry | The public directory of subscribers. An adapter looks a sender up by subscriber id and key id and gets its public key and network memberships. Delivery does not use the record's URL: the sender puts the receiver's address in the message | `BECKN_REGISTRY_URL` |
 | Sygnal network | `sygnal.nextsteps.mdtlabs.org/sygnal_demo_network_registry`. Sent as `context.networkId` of every Sygnal message; the registry refuses a sender that is not a member, and each Sygnal adapter accepts only members. Every id that sends or receives Sygnal must be a member | `BECKN_SYGNAL_NETWORK_ID` |
 | Referral network | The network of the Spice ↔ OpenMRS referrals, as before | `BECKN_NETWORK_ID` |
 | Subscriber ids, key ids | One Sygnal identity per participant: CCE's former BPP record, the HIE's and OpenMRS's former BAP records. OpenMRS keeps its BAP and BPP records for the referrals | `BECKN_<P>_ID`, `BECKN_<P>_KEY_ID` (default: those records); `BECKN_OPENMRS_BAP_*`, `BECKN_OPENMRS_BPP_*` |
@@ -426,7 +428,7 @@ the same event id, CCE answers `Ack`, and nothing is counted twice.
 | Care alerts CCE → OpenMRS (`sygnal/signal/emit`) | wired: `hmis.yml` and the intelligence service's `OPENMRS` destination are set by `beckn-deploy.sh cce` |
 | Network membership check (`allowedNetworkIDs`) and `context.networkId` | on, Sygnal network `sygnal.nextsteps.mdtlabs.org/sygnal_demo_network_registry` |
 | Registry record URLs | still `/bap/receiver` / `/bpp/receiver`; not used for delivery. Optional update to `/sygnal/receiver` for CCE and the HIE only |
-| Spice | not connected. Sygnal (events to the HIE, alerts from CCE): set `BECKN_SPICE_ID` and `BECKN_SPICE_URI`. Referrals with OpenMRS (Beckn, unchanged): its referral legs are off and its receiver runs with placeholder Spice ids. See [beckn.md → Connecting Spice](beckn.md#connecting-spice) |
+| Spice | not connected. Sygnal (events to the HIE, alerts from CCE): set `BECKN_SPICE_ID` and `BECKN_SPICE_URI`. Referrals with OpenMRS (Beckn, the messages unchanged; Spice's referral adapter must be on onix 1.9.4, as OpenMRS's is): its referral legs are off and its receiver runs with placeholder Spice ids. See [beckn.md → Connecting Spice](beckn.md#connecting-spice) |
 | Clinical protocol in CCE | must be loaded for events to be matched and to appear in Insights |
 | `cce-beckn-service` image | its GHCR package needs a login, so the image is built from source and imported into k3s by hand |
 | Prometheus | does not scrape the Beckn services |

@@ -54,7 +54,7 @@ with their own `IMAGE_*` keys:
 | `ghcr.io/openphc/openhim-cce-emitter-adaptor` | [openhim-cce-emitter-adaptor](https://github.com/openphc/openhim-cce-emitter-adaptor) | `demo-beckn` | `demo-beckn-latest` |
 | `ghcr.io/openphc/openmrs-cce-emitter-adaptor` | [openmrs-cce-emitter-adaptor](https://github.com/openphc/openmrs-cce-emitter-adaptor) | `demo-beckn` | `demo-beckn-latest` |
 | `ghcr.io/openphc/openmrs-cce-receiver-adaptor` | [openmrs-cce-receiver-adaptor](https://github.com/openphc/openmrs-cce-receiver-adaptor) | `demo-beckn` | `demo-beckn-latest` |
-| `fidedocker/onix-adapter` | beckn-onix | — | `1.9.4` (Sygnal adapters); `1.6.1` (OpenMRS's Beckn referral pair) |
+| `fidedocker/onix-adapter` | beckn-onix | — | `1.9.4` (the Sygnal adapters and OpenMRS's Beckn referral pair) |
 | `jembi/openhim-core`, `jembi/openhim-console`, `mongo` | OpenHIM | — | `v8.5.1`, `v1.18.2`, `7.0` |
 | `openmrs/openmrs-reference-application-3-{backend,frontend,gateway}`, `mariadb` | OpenMRS O3 | — | `3.6.0`, `10.11.7` |
 
