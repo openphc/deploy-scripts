@@ -461,7 +461,7 @@ clinical event; the kind of clinical event is `resource.resourceType`.
   "target": { "id": "<context.receiverId>", "role": "PROVIDER" },
   "basis": "CCE care step status: not-started, SLA status: overdue",
   "issuedAt": "<when CCE issued it>",
-  "signalAttributes": { "@context": "<BECKN_SCHEMA_BASE_URL>/sygnal-profile/v3.0/cce-context.jsonld",
+  "signalAttributes": { "@context": "<BECKN_SCHEMA_BASE_URL>/CareAlertAttributes/v3.0/context.jsonld",
                         "@type": "cce:CareAlertAttributes", "severity": "HIGH" },
   "patientId": "…",
   "stepStatus": "not-started",
@@ -700,10 +700,10 @@ file:
 | Field | Holds |
 |---|---|
 | `severity` | Not sent. Sygnal does not require it (its required fields are `@type`, `signalType`, `issuedAt`). If another sender includes it, it must be one of Sygnal's `INFO`, `WARNING`, `CRITICAL` |
-| `signalAttributes` | Sygnal's extension bag: `{ "@context": "<BECKN_SCHEMA_BASE_URL>/sygnal-profile/v3.0/cce-context.jsonld", "@type": "cce:CareAlertAttributes", "severity": "HIGH" }`. `severity` here is CCE's own level: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Sygnal's `Attributes` requires `@context` and `@type` |
+| `signalAttributes` | Sygnal's extension bag: `{ "@context": "<BECKN_SCHEMA_BASE_URL>/CareAlertAttributes/v3.0/context.jsonld", "@type": "cce:CareAlertAttributes", "severity": "HIGH" }`. `severity` here is CCE's own level: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Sygnal's `Attributes` requires `@context` and `@type` |
 
 The default schema base URL is `https://raw.githubusercontent.com/openphc/cce-beckn-service/main/schema`.
-`cce-context.jsonld` is a new file next to the two profile files. The `@context` of the two Sygnal types is Sygnal's own
+The bag's context is `schema/CareAlertAttributes/v3.0/context.jsonld` in cce-beckn-service, a type folder like `CoordinationEvent/v3.0`. No adapter loads it, so nothing here ships it. The `@context` of the two Sygnal types is Sygnal's own
 optional field, unchanged; CCE and OpenMRS do not send it.
 
 There is no mapping from CCE's levels to Sygnal's. Earlier on 2026-11-24 CCE also sent `severity` with a Sygnal level
