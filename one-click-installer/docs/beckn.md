@@ -268,7 +268,7 @@ All in the environment's config file. `lib/load-config.sh` accepts any key that 
 | `BECKN_REFERRALS_ENABLED` | `false` | the two referral legs of the OpenMRS emitter |
 | `BECKN_HEALTH_ID_TYPES` | `NID=national-id` | health referrals from Spice: the OpenMRS identifier type for each patient health id system (`SYSTEM=type`, `;`-separated). The default stores Spice's national id (system `NID`) as `national-id`, the id the OpenMRS emitter sends to CCE |
 | `BECKN_OPENHIM_NAMESPACE`, `BECKN_OPENMRS_NAMESPACE` | `openhim`, `openmrs` | namespaces |
-| `BECKN_OPENMRS_HOST_DIR` | `/opt/openmrs` | node folder with OpenMRS's frontend site files |
+| `BECKN_OPENMRS_HOST_DIR` | `/opt/openmrs` | node folder with OpenMRS's site files: frontend config and modules, backend modules (see [OpenMRS site files](#openmrs-site-files)) |
 | `BECKN_ONIX_LOG_LEVEL` | `info` | `debug` prints message bodies, which hold patient data |
 | `BECKN_OPENHIM_FACILITY_FILTER_IDS` | empty | the HIE adaptor's facility filter; empty = every facility |
 | `BECKN_OPENHIM_REDACTION_ENABLED` | `false` | the HIE adaptor's clinical-data redaction (`REDACTION_ENABLED`). Off by default: full payloads, patient data included, go to CCE, because protocol triggers read free text redaction removes, e.g. the RMNCH referral steps (`ServiceRequest.patientInstruction` / `orderDetail`, the Encounter `source-referral-order` extension). `true` redacts, where no trigger needs that content |
@@ -323,6 +323,9 @@ except with a value from the seed file.
 | `OPENHIM_CLIENT_PASSWORD_<CLIENTID>` | generated, one per client in [`openhim-metadata.json`](../../k8s/beckn/openhim/openhim-metadata.json) | Basic auth on the OpenHIM channels |
 | `OPENMRS_DB_PASSWORD`, `OPENMRS_DB_ROOT_PASSWORD` | generated | MariaDB |
 | `OPENMRS_ADMIN_USER`, `OPENMRS_ADMIN_PASSWORD` | `admin`, `Admin123` | the OpenMRS account the two adaptors sign in with |
+| `OPENMRS_ECG_AI_PROVIDER` | `gemini` | the ECG AI backend module (Secret `openmrs-backend-env`): `gemini` or `anthropic` |
+| `OPENMRS_ECG_AI_MODEL` | blank (= the provider's default: `gemini-3.1-pro-preview`, `claude-opus-5-5`) | the same |
+| `OPENMRS_ECG_AI_API_KEY` | blank until supplied | the same, the chosen provider's key; without one the module answers "not configured" and the app shows a demo read |
 | `OPENHIM_PUBLIC_URL`, `OPENMRS_PUBLIC_URL` | from the config, every run | `tools/show-credentials.sh` |
 
 The contract ids an earlier install generated for the CCE flows (`BECKN_HIE_CCE_*`, `BECKN_HIE_FEED_OPENMRS_*`) are no
@@ -761,7 +764,30 @@ The OpenMRS accounts come with the database. The last step tries the adaptors' l
 imported OpenMRS and tells you when it is not accepted.
 
 Without a copy, OpenMRS starts as a stock O3 reference application: `beckn-deploy.sh` writes an empty
-`config-core_demo.json` and creates an empty `frontend/custom-esms/`.
+`config-core_demo.json` and creates empty `frontend/custom-esms/` and `backend/modules/`.
+
+The archive also carries `backend/` (the backend's site files, below) when the source has one.
+
+## OpenMRS site files
+
+Site-specific additions are files on the node under `BECKN_OPENMRS_HOST_DIR` (default `/opt/openmrs`), copied there by
+hand. None of them is in this repository.
+
+| Path | Mounted at | What reads it | After a change |
+|---|---|---|---|
+| `config-core_demo.json` | frontend | the O3 app's configuration | restart `openmrs-frontend` |
+| `frontend/custom-esms/` | frontend | extra frontend modules, spliced in at start | restart `openmrs-frontend` |
+| `backend/modules/*.omod` | backend `/openmrs/site` | extra backend modules: copied into `/openmrs/data/modules` at each start. What the previous start copied is removed first, so an older version or a removed module does not stay | restart `openmrs-backend` |
+| `backend/ecgai/prompt.txt` | backend `/openmrs/site` | the ECG AI module's clinical prompt (optional: the module's own prompt is used without it) | nothing: read on every ECG read |
+
+The ECG AI module's provider, model and API keys are in Infisical `/beckn` (`OPENMRS_ECG_AI_*`, table above), not in
+these files. After changing one, run `install-beckn.sh --config … --only openmrs`: the backend restarts only when one of
+those values changed.
+
+```bash
+sudo k3s kubectl -n openmrs rollout restart deploy/openmrs-backend     # after copying a module
+curl -u <user>:<password> https://<openmrs host>/openmrs/ws/rest/v1/ecgai/health   # provider, model, key set?, prompt in use
+```
 
 ## Day 2
 

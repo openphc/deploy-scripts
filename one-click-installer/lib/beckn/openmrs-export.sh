@@ -11,6 +11,7 @@
 #     data.tgz                 /openmrs/data of the backend: configuration, modules, images, search index, runtime properties
 #                              (not: logs, the library cache, the message broker's journal — all rebuilt at start)
 #     frontend/…               config-core_demo.json and custom-esms/ (the extra frontend modules), when present
+#     backend/…                the backend's site files (backend/modules/*.omod, backend/ecgai/prompt.txt), when present
 #     MANIFEST                 where and when it was taken, image versions
 #
 #   DB_CONTAINER=openmrs-db  BACKEND_CONTAINER=openmrs-backend  OPENMRS_HOST_DIR=/opt/openmrs   override the dev names
@@ -53,6 +54,7 @@ gzip -t "$W/data.tgz"
 
 if [ -r "$HOST_DIR/config-core_demo.json" ]; then cp "$HOST_DIR/config-core_demo.json" "$W/frontend/"; fi
 if [ -d "$HOST_DIR/frontend/custom-esms" ]; then cp -r "$HOST_DIR/frontend/custom-esms" "$W/frontend/custom-esms"; fi
+if [ -d "$HOST_DIR/backend" ]; then cp -r "$HOST_DIR/backend" "$W/backend"; fi
 
 {
   echo "exported_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"

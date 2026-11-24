@@ -84,6 +84,10 @@ if beckn_hosted openmrs; then
   # OpenMRS database. "admin" / "Admin123" is what the O3 reference application installs; change the password in OpenMRS,
   # then here, then re-run install-beckn.sh.
   SPEC+=("OPENMRS_DB_PASSWORD:secret" "OPENMRS_DB_ROOT_PASSWORD:secret" "OPENMRS_ADMIN_USER:default:admin" "OPENMRS_ADMIN_PASSWORD:default:Admin123")
+  # OPENMRS_ECG_AI_*: the ECG AI backend module (an extra module the site copies to <host dir>/backend/modules), provider-
+  # neutral. The model stays blank (= the provider's default) and so does the key until the operator sets one in Infisical;
+  # without a key the module answers "not configured".
+  SPEC+=("OPENMRS_ECG_AI_PROVIDER:default:gemini" "OPENMRS_ECG_AI_MODEL:blank" "OPENMRS_ECG_AI_API_KEY:blank")
 fi
 
 FROM_FILE=() GENERATED=() DEFAULTED=() KEPT=() BLANK=()

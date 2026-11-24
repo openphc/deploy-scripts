@@ -4,7 +4,9 @@
 # Site data is NOT in this repository. It lives on the node under ${BECKN_OPENMRS_HOST_DIR} (default /opt/openmrs, as on dev):
 #   config-core_demo.json          frontend configuration ("{}" is written by beckn-deploy.sh when there is none)
 #   frontend/custom-esms/          extra frontend modules + manifest.json (may be empty)
-# A copy of another OpenMRS (database, /openmrs/data, the two items above) is moved with one-click-installer/lib/beckn/openmrs-export.sh
+#   backend/modules/*.omod         extra backend modules, installed at each backend start (may be empty)
+#   backend/ecgai/prompt.txt       the ECG AI read's clinical prompt (optional: without it the module's own prompt is used)
+# A copy of another OpenMRS (database, /openmrs/data, the items above) is moved with one-click-installer/lib/beckn/openmrs-export.sh
 # and openmrs-import.sh. Single-node k3s: hostPath is safe here, as for the Keycloak theme.
 apiVersion: v1
 kind: Secret
@@ -18,6 +20,22 @@ stringData:
   # The OpenMRS account the two adaptors use (REST + FHIR).
   OPENMRS_ADMIN_USER: "${OPENMRS_ADMIN_USER}"
   OPENMRS_ADMIN_PASSWORD: "${OPENMRS_ADMIN_PASSWORD}"
+---
+# Settings of the backend's extra modules, from Infisical (/beckn, OPENMRS_ECG_AI_*). Empty values are allowed: the ECG AI
+# module then answers "not configured" and the app shows its demo read. A change reaches the backend when beckn-deploy.sh
+# runs again: the backend-env-hash annotation below rolls the backend when (and only when) one of these values changes.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openmrs-backend-env
+type: Opaque
+stringData:
+  # provider-neutral: the provider (gemini | anthropic), then its model (empty = the provider's default) and API key
+  ECG_AI_PROVIDER: "${OPENMRS_ECG_AI_PROVIDER}"
+  ECG_AI_MODEL: "${OPENMRS_ECG_AI_MODEL}"
+  ECG_AI_API_KEY: "${OPENMRS_ECG_AI_API_KEY}"
+  # re-read on every ECG read, so an edit of the node file applies without a restart
+  ECG_AI_PROMPT_FILE: /openmrs/site/ecgai/prompt.txt
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -122,12 +140,34 @@ spec:
     metadata:
       labels:
         app: openmrs-backend
+      annotations:
+        cce.openphc.org/backend-env-hash: "${OPENMRS_BACKEND_ENV_HASH}"
     spec:
       containers:
         - name: backend
           image: openmrs/openmrs-reference-application-3-backend:3.6.0
+          # Install the extra modules from the node (backend/modules/*.omod) into the data volume, then start as the image
+          # does. The image's own module folder belongs to root, so they cannot be mounted there. What the previous start
+          # copied is removed first (listed in .site-modules): a module taken out of the node folder, or replaced by a newer
+          # version, does not stay behind.
+          command: ["/usr/bin/tini", "--"]
+          args:
+            - sh
+            - -c
+            - |
+              dst=/openmrs/data/modules; list="$dst/.site-modules"
+              mkdir -p "$dst"
+              if [ -f "$list" ]; then while IFS= read -r f; do [ -n "$f" ] && rm -f "$dst/$f"; done < "$list"; fi
+              : > "$list"
+              for f in /openmrs/site/modules/*.omod; do
+                [ -f "$f" ] || continue
+                cp "$f" "$dst/" && basename "$f" >> "$list" && echo "site module: $(basename "$f")"
+              done
+              exec /openmrs/startup.sh
           ports:
             - containerPort: 8080
+          envFrom:
+            - secretRef: { name: openmrs-backend-env, optional: true }
           env:
             - name: OMRS_CONFIG_MODULE_WEB_ADMIN
               value: "true"
@@ -148,6 +188,9 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /openmrs/data
+            - name: site
+              mountPath: /openmrs/site
+              readOnly: true
           resources:
             requests:
               cpu: 200m
@@ -179,6 +222,10 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: openmrs-data
+        - name: site
+          hostPath:
+            path: ${BECKN_OPENMRS_HOST_DIR}/backend
+            type: DirectoryOrCreate
 ---
 # Named "backend": the O3 gateway image proxies /openmrs to http://backend:8080 (fixed in its nginx config).
 apiVersion: v1
