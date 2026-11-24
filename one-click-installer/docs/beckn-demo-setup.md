@@ -80,19 +80,24 @@ also keeps its BAP and BPP records and its Beckn adapter pair for the Spice refe
 
 The message content is defined in [cce-beckn-service/schema](https://github.com/openphc/cce-beckn-service/tree/demo/schema):
 the CCE profile of Sygnal, `sygnal-profile/v3.0/`. It is CCE's copy of the Sygnal schema: the two actions, their
-context and answers, and Sygnal's two payload types opened and extended for CCE (Sygnal's published schema is not
-changed). It is two files: `cce-sygnal-apis.yaml` (Sygnal's own fields) and `cce-fhir-extension.yaml` (the fields CCE
-adds for FHIR), which the first refers to; a message must match both. The one entry of `message.events` in
+context and answers, and Sygnal's two payload types as Sygnal publishes them, with one change: they are open
+(`additionalProperties: true`), so that CCE can extend them (Sygnal's published schema is not changed). It is two
+files: `cce-sygnal-apis.yaml` (Sygnal's types) and `cce-fhir-extension.yaml` (the fields CCE adds for FHIR, and CCE's
+rules: an event needs an `id` and its `revision`, if sent, is 1; an alert needs an `id`, a `target` and two levels of severity), which the
+first refers to; a message must match both. The one entry of `message.events` in
 `sygnal/event/report` is a `sygnal:CoordinationEvent` with the fields of a clinical event added to it: the patient
 id, the FHIR version and one FHIR resource, next to Sygnal's own event id and time. The `message` of `sygnal/signal/emit` is a `sygnal:Signal` with the fields of a care alert added
-to it: the patient id, the care step and SLA status, and the FHIR `CommunicationRequest` or `Task`. There is no bag and
-no `cce:` type in these messages. The Spice ↔ OpenMRS referral legs (standard Beckn) carry the same
+to it: the patient id, the care step and SLA status, and the FHIR `CommunicationRequest` or `Task`. Its `severity` is
+Sygnal's level (`INFO`, `WARNING`, `CRITICAL`); CCE's own level (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) is in Sygnal's
+bag `signalAttributes` (`@type` `cce:CareAlertAttributes`), since 2026-11-24. That bag is the only `cce:` type in
+these messages; the clinical event has no bag. The Spice ↔ OpenMRS referral legs (standard Beckn) carry the same
 `sygnal:CoordinationEvent` in `performanceAttributes`, with an `@context` first; its schema is `CoordinationEvent/v3.0`
 in that folder. `CceClinicalEvent` and `CceCareAlert` are deleted from it. Until that repository's pull
 request #7 is merged, `demo` shows only profile v1.0, and the v3.0 files and `CoordinationEvent/v3.0` are on its branch
 `cce-payload-types`
 ([beckn.md → Change 2026-11-23: the Sygnal payloads](beckn.md#change-2026-11-23-the-sygnal-payloads),
-[beckn.md → Change 2026-11-23: the profile in two files, and the referral box](beckn.md#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
+[beckn.md → Change 2026-11-23: the profile in two files, and the referral box](beckn.md#change-2026-11-23-the-profile-in-two-files-and-the-referral-box),
+[beckn.md → Change 2026-11-24: Sygnal's types as published, and the alert's severity](beckn.md#change-2026-11-24-sygnals-types-as-published-and-the-alerts-severity)).
 
 ## Deployment architecture
 
@@ -286,7 +291,7 @@ emitter (alerts: 5 s → 7 s). The values are in [beckn.md → The timeout chain
 | Referral network | The network of the Spice ↔ OpenMRS referrals, as before | `BECKN_NETWORK_ID` |
 | Subscriber ids, key ids | One Sygnal identity per participant: CCE's former BPP record, the HIE's and OpenMRS's former BAP records. OpenMRS keeps its BAP and BPP records for the referrals | `BECKN_<P>_ID`, `BECKN_<P>_KEY_ID` (default: those records); `BECKN_OPENMRS_BAP_*`, `BECKN_OPENMRS_BPP_*` |
 | Keys | Each adapter signs with a private key. The matching public key is in the registry record | public: `BECKN_SIGNING_PUBLIC_KEY`, `BECKN_ENCR_PUBLIC_KEY`. private: Infisical `/beckn`, never in git |
-| Schemas | The CCE profile of Sygnal v3.0: CCE's copy of the Sygnal schema, two files. `cce-sygnal-apis.yaml` is the Sygnal adapters' only spec; `cce-fhir-extension.yaml`, the fields CCE adds for FHIR, is the file it refers to. Every Sygnal adapter holds a local copy of both (ConfigMap `onix-sygnal-profile`) and no other schema: the two describe the whole message. A validator with Sygnal's published schema would refuse these messages, so every participant loads CCE's copy. OpenMRS's referral pair holds a schema set of its own (ConfigMap `onix-schema`): `CoordinationEvent` v3.0 (the box of a clinical event in a referral message) and the Health* pack. The `@context` address in a referral message only has to be the same for everyone | `BECKN_SCHEMA_DIR` or `BECKN_SCHEMA_REPO` / `BECKN_SCHEMA_REF`; `BECKN_SYGNAL_PROFILE`; `BECKN_REFERRAL_SCHEMAS`; `BECKN_SCHEMA_BASE_URL` |
+| Schemas | The CCE profile of Sygnal v3.0: CCE's copy of the Sygnal schema, two files. `cce-sygnal-apis.yaml` is the Sygnal adapters' only spec; `cce-fhir-extension.yaml`, the fields CCE adds for FHIR and CCE's rules, is the file it refers to. Every Sygnal adapter holds a local copy of both (ConfigMap `onix-sygnal-profile`) and no other schema: the two describe the whole message. A validator with Sygnal's published schema would refuse these messages, so every participant loads CCE's copy. OpenMRS's referral pair holds a schema set of its own (ConfigMap `onix-schema`): `CoordinationEvent` v3.0 (the box of a clinical event in a referral message) and the Health* pack. The `@context` address in a referral message only has to be the same for everyone | `BECKN_SCHEMA_DIR` or `BECKN_SCHEMA_REPO` / `BECKN_SCHEMA_REF`; `BECKN_SYGNAL_PROFILE`; `BECKN_REFERRAL_SCHEMAS`; `BECKN_SCHEMA_BASE_URL` |
 | Health referral schemas | The Health* pack (`HealthReferral`, `HealthParticipant`, ...) that Spice's health-referral flow uses. `schema.beckn.io` no longer serves it, so OpenMRS's adapters hold the copy in `k8s/beckn/onix-beckn/health-schema/` | Shipped with deploy-scripts; nothing to set |
 | Health id types | The OpenMRS identifier type for each patient health id system in a health referral, as `SYSTEM=type` pairs separated by `;`. Default `NID=national-id` | `BECKN_HEALTH_ID_TYPES` |
 

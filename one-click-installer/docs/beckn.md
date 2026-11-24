@@ -104,9 +104,11 @@ templates are in [`k8s/beckn/onix/config`](../../k8s/beckn/onix/config): `onix.y
 the participant receives → its own service), `routing-caller.yaml` (the action it sends → `context.receiverUri`). It checks
 messages against the CCE profile of Sygnal only (`schemaValidator` type `file`, ConfigMap `onix-sygnal-profile`). The
 profile is CCE's copy of the Sygnal schema, with `sygnal:CoordinationEvent` (the entry of `message.events` in
-`sygnal/event/report`) and `sygnal:Signal` (the `message` of `sygnal/signal/emit`) opened and extended. It is two files,
-mounted side by side in `/app/config/sygnal`: `cce-sygnal-apis.yaml` (Sygnal's own fields; the adapter's spec) and
-`cce-fhir-extension.yaml` (the fields CCE adds for FHIR), which the first refers to. Together they describe the whole
+`sygnal/event/report`) and `sygnal:Signal` (the `message` of `sygnal/signal/emit`) as Sygnal publishes them, only
+opened (`additionalProperties: true`), and extended by a second file. It is two files,
+mounted side by side in `/app/config/sygnal`: `cce-sygnal-apis.yaml` (Sygnal's types; the adapter's spec) and
+`cce-fhir-extension.yaml` (the fields CCE adds for FHIR, and CCE's rules), which the first refers to
+([Change 2026-11-24](#change-2026-11-24-sygnals-types-as-published-and-the-alerts-severity)). Together they describe the whole
 message: the adapter holds no payload schemas, and its extended schema check is off. It keeps no copy of the
 messages (no payload store: they hold patient data).
 
@@ -457,9 +459,11 @@ clinical event; the kind of clinical event is `resource.resourceType`.
   "id": "<the CCE delivery id, a uuid; = context.messageId; a repeated alert has the same id>",
   "signalType": "SLA_BREACH",
   "target": { "id": "<context.receiverId>", "role": "PROVIDER" },
-  "severity": "HIGH",
+  "severity": "WARNING",
   "basis": "CCE care step status: not-started, SLA status: overdue",
   "issuedAt": "<when CCE issued it>",
+  "signalAttributes": { "@context": "<BECKN_SCHEMA_BASE_URL>/sygnal-profile/v3.0/cce-context.jsonld",
+                        "@type": "cce:CareAlertAttributes", "severity": "HIGH" },
   "patientId": "…",
   "stepStatus": "not-started",
   "slaStatus": "overdue",
@@ -467,12 +471,19 @@ clinical event; the kind of clinical event is `resource.resourceType`.
   "resource": { "resourceType": "CommunicationRequest", "…": "the FHIR alert, unchanged (or a Task)" } }
 ```
 
-Required: `@type`, `id`, `signalType`, `target`, `severity`, `issuedAt`, `patientId`, `stepStatus`, `fhirVersion`,
-`resource`; `slaStatus` is optional. `signalType` is `SLA_BREACH` when `slaStatus` is `overdue`, `missed` or
-`breached`, else `FOLLOW_UP_DUE`. `severity` is CCE's own level (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`): CCE's copy of
-the type accepts these next to Sygnal's `INFO` / `WARNING`. A receiver de-duplicates on `id`.
+Required: `@type`, `id`, `signalType`, `target`, `severity`, `issuedAt`, `signalAttributes`, `patientId`,
+`stepStatus`, `fhirVersion`, `resource`; `slaStatus` is optional. `signalType` is `SLA_BREACH` when `slaStatus` is
+`overdue`, `missed` or `breached`, else `FOLLOW_UP_DUE`. A receiver de-duplicates on `id`.
 
-In neither message is there an `eventAttributes` / `signalAttributes` bag, a `cce:` type, or a need for `@context`.
+*(Changed 2026-11-24: [Change 2026-11-24](#change-2026-11-24-sygnals-types-as-published-and-the-alerts-severity).)*
+`severity` is Sygnal's level (`INFO`, `WARNING`, `CRITICAL`), set by CCE from its own: `CRITICAL` → `CRITICAL`, `HIGH`
+and `MEDIUM` → `WARNING`, `LOW` → `INFO`. CCE's own level (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) is
+`signalAttributes.severity`. Until 2026-11-24 `severity` was CCE's own level, which CCE's copy of the type accepted
+next to Sygnal's `INFO` / `WARNING`, and there was no `signalAttributes`.
+
+In neither message is there an `eventAttributes` bag or a `cce:` payload type. *(Changed 2026-11-24.)* The alert's
+`signalAttributes` bag holds CCE's level of severity only, with an `@context` and the `@type`
+`cce:CareAlertAttributes`, because Sygnal's `Attributes` requires both.
 Because the two types are open, an adapter does not refuse a field it does not know (a receiver ignores it); it does
 check every declared field and the required ones. Any other `@type`, including `cce:CceClinicalEvent` /
 `cce:CceCareAlert` of profile v2.0, is refused with a 400 `Nack`: by an adapter's schema check, and by the receiving
@@ -488,7 +499,8 @@ Later the same day the box became a `sygnal:CoordinationEvent`: [Change 2026-11-
 
 **The Sygnal adapter needs the profile only.** The profile is two files since [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box):
 `cce-sygnal-apis.yaml` and the FHIR extension it refers to, `cce-fhir-extension.yaml`. Together they describe the
-whole message, and no object in it carries `@context`, so `onix-sygnal` holds no payload schemas: its extended schema
+whole message, so `onix-sygnal` holds no payload schemas (the one object with an `@context`, the alert's
+`signalAttributes` since 2026-11-24, is checked by the two files too): its extended schema
 check is off (`extendedSchema_enabled: "false"`), and it has no schema folder, no init container and no schema
 ConfigMap. Schemas are held by OpenMRS's referral pair alone:
 
@@ -581,7 +593,7 @@ messages get a new box for the clinical event.
 
 | File | Holds |
 |---|---|
-| `cce-sygnal-apis.yaml` | Sygnal's own fields. `sygnal:CoordinationEvent` and `sygnal:Signal` are open (`additionalProperties: true`); `Signal.severity` also accepts `LOW` / `MEDIUM` / `HIGH`. The Sygnal adapter's only spec (`schemaValidator` type `file`) |
+| `cce-sygnal-apis.yaml` | Sygnal's own fields. `sygnal:CoordinationEvent` and `sygnal:Signal` are open (`additionalProperties: true`); `Signal.severity` also accepts `LOW` / `MEDIUM` / `HIGH` (until [Change 2026-11-24](#change-2026-11-24-sygnals-types-as-published-and-the-alerts-severity)). The Sygnal adapter's only spec (`schemaValidator` type `file`) |
 | `cce-fhir-extension.yaml` | the fields CCE adds for FHIR: `CoordinationEventFhirExtension`, `SignalFhirExtension` |
 
 The first file refers to the second by that name (`allOf` + `$ref`), and onix follows the reference: a message must
@@ -653,6 +665,69 @@ Tested:
 What it means for an install: re-run `install-beckn.sh` with a schema source that has the new files, at the same
 time as Spice changes its referral side. It replaces the ConfigMap `onix-sygnal-profile` in every namespace and, for
 `openmrs`, `onix-schema`. The adapters restart once: the hash that rolls them covers these files.
+
+## Change 2026-11-24: Sygnal's types as published, and the alert's severity
+
+Decided by the customer on 2026-11-24. The two profile files change; the installer's scripts do not (the ConfigMap
+`onix-sygnal-profile` already holds both files). The event on the wire does not change. The alert gets CCE's level
+of severity in a bag, and its `severity` becomes Sygnal's level.
+
+**1. `cce-sygnal-apis.yaml` holds Sygnal's types word for word.** `sygnal:CoordinationEvent` and `sygnal:Signal`, and
+the types they use (`Participant`, `HashRef`, `Area`, `Attributes`), are the text of Sygnal v0.9.0, with one change:
+the two types are open (`additionalProperties: true`). What CCE's copy had changed inside the types is gone from that
+file:
+
+| Was in CCE's copy of the types | Now |
+|---|---|
+| `Signal.severity` also accepted `LOW` / `MEDIUM` / `HIGH` | Sygnal's `INFO`, `WARNING`, `CRITICAL` only |
+| more `required` entries: `id` on both types; `id`, `target`, `severity` on the Signal | required by the extension |
+| a UUID `pattern` on `id` | in the extension |
+| `revision` const 1 | in the extension |
+| a closed `Participant` | Sygnal's |
+| Sygnal's `if` / `then`, `dependentRequired`, `metrics.propertyNames` and `x-fhir-*` left out | back |
+
+**2. CCE's rules are in `cce-fhir-extension.yaml`.** A message must match the Sygnal type and its extension
+(`allOf`). An extension can add fields and make rules stricter; it cannot loosen a rule of the Sygnal type.
+
+| Extension | Requires | Optional |
+|---|---|---|
+| `CoordinationEventFhirExtension` | `id` (a UUID), `patientId`, `fhirVersion`, `resource`; `revision`, if sent, is 1 | `facilityId`, `facilityName`, `sourceEventId` |
+| `SignalFhirExtension` | `id` (a UUID), `target`, `severity`, `signalAttributes`, `patientId`, `stepStatus`, `fhirVersion`, `resource` (`resourceType` `CommunicationRequest` or `Task`) | `slaStatus` |
+
+**3. The alert carries two levels of severity.** Sygnal's `Signal.severity` has only `INFO`, `WARNING`, `CRITICAL`,
+and the extension cannot widen it. So:
+
+| Field | Holds |
+|---|---|
+| `severity` | Sygnal's level, set by CCE from its own: `CRITICAL` → `CRITICAL`, `HIGH` and `MEDIUM` → `WARNING`, `LOW` → `INFO` |
+| `signalAttributes` | Sygnal's extension bag: `{ "@context": "<BECKN_SCHEMA_BASE_URL>/sygnal-profile/v3.0/cce-context.jsonld", "@type": "cce:CareAlertAttributes", "severity": "HIGH" }`. `severity` here is CCE's own level: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Sygnal's `Attributes` requires `@context` and `@type` |
+
+The default schema base URL is `https://raw.githubusercontent.com/openphc/cce-beckn-service/main/schema`.
+`cce-context.jsonld` is a new file next to the two profile files. The `@context` of the two Sygnal types is Sygnal's own
+optional field, unchanged; CCE and OpenMRS do not send it.
+
+The OpenMRS receiver adaptor reads CCE's level from `signalAttributes.severity` when the bag's `@type` is
+`cce:CareAlertAttributes`, else `severity`. Its notification severity is the same as before for every CCE level:
+`CRITICAL` → `CRITICAL`; `HIGH`, `MEDIUM` (and Sygnal's `WARNING`) → `WARNING`; otherwise `INFO`.
+
+**The referral box.** `CoordinationEvent/v3.0` (the box of the Spice ↔ OpenMRS referral messages) is made again
+from the restored types. The box on the wire does not change.
+
+Tested:
+
+| What | Result |
+|---|---|
+| The Sygnal messages, three real onix 1.9.4 adapters and the real `cce-beckn-service` | **44 of 44 cases** as expected: the earlier cases, and an alert with `severity` `HIGH` refused, an alert with no bag or with a wrong `@type` or level in it refused, `LOW` in the bag accepted |
+| The referral messages, four real onix 1.9.4 referral adapters, the box made again | **19 of 19 cases** as expected |
+| The OpenMRS receiver adaptor | 124 tests pass |
+
+Found on the way: onix 1.9.4 loads Sygnal's `if` / `then`, `dependentRequired` and `propertyNames`, but does not
+enforce them. An `AGGREGATE` event without `period`, a `subjectRef` without `subjectType` and a bad `metrics` key are
+accepted. They concern aggregate reporting, which CCE does not use.
+
+What it means for an install: re-run `install-beckn.sh` on every participant with a schema source that has the new
+files, and deploy the new builds of `cce-beckn-service` and `openmrs-cce-receiver-adaptor` at the same time. An
+adapter with the new profile refuses an alert from an older `cce-beckn-service` (CCE's level in `severity`, no bag).
 
 ## Copying an OpenMRS
 
@@ -761,6 +836,7 @@ the signature onix 1.9.4 puts on such a callback. With both sides on 1.9.4 and t
 | `beckn-status.sh`: `cce-fhir-extension.yaml MISSING from ConfigMap onix-sygnal-profile` | the ConfigMap was made by an earlier version of the installer, with the profile only | re-run `install-beckn.sh` |
 | `install-beckn.sh` stops at `openmrs`: `BECKN_REFERRAL_SCHEMAS: no CoordinationEvent/v3.0/attributes.yaml in …` | the schema source lacks a version folder the referral pair's schema set names | use a cce-beckn-service ref that has `CoordinationEvent/v3.0` (the referral pair's set; the referral legs carry a `sygnal:CoordinationEvent` box). A config file that still names `CceClinicalEvent/v1.0` / `CceCareAlert/v1.0` stops the same way: those folders are gone; set `BECKN_REFERRAL_SCHEMAS=CoordinationEvent/v3.0` or remove the line |
 | A Sygnal adapter answers a `Nack` about the schema for every event or alert (`patientId` … is missing, or `@type` must be `sygnal:CoordinationEvent` / `sygnal:Signal`), right after this change | one side still runs an image built for an earlier profile (v1.0: the CCE data in a bag; v2.0: `cce:CceClinicalEvent` / `cce:CceCareAlert`), or an adapter still holds an earlier profile | deploy the profile v3.0 builds of all four images, and re-run `install-beckn.sh` on every participant |
+| A Sygnal adapter refuses every alert on `severity` or `signalAttributes`; events pass | `cce-beckn-service` is a build from before [Change 2026-11-24](#change-2026-11-24-sygnals-types-as-published-and-the-alerts-severity): it puts CCE's level (`HIGH`, …) in `severity` and sends no `signalAttributes` | deploy the current `cce-beckn-service` build |
 | `onix-sygnal` logs a WARN `running non-canonical value (canonical="url" actual="file")` | expected: the CCE profile, not the Beckn core spec, is its spec | nothing |
 | A sender gets a Nack from the registry / the receiving adapter refuses a signed message | the sender's id is not a member of `BECKN_SYGNAL_NETWORK_ID` (or `context.networkId` is another network), or the record's key differs | `beckn-status.sh` shows each record; fix the registry membership or the config |
 | Spice's adapter answers `401` to OpenMRS's `on_update` (the answer to a referral from Spice); the other referral messages pass | Spice's referral adapter is on onix 1.6.1: it cannot verify the signature onix 1.9.4 puts on a callback that answers a request | Spice moves its referral adapter to onix 1.9.4, with the steps and the payload store listed in [Connecting Spice](#connecting-spice) |
