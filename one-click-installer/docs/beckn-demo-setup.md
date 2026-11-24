@@ -171,7 +171,7 @@ flowchart TB
 
 | Namespace | Deployments | Storage |
 |---|---|---|
-| `openmrs` | `openmrs-db`, `openmrs-backend`, `openmrs-frontend`, `openmrs-gateway`, `openmrs-cce-emitter-adaptor`, `openmrs-cce-receiver-adaptor`, `onix-sygnal`, `onix-redis`, and for the Spice referrals `onix-bap`, `onix-bpp` | volumes: database, `/openmrs/data`, the emitter's checkpoint. Node folder `/opt/openmrs`: frontend config and custom frontend modules |
+| `openmrs` | `openmrs-db`, `openmrs-backend`, `openmrs-frontend`, `openmrs-gateway`, `openmrs-cce-emitter-adaptor`, `openmrs-cce-receiver-adaptor`, `onix-sygnal`, `onix-redis`, and for the Spice referrals `onix-bap`, `onix-bpp` | volumes: database, `/openmrs/data`, the emitter's checkpoint. Node folder `/opt/openmrs`: frontend config, custom frontend and backend modules |
 | `openhim` | `openhim-mongo`, `openhim-core`, `openhim-console`, `openhim-cce-emitter-adaptor`, `onix-sygnal`, `onix-redis` | volume: MongoDB |
 | `cce-<env>` | added by the Beckn add-on: `cce-beckn-service`, `onix-sygnal`, `onix-redis`. Already there: the CCE 2.0 services | none added. CCE's data is in the native PostgreSQL, Kafka and ClickHouse |
 

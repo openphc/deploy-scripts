@@ -139,10 +139,16 @@ PY
 )"; export CCE_BECKN_HMIS_ENTRIES
 fi
 export BECKN_REFERRALS_OUT_CONTRACT_ID="${BECKN_REFERRALS_OUT_CONTRACT_ID:-}" BECKN_REFERRALS_OUT_TRANSACTION_ID="${BECKN_REFERRALS_OUT_TRANSACTION_ID:-}"
+# The OpenMRS backend's extra-module settings (secret openmrs-backend-env), all optional. Their hash rolls the backend when
+# one of them changes, and only then: a backend restart takes minutes, so it does not follow the whole render's hash.
+OPENMRS_BACKEND_ENV_VARS="OPENMRS_ECG_AI_PROVIDER OPENMRS_ECG_AI_MODEL OPENMRS_ECG_AI_API_KEY"
+for v in $OPENMRS_BACKEND_ENV_VARS; do export "$v=${!v:-}"; done
+OPENMRS_BACKEND_ENV_HASH="$(for v in $OPENMRS_BACKEND_ENV_VARS; do printf '%s=%s\n' "$v" "${!v}"; done | sha256sum | cut -c1-16)"
+export OPENMRS_BACKEND_ENV_HASH
 
 # Every ${VAR} a file references must have a value, or it would render as "" and fail later, far from the cause. The
 # few that may be empty are listed.
-OPTIONAL=" BECKN_NETWORK_ID BECKN_ALLOWED_NETWORK_IDS BECKN_SYGNAL_ALLOWED_NETWORK_IDS BECKN_OPENHIM_FACILITY_FILTER_IDS BECKN_SPICE_BPP_ID BECKN_SPICE_BPP_URI BECKN_SPICE_FACILITY_CODES BECKN_REFERRALS_OUT_CONTRACT_ID BECKN_REFERRALS_OUT_TRANSACTION_ID BECKN_HEALTH_ID_TYPES BECKN_CONFIG_HASH ONIX_CONFIG_HASH "
+OPTIONAL=" BECKN_NETWORK_ID BECKN_ALLOWED_NETWORK_IDS BECKN_SYGNAL_ALLOWED_NETWORK_IDS BECKN_OPENHIM_FACILITY_FILTER_IDS BECKN_SPICE_BPP_ID BECKN_SPICE_BPP_URI BECKN_SPICE_FACILITY_CODES BECKN_REFERRALS_OUT_CONTRACT_ID BECKN_REFERRALS_OUT_TRANSACTION_ID BECKN_HEALTH_ID_TYPES BECKN_CONFIG_HASH ONIX_CONFIG_HASH $OPENMRS_BACKEND_ENV_VARS "
 check_vars() {   # <file...> -> prints the envsubst variable list; exits if a non-optional one is empty
   local v missing=() list=""
   for v in $(grep -ho '\${[A-Z_0-9]*}' "$@" | tr -d '${}' | sort -u); do
@@ -222,10 +228,10 @@ if grep -q '\${[A-Z_0-9]*}' "$TMP/render.yaml"; then
 fi
 
 if [ "$COMPONENT" = openmrs ]; then
-  # Site data the frontend mounts from the node. Created empty when there is none, so a plain install starts.
+  # Site data the frontend and the backend mount from the node. Created empty when there is none, so a plain install starts.
   D="$BECKN_OPENMRS_HOST_DIR"
   if [ -z "${DRY_RUN:-}" ]; then
-    ( umask 022; mkdir -p "$D/frontend/custom-esms"; [ -s "$D/config-core_demo.json" ] || echo '{}' > "$D/config-core_demo.json" )
+    ( umask 022; mkdir -p "$D/frontend/custom-esms" "$D/backend/modules"; [ -s "$D/config-core_demo.json" ] || echo '{}' > "$D/config-core_demo.json" )
   fi
 fi
 

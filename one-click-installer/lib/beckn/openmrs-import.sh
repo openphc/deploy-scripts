@@ -8,6 +8,7 @@
 #   the openmrs database        dropped, recreated, restored from the dump
 #   the backend's data volume   emptied, then filled from the archive (configuration, modules, images, search index)
 #   the frontend's site files   <BECKN_OPENMRS_HOST_DIR>/config-core_demo.json and frontend/custom-esms/
+#   the backend's site files    <BECKN_OPENMRS_HOST_DIR>/backend/ (extra modules, ECG AI prompt), when the archive has them
 # What it keeps: this installation's own database passwords. The archive's openmrs-runtime.properties is rewritten to
 # connect with them, so nothing from the source machine's database login is carried over.
 # What comes WITH the data: the OpenMRS user accounts, and so the admin password. The adaptors sign in with
@@ -97,6 +98,12 @@ if [ -d "$W/frontend" ] && [ -n "$(ls -A "$W/frontend" 2>/dev/null)" ]; then
     [ -r "$W/frontend/config-core_demo.json" ] && install -m 644 "$W/frontend/config-core_demo.json" "$D/config-core_demo.json"
     if [ -d "$W/frontend/custom-esms" ]; then rm -rf "$D/frontend/custom-esms"; cp -r "$W/frontend/custom-esms" "$D/frontend/custom-esms"; chmod -R a+rX "$D/frontend"; fi )
   $KUBECTL -n "$NS" rollout restart deploy/openmrs-frontend >/dev/null
+fi
+
+if [ -d "$W/backend" ]; then
+  D="$BECKN_OPENMRS_HOST_DIR"
+  echo "[openmrs-import] backend site files -> $D/backend"
+  ( umask 022; rm -rf "$D/backend"; cp -r "$W/backend" "$D/backend"; mkdir -p "$D/backend/modules"; chmod -R a+rX "$D/backend" )
 fi
 
 echo "[openmrs-import] starting the backend (a few minutes: it checks the database and loads its modules)…"
