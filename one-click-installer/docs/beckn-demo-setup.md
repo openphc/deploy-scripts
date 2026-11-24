@@ -83,14 +83,14 @@ the CCE profile of Sygnal, `sygnal-profile/v3.0/`. It is CCE's copy of the Sygna
 context and answers, and Sygnal's two payload types as Sygnal publishes them, with one change: they are open
 (`additionalProperties: true`), so that CCE can extend them (Sygnal's published schema is not changed). It is two
 files: `cce-sygnal-apis.yaml` (Sygnal's types) and `cce-fhir-extension.yaml` (the fields CCE adds for FHIR, and CCE's
-rules: an event needs an `id` and its `revision`, if sent, is 1; an alert needs an `id`, a `target` and CCE's level of severity in `signalAttributes`), which the
+rules: an event needs an `id` and its `revision`, if sent, is 1; an alert needs an `id`, a `target` and CCE's level of severity, `cceSeverity`), which the
 first refers to; a message must match both. The one entry of `message.events` in
 `sygnal/event/report` is a `sygnal:CoordinationEvent` with the fields of a clinical event added to it: the patient
 id, the FHIR version and one FHIR resource, next to Sygnal's own event id and time. The `message` of `sygnal/signal/emit` is a `sygnal:Signal` with the fields of a care alert added
 to it: the patient id, the care step and SLA status, and the FHIR `CommunicationRequest` or `Task`. Since 2026-11-24
-CCE's level of severity (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) is only in Sygnal's bag `signalAttributes` (`@type`
-`cce:CareAlertAttributes`); CCE does not send Sygnal's `severity`. That bag is the only `cce:` type in
-these messages; the clinical event has no bag. The Spice ↔ OpenMRS referral legs (standard Beckn) carry the same
+CCE's level of severity (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) is only in `cceSeverity`, a field on the Signal like
+the other care-alert fields; CCE does not send Sygnal's `severity`. There is no `cce:` type and no bag in these
+messages. The Spice ↔ OpenMRS referral legs (standard Beckn) carry the same
 `sygnal:CoordinationEvent` in `performanceAttributes`, with an `@context` first; its schema is `CoordinationEvent/v3.0`
 in that folder. `CceClinicalEvent` and `CceCareAlert` are deleted from it. Until that repository's pull
 request #7 is merged, `demo` shows only profile v1.0, and the v3.0 files and `CoordinationEvent/v3.0` are on its branch
