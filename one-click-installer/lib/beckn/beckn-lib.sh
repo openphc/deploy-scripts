@@ -4,7 +4,8 @@
 # The Beckn add-on puts up to three network participants on a machine that install.sh has already set up. The CCE flows
 # use Sygnal (the CCE profile): sygnal/event/report OpenMRS -> HIE -> CCE, and sygnal/signal/emit CCE -> OpenMRS, each
 # participant through its Sygnal adapter (onix-sygnal). The Spice <-> OpenMRS health referrals stay on standard Beckn
-# (select / init / confirm / status / update), through OpenMRS's Beckn adapter pair (onix-bap / onix-bpp) as before.
+# (select / init / confirm / status / update), through OpenMRS's Beckn adapter pair (onix-bap / onix-bpp). Every adapter
+# is on onix 1.9.4; the referral pair was on 1.6.1, and the referral messages are what they were.
 #
 #   component   namespace                       what it deploys (k8s/beckn/<component>)
 #   cce         cce-<envcode> (exists)          cce-beckn-service + CCE's ONIX adapter
@@ -33,8 +34,63 @@
 #   beckn_hosted <c>               true if this machine hosts the component
 #   beckn_role <P>                 BAP or BPP: the registry record a participant used before the Sygnal switch
 #   beckn_kubectl                  sets KUBECTL
+#   beckn_profile_hint <schema>    what to do when the CCE profile is not in a schema folder (for an error message)
+#   beckn_schema_set <schema> <setting> <list>   the files of the listed <Type>/<version> schema folders; fails if one is missing
 
 BECKN_ALL_COMPONENTS="cce openhim openmrs"
+
+# The CCE profile of Sygnal this add-on deploys, as a path inside cce-beckn-service's schema/ folder. The version folder is
+# part of the contract (a version in use never changes; a change gets a new folder) and must be the one the four images
+# were built for:
+#   v3.0  the payloads are Sygnal's own types, opened in CCE's copy of the schema and extended (Sygnal's published
+#         schema is not changed): sygnal/event/report carries one sygnal:CoordinationEvent with the fields of a
+#         clinical event on it (patientId, fhirVersion, resource, …), sygnal/signal/emit a sygnal:Signal with the fields
+#         of a care alert on it. No bag and no cce: type. The profile is TWO files in one folder: cce-sygnal-apis.yaml
+#         (Sygnal's own fields, the types opened) and cce-fhir-extension.yaml (the fields CCE adds for FHIR), which the
+#         first refers to by name. The two are ALL a Sygnal adapter needs: it holds no payload schemas.
+#         (v1.0 kept the CCE data in the eventAttributes / signalAttributes bags of the Sygnal types; v2.0 used
+#         cce:CceClinicalEvent / cce:CceCareAlert as the payloads. Neither is deployed any more.)
+# This is the one place that names it; BECKN_SYGNAL_PROFILE (a full file path) names another profile file. The extension
+# is always the file BECKN_SYGNAL_EXTENSION_FILE next to the profile: that is the name the profile refers to.
+# OpenMRS's Beckn referral pair does hold schemas; its version folders are a setting with a default,
+# BECKN_REFERRAL_SCHEMAS (beckn_defaults).
+BECKN_SYGNAL_PROFILE_REL="sygnal-profile/v3.0/cce-sygnal-apis.yaml"
+BECKN_SYGNAL_EXTENSION_FILE="cce-fhir-extension.yaml"
+
+# beckn_sygnal_extension <profile file>: the path of the FHIR extension the profile refers to (same folder).
+beckn_sygnal_extension() { printf '%s/%s\n' "$(dirname "$1")" "$BECKN_SYGNAL_EXTENSION_FILE"; }
+
+# What to do when $1 (a schema folder) has no profile at BECKN_SYGNAL_PROFILE_REL: says which versions it does have.
+beckn_profile_hint() {
+  local found
+  found="$(find "$1/sygnal-profile" -mindepth 2 -maxdepth 2 -name cce-sygnal-apis.yaml 2>/dev/null | sed "s#^$1/##" | sort | tr '\n' ' ')"
+  echo "       This add-on deploys $BECKN_SYGNAL_PROFILE_REL (payloads: sygnal:CoordinationEvent / sygnal:Signal, extended in CCE's copy)."
+  if [ -n "$found" ]; then
+    echo "       $1 has: ${found% } — another version of the contract. Use a cce-beckn-service ref"
+    echo "       or checkout that has the version above: BECKN_SCHEMA_REF=<branch or tag>, or BECKN_SCHEMA_DIR=<its schema/ folder>."
+  else
+    echo "       Use a cce-beckn-service ref that has schema/sygnal-profile/ (BECKN_SCHEMA_REF), a copy of its schema/"
+    echo "       folder (BECKN_SCHEMA_DIR), or name the profile file with BECKN_SYGNAL_PROFILE."
+  fi
+}
+
+# beckn_schema_set <schema dir> <setting name> <"Type/version …">: print the files of the listed version folders, one per
+# line. Used for the schema set of OpenMRS's referral pair (BECKN_REFERRAL_SCHEMAS). An adapter finds a local schema by
+# its TYPE name and ignores the version folder, so a set holds one version of a type, named explicitly — never "whatever
+# the folder has". Fails (message on stderr) when an entry is not <Type>/<version>, a type is listed twice, or a folder
+# has no attributes.yaml.
+beckn_schema_set() {
+  local dir="$1" name="$2" e t seen=" "
+  [ -n "${3// /}" ] || { echo "ERROR: $name is empty (expected <Type>/<version> folders of $dir, e.g. CoordinationEvent/v3.0)" >&2; return 1; }
+  for e in $3; do
+    case "$e" in */*/*|/*|*/|*..*) echo "ERROR: $name: '$e' is not <Type>/<version>" >&2; return 1;; */*) ;; *) echo "ERROR: $name: '$e' is not <Type>/<version>" >&2; return 1;; esac
+    t="${e%%/*}"
+    case "$seen" in *" $t "*) echo "ERROR: $name lists schema type $t twice — an adapter holds one version of a type" >&2; return 1;; esac
+    seen="$seen$t "
+    [ -r "$dir/$e/attributes.yaml" ] || { echo "ERROR: $name: no $e/attributes.yaml in $dir (BECKN_SCHEMA_DIR, or BECKN_SCHEMA_REPO at BECKN_SCHEMA_REF)" >&2; return 1; }
+    find "$dir/$e" -mindepth 1 -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.jsonld' -o -name '*.json' \) | sort
+  done
+}
 
 beckn_kubectl() {
   [ -n "${KUBECTL:-}" ] && return 0
@@ -80,14 +136,24 @@ beckn_defaults() {
     _beckn_default BECKN_OPENMRS_BPP_URI "https://${BECKN_OPENMRS_HOST}/bpp/receiver"
   fi
   # The DeDi registry every adapter looks senders up in (onix's dediregistry plugin: <url>/lookup/<subscriber id>/…/<key id>).
-  # BECKN_REGISTRY_NAME: the registry name OpenMRS's referral pair (onix 1.6.1) puts in that lookup; the Sygnal adapters
-  # (onix 1.9.4) search every registry and do not use it.
+  # Every adapter is on onix 1.9.4, which searches every registry: there is no registry name to set. BECKN_REGISTRY_NAME,
+  # which OpenMRS's referral pair needed on onix 1.6.1, is no longer read (a line left in a config file is ignored).
   _beckn_default BECKN_REGISTRY_URL "https://fabric.nfh.global/registry/dedi"
-  # The start of the @context address inside every message. It only has to be the SAME for all participants: each adapter
-  # finds its local copy of the schema by name (ConfigMap onix-schema), so the address itself need not be reachable.
+  # The start of the @context address of CCE's schema of the referral box (CoordinationEvent/v3.0), a setting of the
+  # services. It only has to be the SAME for all participants: an adapter that checks such an object (OpenMRS's referral
+  # pair) finds its local copy of the schema by its @type (ConfigMap onix-schema), so the address itself need not be
+  # reachable. The Sygnal messages (profile v3.0) need no @context.
   _beckn_default BECKN_SCHEMA_BASE_URL "https://raw.githubusercontent.com/openphc/cce-beckn-service/main/schema"
   _beckn_default BECKN_SCHEMA_REPO "https://github.com/openphc/cce-beckn-service.git"
   _beckn_default BECKN_SCHEMA_REF demo
+  # The schema version folders (under the schema folder) OpenMRS's Beckn referral pair holds a copy of (onix-bap /
+  # onix-bpp; ConfigMap onix-schema, with the Health* pack): the referral legs carry the clinical event in
+  # performanceAttributes as a sygnal:CoordinationEvent (since 2026-11-23; it was a cce:CceClinicalEvent v1.0 box, and
+  # CceClinicalEvent / CceCareAlert are gone from cce-beckn-service). Named explicitly, one version per type: an adapter
+  # finds a schema by its type name. The Sygnal adapters (onix-sygnal) hold no schema set: the CCE profile is all they
+  # check a message against.
+  _beckn_default BECKN_REFERRAL_SCHEMAS "CoordinationEvent/v3.0"
+  # The domains the referral pair may fetch an unknown schema from (the Sygnal adapters fetch none).
   _beckn_default BECKN_SCHEMA_ALLOWED_DOMAINS "beckn.org,raw.githubusercontent.com,schema.beckn.io"
   # The Beckn core spec OpenMRS's referral pair checks messages against (the Sygnal adapters use the CCE profile instead).
   _beckn_default BECKN_CORE_SCHEMA_URL "https://raw.githubusercontent.com/beckn/protocol-specifications-v2/refs/tags/core-v2.0.0-lts/api/v2.0.0/beckn.yaml"
@@ -166,9 +232,9 @@ beckn_validate() {
       done
     fi
   done
-  # OpenMRS's Beckn referral pair: its two records, and the registry name the 1.6.1 adapter's lookup needs.
+  # OpenMRS's Beckn referral pair: its two records.
   if beckn_hosted openmrs; then
-    for k in BECKN_OPENMRS_BAP_ID BECKN_OPENMRS_BAP_KEY_ID BECKN_OPENMRS_BPP_ID BECKN_OPENMRS_BPP_KEY_ID BECKN_REGISTRY_NAME; do
+    for k in BECKN_OPENMRS_BAP_ID BECKN_OPENMRS_BAP_KEY_ID BECKN_OPENMRS_BPP_ID BECKN_OPENMRS_BPP_KEY_ID; do
       [ -n "${!k:-}" ] || { echo "CONFIG: $k is required (openmrs is in BECKN_COMPONENTS: its Beckn adapter pair for the Spice referrals)" >&2; bad=1; }
     done
   fi

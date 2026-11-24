@@ -235,7 +235,7 @@ published: they carry no token of their own, and only pods of the same namespace
 |---|---|
 | `k8s/overlays/<OVERLAY_NAME>/` | the environment's overlay (git-tracked; commit it) |
 | `data-pipeline/.deployed-ref` | which data-pipeline ref was synced, if any |
-| `BECKN_SCHEMA_DIR` (add-on) | folder with the CCE Sygnal profile and the `CceClinicalEvent` / `CceCareAlert` schemas, when they are not fetched from `BECKN_SCHEMA_REPO` |
+| `BECKN_SCHEMA_DIR` (add-on) | folder with the CCE Sygnal profile (`sygnal-profile/`: `cce-sygnal-apis.yaml` and `cce-fhir-extension.yaml`) and the referral box's schema (`CoordinationEvent/`), when they are not fetched from `BECKN_SCHEMA_REPO` |
 | `BECKN_OPENMRS_HOST_DIR`, default `/opt/openmrs` (add-on) | OpenMRS's frontend site files, mounted into the frontend pod |
 | `<home>/.cce-infisical/<env>.creds`, `.meta` | machine-identity login and project id (root, 0600) |
 | `/opt/cce-local-infisical/.env`, `admin.env` | local Infisical keys and org-admin login (0600) — **back up** |

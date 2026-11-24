@@ -11,8 +11,14 @@
 # Based on the verified devkit config of DHP-Specs (cce-onix / openhim-onix / openmrs-onix branches). What is set, and why:
 #   - schemaValidator type "file": the CCE profile of Sygnal (config/sygnal/cce-sygnal-apis.yaml, ConfigMap onix-sygnal) is
 #     the only spec — the adapter accepts the two Sygnal actions and nothing else, and downloads nothing at start. onix logs
-#     a WARN that it is not the Beckn core spec. The two bags (CceClinicalEvent, CceCareAlert) are local copies in
-#     config/schema (ConfigMap onix-schema).
+#     a WARN that it is not the Beckn core spec. The payloads are Sygnal's own types, sygnal:CoordinationEvent (the entry
+#     of message.events in sygnal/event/report) and sygnal:Signal (the message of sygnal/signal/emit), opened in that
+#     profile (v3.0) and extended by the file it refers to, config/sygnal/cce-fhir-extension.yaml (the FHIR fields; same
+#     ConfigMap), so the two files check all of a message.
+#   - extendedSchema_enabled "false": the extended check validates objects that carry "@context" against a schema of
+#     their own. No object in a Sygnal message carries one: CCE's level of severity is cceSeverity, a field on the
+#     Signal itself, and the two profile files check the whole message. So the check has nothing to do and stays off,
+#     and the adapter holds no payload schemas (no config/schema folder, no schema ConfigMap) and never fetches one.
 #   - responseHeaderTimeout per module: every answer comes back in the same HTTP call, so every hop must wait longer than
 #     the hop behind it (the default 5 s breaks that). The values come from beckn-deploy.sh (the timeout chain).
 #   - http.timeout write 60: longer than the longest of those waits.
@@ -79,12 +85,7 @@ modules:
             type: "file"
             location: "./config/sygnal/cce-sygnal-apis.yaml"
             cacheTTL: "3600"
-            extendedSchema_enabled: "true"
-            extendedSchema_cacheTTL: "86400"
-            extendedSchema_maxCacheSize: "100"
-            extendedSchema_downloadTimeout: "30"
-            extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
-            extendedSchema_localSchemaPath: "./config/schema"
+            extendedSchema_enabled: "false"
         signValidator:
           id: signvalidator
         signer:
@@ -144,12 +145,7 @@ modules:
             type: "file"
             location: "./config/sygnal/cce-sygnal-apis.yaml"
             cacheTTL: "3600"
-            extendedSchema_enabled: "true"
-            extendedSchema_cacheTTL: "86400"
-            extendedSchema_maxCacheSize: "100"
-            extendedSchema_downloadTimeout: "30"
-            extendedSchema_allowedDomains: "${BECKN_SCHEMA_ALLOWED_DOMAINS}"
-            extendedSchema_localSchemaPath: "./config/schema"
+            extendedSchema_enabled: "false"
         signValidator:
           id: signvalidator
         signer:

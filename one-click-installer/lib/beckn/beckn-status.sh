@@ -4,8 +4,9 @@
 #
 #   sudo bash one-click-installer/lib/beckn/run.sh --config one-click-installer/config/<env>.env beckn-status.sh
 #
-# Per hosted component: pods, the adapters' loaded schemas, its subscriber in the network registry (live? same
-# address — https://<host>/sygnal/receiver — and signing key as configured here? a member of the network?), and the public
+# Per hosted component: pods, the version of the CCE profile its Sygnal adapter holds (OpenMRS's referral pair: the schemas
+# it loaded), its subscriber in the network registry (live? same address — https://<host>/sygnal/receiver — and signing
+# key as configured here? a member of the network?), and the public
 # Sygnal address (an empty, unsigned request must be refused by the ADAPTER — 400 or 401 — which proves DNS, TLS, the
 # ingress and the adapter in one call). OpenMRS: the same for its Beckn referral pair (onix-bap / onix-bpp, /bap/receiver,
 # /bpp/receiver). Then the ids and addresses to give the other participants, and the referral contract ids.
@@ -19,7 +20,7 @@ beckn_kubectl || exit 1
 pick() { local v; for v in "$@"; do if [ -n "${!v:-}" ]; then printf '%s' "${!v}"; return 0; fi; done; return 0; }
 BAD=0
 # registry_check <subscriber id> <key id> <address(es) used here, space-separated> <signing public key> <network id>
-# subscribers.beckn.one: the "any registry" name the Sygnal adapter itself uses for this lookup (onix dediregistry).
+# subscribers.beckn.one: the "any registry" name the adapters themselves use for this lookup (onix 1.9.4 dediregistry).
 # The record's url is only shown: delivery never uses it (senders put the address in the message: receiverUri for
 # Sygnal, bapUri / bppUri for Beckn).
 registry_check() {
@@ -51,7 +52,15 @@ for c in $BECKN_COMPONENTS; do
   echo "== $c   namespace $NS   https://$HOST"
   $KUBECTL -n "$NS" get pods -l "app.kubernetes.io/part-of=${c}-beckn" --no-headers 2>/dev/null \
     | awk '{split($2,a,"/"); t++; if ($3=="Running" && a[1]==a[2]) r++; else bad=bad"\n     not ready: "$1" "$2" "$3" restarts="$4} END{printf "   pods ready: %d/%d%s\n", r, t, bad; exit (r==t && t>0) ? 0 : 1}' || BAD=1
-  ADAPTERS="onix-sygnal"; [ "$c" = openmrs ] && ADAPTERS="onix-sygnal onix-bap onix-bpp"
+  # The Sygnal adapter holds the CCE profile and no payload schemas: show the version of the profile it was given.
+  # OpenMRS's referral pair loads its schema folders at start: show what it logged.
+  pv="$($KUBECTL -n "$NS" get configmap onix-sygnal-profile -o 'jsonpath={.data.cce-sygnal-apis\.yaml}' 2>/dev/null | sed -n 's/^  version: *//p' | head -1)"
+  if [ -n "$pv" ]; then echo "   onix-sygnal profile: CCE profile of Sygnal, version $pv (this add-on deploys $BECKN_SYGNAL_PROFILE_REL)"
+  else echo "   onix-sygnal profile: NOT FOUND (ConfigMap onix-sygnal-profile) — the adapter cannot start without it"; BAD=1; fi
+  if [ -n "$pv" ] && [ -z "$($KUBECTL -n "$NS" get configmap onix-sygnal-profile -o "jsonpath={.data.${BECKN_SYGNAL_EXTENSION_FILE//./\\.}}" 2>/dev/null | head -c 1)" ]; then
+    echo "   onix-sygnal profile: $BECKN_SYGNAL_EXTENSION_FILE MISSING from ConfigMap onix-sygnal-profile — the profile refers to it; re-run install-beckn.sh"; BAD=1
+  fi
+  ADAPTERS=""; [ "$c" = openmrs ] && ADAPTERS="onix-bap onix-bpp"
   for d in $ADAPTERS; do
     line="$($KUBECTL -n "$NS" logs "deploy/$d" --tail=400 2>/dev/null | grep -i -E 'preloaded|no schemas loaded' | tail -1 | sed -E 's/.*"(message|msg)":"([^"]*)".*/\2/' | cut -c1-110)"
     echo "   $d schemas: ${line:-(no schema line in the last 400 log lines)}"

@@ -1,15 +1,18 @@
 # OpenMRS's Beckn adapter pair, for the Spice <-> OpenMRS health referrals ONLY (standard Beckn: select / init / confirm /
-# status / update and their callbacks): onix-bap (consumer side, :8081), onix-bpp (provider side, :8082), unchanged from
-# the Beckn setup (fidedocker/onix-adapter:1.6.1, the Health* referral schemas). The CCE flows of OpenMRS (events to the
-# HIE, care alerts from CCE) go through the Sygnal adapter next to them (k8s/beckn/onix: onix-sygnal), which also
-# provides the Redis both use (onix-redis). Used by k8s/beckn/openmrs only.
+# status / update and their callbacks): onix-bap (consumer side, :8081), onix-bpp (provider side, :8082), with the
+# Health* referral schemas. The referral messages are those of the Beckn setup; the adapters are on onix 1.9.4
+# (fidedocker/onix-adapter:1.9.4, as onix-sygnal; before: 1.6.1), so Spice's referral adapter must be on 1.9.4 too (a
+# 1.6.1 adapter refuses the 1.9.4 signature of a callback that answers a request; config/onix-bap.yaml explains). The CCE
+# flows of OpenMRS (events to the HIE, care alerts from CCE) go through the Sygnal adapter next to them (k8s/beckn/onix:
+# onix-sygnal), which also provides the Redis both use (onix-redis: registry lookups, and the message signatures the
+# pair's payload store keeps). Used by k8s/beckn/openmrs only.
 #
 # Not in this file, created by one-click-installer/lib/beckn/beckn-deploy.sh openmrs before this is applied:
 #   Secret    onix-config         — onix-bap.yaml, onix-bpp.yaml (they hold the signing keys) and the four routing files,
 #                                   rendered from k8s/beckn/onix-beckn/config/*.yaml, next to the Sygnal adapter's files
-#   ConfigMap onix-schema         — the extra schema folders: the CCE schemas (CceClinicalEvent, CceCareAlert) and, in the
-#                                   openmrs namespace, the Health* referral pack (k8s/beckn/onix-beckn/health-schema);
-#                                   one key per file with "/" written "__". onix-sygnal loads the same folders.
+#   ConfigMap onix-schema         — the extra schema folders of the referral adapters: the CCE schema of the referral
+#                                   box (CoordinationEvent/v3.0) and the Health* referral pack (k8s/beckn/onix-beckn/health-schema);
+#                                   one key per file with "/" written "__". onix-sygnal holds no schemas (the CCE profile only).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,7 +29,7 @@ spec:
     spec:
       initContainers:
         # The adapter finds a local schema by its folder name (config/schema/<Name>/<version>/…). A ConfigMap is flat, so the
-        # folders are rebuilt here from keys such as CceClinicalEvent__v1.0__attributes.yaml.
+        # folders are rebuilt here from keys such as CoordinationEvent__v3.0__attributes.yaml.
         - name: schema
           image: busybox:1.36
           command:
@@ -56,7 +59,7 @@ spec:
               mountPath: /out
       containers:
         - name: onix-bap
-          image: fidedocker/onix-adapter:1.6.1
+          image: fidedocker/onix-adapter:1.9.4
           args: ["./server", "--config=/app/config/onix-bap.yaml"]
           ports:
             - containerPort: 8081
@@ -148,7 +151,7 @@ spec:
               mountPath: /out
       containers:
         - name: onix-bpp
-          image: fidedocker/onix-adapter:1.6.1
+          image: fidedocker/onix-adapter:1.9.4
           args: ["./server", "--config=/app/config/onix-bpp.yaml"]
           ports:
             - containerPort: 8082
