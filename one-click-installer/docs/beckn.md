@@ -169,10 +169,8 @@ and reaches CCE only through the adapters.
    `CoordinationEvent/v3.0` for the referral pair), or you copied that `schema/` folder to it (`BECKN_SCHEMA_DIR`).
    Without the profile or its extension (with `openmrs`: or that folder) the install stops: the Sygnal adapters cannot
    start without the profile, and refuse every message without the extension.
-   **Until cce-beckn-service pull request #7 is merged into `demo`, `demo` (the default ref) has only profile v1.0, no
-   `cce-fhir-extension.yaml` and no `CoordinationEvent/v3.0`: set `BECKN_SCHEMA_REF` to a ref that has them
-   (`cce-payload-types`, the branch of that pull request), or `BECKN_SCHEMA_DIR` to a checkout of
-   it** ([Change 2026-11-23: the Sygnal payloads](#change-2026-11-23-the-sygnal-payloads),
+   `demo`, the default ref, has all of them since cce-beckn-service pull request #7 was merged on 2026-11-24
+   ([Change 2026-11-23: the Sygnal payloads](#change-2026-11-23-the-sygnal-payloads),
    [Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
 5. Every image can be pulled, and they are Sygnal builds for profile v3.0 (`cce-beckn-service` with
    `POST /sygnal/event/report`, the adaptors with `sygnal/event/report` / `sygnal/signal/emit`; all four send and
@@ -254,7 +252,7 @@ All in the environment's config file. `lib/load-config.sh` accepts any key that 
 | `BECKN_SIGNING_PUBLIC_KEY`, `BECKN_ENCR_PUBLIC_KEY` | required | the adapters' public keys. Per participant: `BECKN_<P>_…`; per record: `BECKN_<P>_BAP_…` / `BECKN_<P>_BPP_…`. The most specific one wins |
 | `BECKN_SEED_ENV_FILE` | empty | seed file for Infisical `/beckn` (below) |
 | `BECKN_SCHEMA_DIR` | empty | folder holding `sygnal-profile/` and `CoordinationEvent/` (cce-beckn-service's `schema/`). Empty: clone `BECKN_SCHEMA_REPO` (`https://github.com/openphc/cce-beckn-service.git`) at `BECKN_SCHEMA_REF` and use its `schema/` |
-| `BECKN_SCHEMA_REF` | `demo` | the branch or tag of `BECKN_SCHEMA_REPO` to take the schemas from. It must have `sygnal-profile/v3.0` with both profile files, and `CoordinationEvent/v3.0`. Until cce-beckn-service pull request #7 is merged into `demo`: a ref that has them, `cce-payload-types` ([Change 2026-11-23](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)) |
+| `BECKN_SCHEMA_REF` | `demo` | the branch or tag of `BECKN_SCHEMA_REPO` to take the schemas from. It must have `sygnal-profile/v3.0` with both profile files, and `CoordinationEvent/v3.0`; `demo` has them ([Change 2026-11-23](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)) |
 | `BECKN_SYGNAL_PROFILE` | `<schema>/sygnal-profile/v3.0/cce-sygnal-apis.yaml` | the CCE profile of Sygnal, the Sygnal adapters' spec. Its FHIR extension is always the file `cce-fhir-extension.yaml` next to it (the name the profile refers to; `BECKN_SYGNAL_EXTENSION_FILE` in `beckn-lib.sh`). The adapters hold these two files and no other schema |
 | `BECKN_REFERRAL_SCHEMAS` | `CoordinationEvent/v3.0` | the `<Type>/<version>` folders of the schema folder OpenMRS's referral pair holds (ConfigMap `onix-schema`, with the Health* pack). It was `CceClinicalEvent/v1.0 CceCareAlert/v1.0` before 2026-11-23. One version per type |
 | `BECKN_SCHEMA_BASE_URL` | `https://raw.githubusercontent.com/openphc/cce-beckn-service/main/schema` | the start of the `@context` address of CCE's schema of the referral box (`<BECKN_SCHEMA_BASE_URL>/CoordinationEvent/v3.0/context.jsonld`), a setting of the services. Must be the same for all participants; it need not be downloadable, because an adapter that checks such an object finds its local copy by `@type`. The Sygnal messages need no `@context` |
@@ -523,11 +521,10 @@ What it means for an install:
   behind: the ConfigMap `onix-sygnal-schema` (an install made for profile v2.0) in every namespace, and the ConfigMap
   `onix-schema` in the CCE and HIE namespaces, which have no referral pair. The setting `BECKN_SYGNAL_SCHEMAS` of
   profile v2.0 is gone; a line left in a config file is ignored.
-- **The schema source must have profile v3.0.** The default `BECKN_SCHEMA_REF` is `demo`, and `demo` of
-  cce-beckn-service has only profile v1.0 until its pull request #7 is merged. Until then set
-  `BECKN_SCHEMA_REF=cce-payload-types` (the branch of that pull request), or `BECKN_SCHEMA_DIR` to the `schema/` folder
-  of a checkout of it. Once it is merged, remove the setting. The ref must also have `cce-fhir-extension.yaml` next to
-  the profile and, with `openmrs`, `CoordinationEvent/v3.0` ([Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
+- **The schema source must have profile v3.0.** The default `BECKN_SCHEMA_REF`, `demo` of cce-beckn-service, has it
+  since its pull request #7 was merged on 2026-11-24; a `BECKN_SCHEMA_REF=cce-payload-types` set before that can be
+  removed. A copied folder (`BECKN_SCHEMA_DIR`) from before must be replaced with the current `schema/`. The source must
+  also have `cce-fhir-extension.yaml` next to the profile and, with `openmrs`, `CoordinationEvent/v3.0` ([Change 2026-11-23: the profile in two files, and the referral box](#change-2026-11-23-the-profile-in-two-files-and-the-referral-box)).
 - All four images (`cce-beckn-service`, the HIE adaptor, the two OpenMRS adaptors) must be builds for profile v3.0, on
   every participant at the same time: a Sygnal adapter refuses a message in an earlier shape (schema check, a `Nack`).
 - Then re-run `install-beckn.sh`. It replaces the ConfigMap `onix-sygnal-profile` and restarts, once, the adapters and
@@ -650,9 +647,9 @@ What the installer does:
 adapters (`CoordinationEvent/v3.0` in place of `CceClinicalEvent/v1.0`). An adapter without the old schema refuses the
 old box with `SCH_SCHEMA_ADAPTATION_FAILED`. See [Connecting Spice](#connecting-spice).
 
-**The schema source.** Until cce-beckn-service pull request #7 is merged into `demo`, `BECKN_SCHEMA_REF` must name a ref
-that has `cce-fhir-extension.yaml` and `CoordinationEvent/v3.0` as well as the profile (`cce-payload-types`, the branch
-of that pull request), or `BECKN_SCHEMA_DIR` a checkout of it. Once it is merged, remove the setting.
+**The schema source.** It must have `cce-fhir-extension.yaml` and `CoordinationEvent/v3.0` as well as the profile.
+`demo` of cce-beckn-service, the default `BECKN_SCHEMA_REF`, has them since its pull request #7 was merged on
+2026-11-24. A copied folder (`BECKN_SCHEMA_DIR`) must be a copy of that `schema/`.
 
 Tested:
 
@@ -860,7 +857,7 @@ the signature onix 1.9.4 puts on such a callback. With both sides on 1.9.4 and t
 | Symptom | Cause | Fix |
 |---|---|---|
 | An adapter in `CrashLoopBackOff` with exit code 0; the log ends `Loading keys from configuration`, `Application finished` | a key is not valid base64 — typically the private key lost its trailing `=` | check the length of the value in Infisical `/beckn` (an Ed25519 key is 44 characters); re-seed from the file |
-| `install-beckn.sh` stops: `no CCE Sygnal profile at …/sygnal-profile/v3.0/cce-sygnal-apis.yaml`, and it names `sygnal-profile/v1.0/…` or `…/v2.0/…` as what it found | the schema source is from before profile v3.0 (`demo` of cce-beckn-service until its pull request #7 is merged) | `BECKN_SCHEMA_REF=cce-payload-types`, or `BECKN_SCHEMA_DIR` to a checkout of that branch |
+| `install-beckn.sh` stops: `no CCE Sygnal profile at …/sygnal-profile/v3.0/cce-sygnal-apis.yaml`, and it names `sygnal-profile/v1.0/…` or `…/v2.0/…` as what it found | the schema source is from before profile v3.0: an old ref in `BECKN_SCHEMA_REF`, or an old copy in `BECKN_SCHEMA_DIR` | use `demo` of cce-beckn-service (the default ref), or copy its current `schema/` folder to `BECKN_SCHEMA_DIR` |
 | `install-beckn.sh` or `beckn-deploy.sh` stops: `no cce-fhir-extension.yaml next to the CCE Sygnal profile (…)` | the schema source has the profile but not its FHIR extension (a ref from before the split) | use a cce-beckn-service ref that has it (`BECKN_SCHEMA_REF`), or put it next to the profile |
 | `onix-sygnal` does not start: cannot read `./config/sygnal/cce-sygnal-apis.yaml` | the ConfigMap `onix-sygnal-profile` is missing | re-run `install-beckn.sh` with a schema folder that has `sygnal-profile/v3.0/` |
 | `beckn-status.sh`: `cce-fhir-extension.yaml MISSING from ConfigMap onix-sygnal-profile` | the ConfigMap was made by an earlier version of the installer, with the profile only | re-run `install-beckn.sh` |

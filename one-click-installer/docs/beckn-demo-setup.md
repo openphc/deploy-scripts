@@ -92,9 +92,8 @@ CCE's level of severity (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) is only in `cceSev
 the other care-alert fields; CCE does not send Sygnal's `severity`. There is no `cce:` type and no bag in these
 messages. The Spice ↔ OpenMRS referral legs (standard Beckn) carry the same
 `sygnal:CoordinationEvent` in `performanceAttributes`, with an `@context` first; its schema is `CoordinationEvent/v3.0`
-in that folder. `CceClinicalEvent` and `CceCareAlert` are deleted from it. Until that repository's pull
-request #7 is merged, `demo` shows only profile v1.0, and the v3.0 files and `CoordinationEvent/v3.0` are on its branch
-`cce-payload-types`
+in that folder. `CceClinicalEvent` and `CceCareAlert` are deleted from it. Its branch `demo` has
+all of this since that repository's pull request #7 was merged on 2026-11-24
 ([beckn.md → Change 2026-11-23: the Sygnal payloads](beckn.md#change-2026-11-23-the-sygnal-payloads),
 [beckn.md → Change 2026-11-23: the profile in two files, and the referral box](beckn.md#change-2026-11-23-the-profile-in-two-files-and-the-referral-box),
 [beckn.md → Change 2026-11-24: Sygnal's types as published, and the alert's severity](beckn.md#change-2026-11-24-sygnals-types-as-published-and-the-alerts-severity)).
